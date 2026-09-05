@@ -319,15 +319,34 @@ impl ResidentSourceWorkbenchV1 {
     }
 
     pub fn recorded_event(&self, designation: &[u8]) -> Result<Option<&clause_runtime::ExecutableRecordedEventV1>, ResidentSourceWorkbenchErrorV1> {
-        let occurrence = decode_executable_occurrence_v1(&self.handler_occurrence(designation, &[])?)
-            .map_err(|error| boxed_error("explanation handler", error))?;
-        Ok(self.boundary.recorded_event(self.generation.handle, occurrence.entry)?)
+        Ok(self.boundary.recorded_event(self.generation.handle, self.diagnostic_entry(designation)?)?)
     }
 
     pub fn explanation(&self, designation: &[u8]) -> Result<clause_package::Term, ResidentSourceWorkbenchErrorV1> {
-        let occurrence = decode_executable_occurrence_v1(&self.handler_occurrence(designation, &[])?)
-            .map_err(|error| boxed_error("explanation handler", error))?;
-        Ok(self.boundary.explanation_term(self.generation.handle, occurrence.entry)?)
+        Ok(self.boundary.explanation_term(self.generation.handle, self.diagnostic_entry(designation)?)?)
+    }
+
+    /// Exact offered source occurrence; repeated handler designations are not
+    /// identities. The caller must retain its generation with this address.
+    pub fn diagnostic_handler_entry(&self, handler: clause_package::FormationLocalId) -> Result<u16, ResidentSourceWorkbenchErrorV1> {
+        self.handlers.values().flatten().find(|candidate| candidate.handler == handler).map(|candidate| candidate.entry)
+            .ok_or_else(|| ResidentSourceWorkbenchErrorV1("unknown diagnostic handler occurrence".into()))
+    }
+
+    pub fn recorded_handler_event(&self, handler: clause_package::FormationLocalId) -> Result<Option<&clause_runtime::ExecutableRecordedEventV1>, ResidentSourceWorkbenchErrorV1> {
+        Ok(self.boundary.recorded_event(self.generation.handle, self.diagnostic_handler_entry(handler)?)?)
+    }
+
+    pub fn handler_explanation(&self, handler: clause_package::FormationLocalId) -> Result<clause_package::Term, ResidentSourceWorkbenchErrorV1> {
+        Ok(self.boundary.explanation_term(self.generation.handle, self.diagnostic_handler_entry(handler)?)?)
+    }
+
+    /// Resolve an existing checked entry without manufacturing an input or
+    /// requiring dummy arguments for a historical event query.
+    fn diagnostic_entry(&self, designation: &[u8]) -> Result<u16, ResidentSourceWorkbenchErrorV1> {
+        let bindings = self.handlers.get(designation).ok_or_else(|| ResidentSourceWorkbenchErrorV1("unknown diagnostic handler".into()))?;
+        let [binding] = bindings.as_slice() else { return Err(ResidentSourceWorkbenchErrorV1("ambiguous diagnostic handler".into())); };
+        Ok(binding.entry)
     }
 
     pub fn intervene(&self, query: &clause_runtime::ExecutableInterventionQueryV1) -> Result<clause_runtime::ExecutableInterventionResultV1, ResidentSourceWorkbenchErrorV1> {
@@ -1175,5 +1194,8 @@ fn debug_error(stage: &str, error: impl fmt::Debug) -> ResidentSourceWorkbenchEr
 }
 
 fn unexpected_event(stage: &str, event: WasmSessionEventKindV1) -> ResidentSourceWorkbenchErrorV1 {
+    if let WasmSessionEventKindV1::CandidateRejected { diagnostic } = &event {
+        return ResidentSourceWorkbenchErrorV1(format!("{stage} rejected: {}", String::from_utf8_lossy(diagnostic)));
+    }
     ResidentSourceWorkbenchErrorV1(format!("unexpected {stage} event: {event:?}"))
 }

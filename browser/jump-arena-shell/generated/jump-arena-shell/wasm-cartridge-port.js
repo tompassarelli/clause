@@ -1376,6 +1376,153 @@ function realize_array(realize_node, first) {
     }
     return Object.freeze(values);
 }
+// Passive transport only: these are exact runtime table rows, not an evaluator
+// or a host-owned collection of game objects. No labels become identities.
+function projected_scalar_order(a, b, kind) {
+    if (typeof a === "number" && typeof b === "number") {
+        const bits = (n) => { const bytes = new DataView(new ArrayBuffer(8)); bytes.setFloat64(0, n, true); return bytes.getBigUint64(0, true); };
+        return bits(a) < bits(b) ? -1 : bits(a) > bits(b) ? 1 : 0;
+    }
+    if (typeof a === "boolean" && typeof b === "boolean")
+        return Number(a) - Number(b);
+    if (typeof a === "string" && typeof b === "string") {
+        const encoder = new TextEncoder();
+        const left = encoder.encode(a), right = encoder.encode(b);
+        if (kind === 2 && left.length !== right.length)
+            return left.length - right.length;
+        for (let i = 0; i < Math.min(left.length, right.length); ++i) {
+            if (left[i] !== right[i])
+                return left[i] - right[i];
+        }
+        return left.length - right.length;
+    }
+    const left = checked_referent(a), right = checked_referent(b);
+    if (left.domain !== right.domain)
+        return left.domain - right.domain;
+    if (left.identity.kind !== right.identity.kind)
+        return left.identity.kind === "declared" ? -1 : 1;
+    if (left.identity.kind === "declared" && right.identity.kind === "declared")
+        return left.identity.value - right.identity.value;
+    if (left.identity.kind === "created" && right.identity.kind === "created") {
+        for (let i = 0; i < 32; ++i) {
+            if (left.identity.value[i] !== right.identity.value[i])
+                return left.identity.value[i] - right.identity.value[i];
+        }
+        return 0;
+    }
+    throw new Error("incompatible projected scalar values");
+}
+function projected_table(payload) {
+    let offset = 0;
+    const take = (count) => {
+        if (count < 0 || offset + count > payload.length)
+            throw new Error("truncated projected relation table");
+        const value = Array.from({ length: count }, (_, i) => byte_at(payload, offset + i));
+        offset += count;
+        return value;
+    };
+    const u8 = () => take(1)[0];
+    const u16 = () => { const bytes = take(2); return bytes[0] + bytes[1] * 256; };
+    const u32 = () => little_u32(take(4), 0);
+    const referent = () => {
+        const domain = u32(), tag = u8();
+        if (tag === 0)
+            return checked_referent({ kind: "referent", domain, identity: { kind: "declared", value: u32() } });
+        if (tag === 1)
+            return checked_referent({ kind: "referent", domain, identity: { kind: "created", value: take(32) } });
+        throw new Error("invalid projected row referent");
+    };
+    if (payload.length > 1024 * 1024 || u8() !== 6)
+        throw new Error("invalid projected relation table");
+    const subjectDomain = u32(), valueKind = u8(), optional = u8();
+    if (valueKind > 4 || optional > 1)
+        throw new Error("invalid projected relation domain");
+    const valueDomain = optional === 1 ? u32() : undefined;
+    if ((valueKind === 4) !== (valueDomain !== undefined))
+        throw new Error("inconsistent projected relation domain");
+    const cardinality = u8(), count = u16();
+    if (cardinality > 2)
+        throw new Error("invalid projected relation cardinality");
+    const rows = [];
+    let previous;
+    for (let row = 0; row < count; ++row) {
+        const subject = referent();
+        if (subject.domain !== subjectDomain || (previous && projected_scalar_order(previous, subject) >= 0))
+            throw new Error("noncanonical projected relation subjects");
+        previous = subject;
+        const valueCount = u16();
+        if (valueCount === 0 || (cardinality !== 2 && valueCount !== 1))
+            throw new Error("invalid projected row cardinality");
+        const values = [];
+        for (let i = 0; i < valueCount; ++i) {
+            const tag = u8();
+            let value;
+            if (valueKind === 0 && tag === 0)
+                value = projected_number(take(8));
+            else if (valueKind === 1 && tag === 1) {
+                const bit = u8();
+                if (bit > 1)
+                    throw new Error("invalid projected Boolean");
+                value = bit === 1;
+            }
+            else if (valueKind === 2 && tag === 2) {
+                const count = u8();
+                if (count === 0 || count > 64)
+                    throw new Error("invalid projected symbol length");
+                value = ascii_text(take(count), "projected symbol");
+            }
+            else if (valueKind === 3 && tag === 4)
+                value = utf8_text(take(u16()), "projected Text");
+            else if (valueKind === 4 && tag === 5) {
+                const reference = referent();
+                if (reference.domain !== valueDomain)
+                    throw new Error("wrong projected value domain");
+                value = reference;
+            }
+            else
+                throw new Error("wrong projected row value kind");
+            if (i > 0 && projected_scalar_order(values[i - 1], value, valueKind) >= 0)
+                throw new Error("noncanonical projected row values");
+            values.push(value);
+        }
+        rows.push(Object.freeze({ subject, values: Object.freeze(values) }));
+    }
+    if (offset !== payload.length)
+        throw new Error("trailing projected relation bytes");
+    return Object.freeze({ kind: "relation-table", subjectDomain, valueKind, cardinality,
+        ...(valueDomain === undefined ? {} : { valueDomain }), rows: Object.freeze(rows) });
+}
+function projected_set(node) {
+    if (node.kind !== "triple")
+        throw new Error("invalid projected set");
+    const [header, tree, end] = node.slots;
+    if (header.kind !== "atom" || header.payload.length !== 1 || ![0, 1, 2, 6, 8].includes(byte_at(header.payload, 0)) ||
+        end.kind !== "atom" || atom_kind_text(end) !== "clause/process-projected-set-end-v1" || end.payload.length !== 0)
+        throw new Error("invalid projected set header");
+    const values = [];
+    const kind = byte_at(header.payload, 0);
+    const visit = (tree, depth) => {
+        if (depth > 32 || values.length > 65535)
+            throw new Error("projected set exceeds bounds");
+        if (tree.kind === "atom") {
+            if (atom_kind_text(tree) !== "clause/process-projected-set-end-v1" || tree.payload.length !== 0)
+                throw new Error("invalid projected set tree");
+            return;
+        }
+        visit(tree.slots[0], depth + 1);
+        const leaf = tree.slots[1];
+        const expected = new Map([[0, "clause/process-projected-f64-v1"], [1, "clause/process-projected-bool-v1"], [2, "clause/process-projected-symbol-v1"], [6, "clause/process-projected-text-v1"], [8, "clause/process-projected-referent-v1"]]);
+        if (leaf.kind !== "atom" || atom_kind_text(leaf) !== expected.get(kind))
+            throw new Error("wrong projected set kind");
+        const value = realize_projection_node(leaf);
+        if (values.length && projected_scalar_order(values[values.length - 1], value, kind) >= 0)
+            throw new Error("noncanonical projected set");
+        values.push(value);
+        visit(tree.slots[2], depth + 1);
+    };
+    visit(tree, 0);
+    return Object.freeze(values);
+}
 function realize_projection_node(node) {
     if (node.kind === "atom") {
         const kind = atom_kind_text(node);
@@ -1397,12 +1544,14 @@ function realize_projection_node(node) {
             return ascii_text(payload, "projected symbol");
         if (kind === "clause/process-projected-text-v1")
             return utf8_text(payload, "projected Text");
+        if (kind === "clause/process-projected-relation-table-v1")
+            return projected_table(payload);
         if (kind === "clause/process-projected-referent-v1") {
             const bytes = Array.from({ length: payload.length }, (_, index) => byte_at(payload, index));
             if (payload.length === 9 && byte_at(payload, 4) === 0)
                 return checked_referent({ kind: "referent", domain: little_u32(bytes, 0), identity: { kind: "declared", value: little_u32(bytes, 5) } });
             if (payload.length === 37 && byte_at(payload, 4) === 1)
-                return checked_referent({ kind: "referent", domain: little_u32(bytes, 0), identity: { kind: "created", value: frozen_byte_range(bytes, 5, 32) } });
+                return checked_referent({ kind: "referent", domain: little_u32(bytes, 0), identity: { kind: "created", value: frozen_byte_range(bytes, 5, 37) } });
             throw new Error("projected referent is malformed");
         }
         throw new Error("projected scalar Atom is not realizable");
@@ -1410,6 +1559,8 @@ function realize_projection_node(node) {
     else {
         const head = node.slots[0];
         const kind = atom_kind_text(head);
+        if (kind === "clause/process-projected-set-v1")
+            return projected_set(node);
         if (kind === "clause/js-field-v1")
             return realize_object(realize_projection_node, node);
         if (kind === "clause/js-item-v1")

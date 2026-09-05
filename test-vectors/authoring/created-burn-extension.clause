@@ -1,0 +1,52 @@
+BurnEffect
+
+relation burn-target
+  reads {effect: BurnEffect} burn target {value: Actor}
+  subject effect
+  mode given effect yields value: one
+relation effect-remaining
+  reads {effect: BurnEffect} effect remaining {value: F64}
+  subject effect
+  mode given effect yields value: one
+relation effect-damage
+  reads {effect: BurnEffect} effect damage {value: F64}
+  subject effect
+  mode given effect yields value: one
+
+bind scalar-input IgniteDuration to ignite-target
+
+on ignite-target ?controller ?duration
+  when
+    ?controller chosen target ?target
+  create
+    ?effect
+      shape: BurnEffect
+  include
+    ?effect burn target ?target
+    ?effect effect remaining ?duration
+    ?effect effect damage 7.0
+
+on tick ?effect ?dt
+  when
+    ?effect burn target ?target
+    ?effect effect remaining ?remaining
+    ?effect effect damage ?damage
+    ?remaining > 0.0
+    ?dt clamped between 0.0 and ?remaining as ?elapsed
+  withdraw
+    ?effect effect remaining ?remaining
+  include
+    ?effect effect remaining ?remaining - ?elapsed
+  accumulate
+    ?target vitality 0.0 - ?damage * ?elapsed
+
+on tick ?effect ?dt
+  when
+    ?effect burn target ?target
+    ?effect effect remaining ?remaining
+    ?effect effect damage ?damage
+    ?remaining <= 0.0
+  withdraw
+    ?effect burn target ?target
+    ?effect effect remaining ?remaining
+    ?effect effect damage ?damage

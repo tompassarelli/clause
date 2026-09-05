@@ -528,6 +528,80 @@ on redirect-goal ?north ?goal ?objective
     ?goal objective ?objective
 ```
 
+## Finite created relations and per-occurrence contributions
+
+Joins actual runtime-created Goal rows, updates each matching timer, and accumulates each distinct occurrence against one pre-step account balance. Equal-valued creations remain distinct; exact withdrawal removes only its own row. Finite resource exhaustion is an error, never absence. See docs/created-collections.md for bounds and remaining limits.
+
+Catalog ID: `created-timed-contributions`
+
+```clause
+F64
+Account
+Goal
+
+relation balance
+  reads {account: Account} balance {value: F64}
+  subject account
+  mode given account yields value: one
+relation known-goal
+  reads {account: Account} known goal {value: Goal}
+  subject account
+  mode given account yields value: many
+relation contribution
+  reads {goal: Goal} contribution {value: F64}
+  subject goal
+  mode given goal yields value: one
+relation remaining
+  reads {goal: Goal} remaining {value: F64}
+  subject goal
+  mode given goal yields value: one
+
+account
+  shape: Account
+account balance 100.0
+
+on create-goal ?account ?amount ?duration
+  when
+    ?account balance ?balance
+  create
+    ?goal
+      shape: Goal
+  include
+    ?account known goal ?goal
+    ?goal contribution ?amount
+    ?goal remaining ?duration
+
+on tick ?account ?dt
+  when
+    ?account known goal ?goal
+    ?goal contribution ?amount
+    ?goal remaining ?remaining
+    ?remaining > 0.0
+  withdraw
+    ?goal remaining ?remaining
+  include
+    ?goal remaining ?remaining - ?dt
+  accumulate
+    ?account balance ?amount * ?dt
+
+on expire ?account
+  when
+    ?account known goal ?goal
+    ?goal remaining ?remaining
+    ?remaining <= 0.0
+  withdraw
+    ?account known goal ?goal
+    ?goal remaining ?remaining
+
+on cancel-goal ?account ?goal
+  when
+    ?account known goal ?goal
+    ?goal remaining ?remaining
+  withdraw
+    ?account known goal ?goal
+    ?goal remaining ?remaining
+```
+
 ## Derived combat transition
 
 Authorizes scalar laws, binds their result in a handler, and publishes one atomic multi-state combat change.

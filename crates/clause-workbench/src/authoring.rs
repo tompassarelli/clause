@@ -106,6 +106,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         )),
     },
     AuthoringExampleV1 {
+        slug: "created-timed-contributions",
+        title: "Finite created relations and per-occurrence contributions",
+        summary: "Joins actual runtime-created Goal rows, updates each matching timer, and accumulates each distinct occurrence against one pre-step account balance. Equal-valued creations remain distinct; exact withdrawal removes only its own row. Finite resource exhaustion is an error, never absence. See docs/created-collections.md for bounds and remaining limits.",
+        source: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../test-vectors/authoring/created-timed-contributions.clause")),
+    },
+    AuthoringExampleV1 {
         slug: "derived-combat-transition",
         title: "Derived combat transition",
         summary: "Authorizes scalar laws, binds their result in a handler, and publishes one atomic multi-state combat change.",

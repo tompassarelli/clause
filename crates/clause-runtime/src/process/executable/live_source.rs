@@ -58,6 +58,7 @@ impl ExecutablePhysicalPlanV1 {
         artifact: clause_package::CanonicalSourceArtifactIdV1,
         root: ProgramChangeOccurrenceId,
     ) -> Result<(), ExecutableErrorV1> {
+        self.project_source_rows(scope, package)?;
         let projection = self
             .program
             .projection

@@ -11,6 +11,9 @@ const MAX_INTERVENTION_EVALUATIONS: u32 = 4096;
 pub enum ExecutableReadV1 {
     State(u16, ExecutableValueV1),
     Argument(u16, ExecutableValueV1),
+    Binding(u16, ExecutableValueV1),
+    RelationRow(u16, ExecutableReferentV1, ExecutableValueV1),
+    RelationSearch(u16, Option<ExecutableReferentV1>, usize),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -24,12 +27,14 @@ pub struct ExecutableEvaluatedExpressionV1 {
 pub struct ExecutableEffectEvaluationV1 {
     pub slot: u16,
     pub additive: bool,
+    pub subject: Option<ExecutableReferentV1>,
     pub evaluated: Option<ExecutableEvaluatedExpressionV1>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExecutableRuleEvaluationV1 {
     pub rule: u16,
+    pub bindings: BTreeMap<u16, ExecutableValueV1>,
     pub required_present: Vec<(u16, bool)>,
     pub required_absent: Vec<(u16, bool)>,
     /// Evaluated prefix only. Short-circuited predicates are never claimed read.
@@ -54,15 +59,17 @@ impl ExecutableEvaluationTraceV1 {
     }
     pub(super) fn effect(
         &mut self,
-        rule: u16,
+        rule: usize,
         slot: u16,
         additive: bool,
+        subject: Option<ExecutableReferentV1>,
         evaluated: Option<ExecutableEvaluatedExpressionV1>,
     ) {
-        if let Some(rule) = self.rules.iter_mut().find(|value| value.rule == rule) {
+        if let Some(rule) = self.rules.get_mut(rule) {
             rule.effects.push(ExecutableEffectEvaluationV1 {
                 slot,
                 additive,
+                subject,
                 evaluated,
             });
         }
@@ -300,6 +307,36 @@ impl ExecutableProcessRuntimeV1 {
                 .iter()
                 .enumerate()
                 .map(|(index, read)| {
+                    if let ExecutableReadV1::RelationSearch(slot, subject, visits) = read {
+                        used.insert(*slot);
+                        let mut fields = vec![
+                            (
+                                b"kind".to_vec(),
+                                diagnostic_text(scope, "complete-relation-search")?,
+                            ),
+                            (
+                                b"coordinate".to_vec(),
+                                diagnostic_number(scope, *slot as f64)?,
+                            ),
+                            (
+                                b"visited".to_vec(),
+                                diagnostic_number(scope, *visits as f64)?,
+                            ),
+                        ];
+                        if let Some(subject) = subject {
+                            fields.push((
+                                b"subject".to_vec(),
+                                projected_value_term(
+                                    scope,
+                                    ExecutableValueV1::Referent(subject.clone()),
+                                )?,
+                            ));
+                        }
+                        return Ok((
+                            index.to_string().into_bytes(),
+                            projection_object(scope, fields)?,
+                        ));
+                    }
                     let (kind, coordinate, value) = match read {
                         ExecutableReadV1::State(slot, value) => {
                             used.insert(*slot);
@@ -308,23 +345,36 @@ impl ExecutableProcessRuntimeV1 {
                         ExecutableReadV1::Argument(argument, value) => {
                             ("argument", *argument, value)
                         }
+                        ExecutableReadV1::Binding(binding, value) => ("binding", *binding, value),
+                        ExecutableReadV1::RelationRow(slot, _, value) => {
+                            used.insert(*slot);
+                            ("relation-row", *slot, value)
+                        }
+                        ExecutableReadV1::RelationSearch(..) => unreachable!(),
                     };
+                    let mut fields = vec![
+                        (b"kind".to_vec(), diagnostic_text(scope, kind)?),
+                        (
+                            b"coordinate".to_vec(),
+                            diagnostic_number(scope, coordinate as f64)?,
+                        ),
+                        (
+                            b"value".to_vec(),
+                            projected_value_term(scope, value.clone())?,
+                        ),
+                    ];
+                    if let ExecutableReadV1::RelationRow(_, subject, _) = read {
+                        fields.push((
+                            b"subject".to_vec(),
+                            projected_value_term(
+                                scope,
+                                ExecutableValueV1::Referent(subject.clone()),
+                            )?,
+                        ));
+                    }
                     Ok((
                         index.to_string().into_bytes(),
-                        projection_object(
-                            scope,
-                            vec![
-                                (b"kind".to_vec(), diagnostic_text(scope, kind)?),
-                                (
-                                    b"coordinate".to_vec(),
-                                    diagnostic_number(scope, coordinate as f64)?,
-                                ),
-                                (
-                                    b"value".to_vec(),
-                                    projected_value_term(scope, value.clone())?,
-                                ),
-                            ],
-                        )?,
+                        projection_object(scope, fields)?,
                     ))
                 })
                 .collect::<Result<_, ExecutableErrorV1>>()?;
@@ -347,8 +397,24 @@ impl ExecutableProcessRuntimeV1 {
             .trace
             .rules
             .iter()
-            .map(|rule| {
+            .enumerate()
+            .map(|(index, rule)| {
                 let mut rule_fields = vec![(b"selected".to_vec(), boolean(rule.selected)?)];
+                rule_fields.push((
+                    b"bindings".to_vec(),
+                    projection_object(
+                        scope,
+                        rule.bindings
+                            .iter()
+                            .map(|(binding, value)| {
+                                Ok((
+                                    binding.to_string().into_bytes(),
+                                    projected_value_term(scope, value.clone())?,
+                                ))
+                            })
+                            .collect::<Result<_, ExecutableErrorV1>>()?,
+                    )?,
+                ));
                 if let Some(origin) = metadata
                     .and_then(|metadata| diagnostic_field(metadata, b"rules"))
                     .and_then(|rules| diagnostic_index_field(rules, rule.rule))
@@ -388,6 +454,15 @@ impl ExecutableProcessRuntimeV1 {
                             ),
                             (b"additive".to_vec(), boolean(effect.additive)?),
                         ];
+                        if let Some(subject) = &effect.subject {
+                            effect_fields.push((
+                                b"subject".to_vec(),
+                                projected_value_term(
+                                    scope,
+                                    ExecutableValueV1::Referent(subject.clone()),
+                                )?,
+                            ));
+                        }
                         if let Some(evaluated) = &effect.evaluated {
                             effect_fields.push((
                                 b"evaluated".to_vec(),
@@ -420,7 +495,7 @@ impl ExecutableProcessRuntimeV1 {
                     ));
                 }
                 Ok((
-                    rule.rule.to_string().into_bytes(),
+                    index.to_string().into_bytes(),
                     projection_object(scope, rule_fields)?,
                 ))
             })
@@ -549,6 +624,8 @@ impl ExecutableProcessRuntimeV1 {
             allocation_root: self.allocation.root,
             step_ordinal: recorded.step_ordinal,
             reads: None,
+            bindings: None,
+            relational_occurrence: None,
         };
         // Streaming combinations: no powerset is materialized and the bound
         // counts actual evaluator runs, including the empty intervention.

@@ -32,6 +32,9 @@ mod live_source;
 pub use live_source::*;
 mod explanation;
 pub use explanation::*;
+mod relational;
+pub use relational::ExecutableRelationEffectV1;
+mod relational_projection;
 
 static ALLOCATED_RUNTIME_ROOTS_V1: OnceLock<Mutex<BTreeSet<[u8; IDENTITY_BYTES]>>> =
     OnceLock::new();
@@ -785,6 +788,16 @@ pub enum ExecutableExpressionV1 {
     Constant(ExecutableValueV1),
     Slot(u16),
     Argument(u16),
+    Binding(u16),
+    ReferentFacet {
+        value: Box<Self>,
+        domain: u32,
+        members: Vec<u32>,
+    },
+    /// Predicate-root finite row matching, never a Boolean value expression.
+    RelationMatch(u16, Box<Self>, Box<Self>),
+    /// Assignment-root simultaneous row effects.
+    RelationEffects(Vec<ExecutableRelationEffectV1>),
     /// Assignment-root additive effect, never an evaluable subexpression.
     Accumulate(Box<Self>),
     FreshReferent {
@@ -1038,6 +1051,39 @@ fn lower_canonical_expression(
         CanonicalExecutableExpressionV1::Argument(argument) => {
             ExecutableExpressionV1::Argument(*argument)
         }
+        CanonicalExecutableExpressionV1::Binding(binding) => {
+            ExecutableExpressionV1::Binding(*binding)
+        }
+        CanonicalExecutableExpressionV1::ReferentFacet {
+            value,
+            domain,
+            members,
+        } => ExecutableExpressionV1::ReferentFacet {
+            value: Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+            domain: domain.get(),
+            members: members.iter().map(|value| value.get()).collect(),
+        },
+        CanonicalExecutableExpressionV1::RelationEffects(effects) => {
+            ExecutableExpressionV1::RelationEffects(
+                effects
+                    .iter()
+                    .map(|effect| {
+                        use ExecutableRelationEffectV1 as R;
+                        use clause_package::CanonicalRelationEffectV1 as C;
+                        let (subject, value, constructor) = match effect {
+                            C::Put(s, v) => (s, v, R::Put as fn(_, _) -> _),
+                            C::Insert(s, v) => (s, v, R::Insert as fn(_, _) -> _),
+                            C::Remove(s, v) => (s, v, R::Remove as fn(_, _) -> _),
+                            C::Accumulate(s, v) => (s, v, R::Accumulate as fn(_, _) -> _),
+                        };
+                        Ok(constructor(
+                            lower_canonical_expression(subject, slots, depth + 1)?,
+                            lower_canonical_expression(value, slots, depth + 1)?,
+                        ))
+                    })
+                    .collect::<Result<_, ExecutableErrorV1>>()?,
+            )
+        }
         CanonicalExecutableExpressionV1::Accumulate(value) => ExecutableExpressionV1::Accumulate(
             Box::new(lower_canonical_expression(value, slots, depth + 1)?),
         ),
@@ -1142,6 +1188,16 @@ fn lower_canonical_predicate(
         ))
     };
     Ok(match predicate {
+        CanonicalExecutablePredicateV1::RelationMatch(state, subject, value) => {
+            let (subject, value) = pair(subject, value)?;
+            ExecutableExpressionV1::RelationMatch(
+                *slots
+                    .get(state)
+                    .ok_or(ExecutableErrorV1::CanonicalLoweringUnknownState)?,
+                subject,
+                value,
+            )
+        }
         CanonicalExecutablePredicateV1::Equal(left, right) => {
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::Equal(left, right)
@@ -2166,8 +2222,11 @@ pub fn encode_executable_physical_plan_v1(
     encode_input_plan(&mut bytes, plan.input.as_ref())?;
     encode_program_body(&mut bytes, &plan.program)?;
     if let Some(metadata) = &plan.source_metadata {
-        let metadata = canonical_term_bytes(metadata).map_err(|_| ExecutableErrorV1::MalformedProgram)?;
-        if metadata.len() > 1024 * 1024 { return Err(ExecutableErrorV1::ResourceLimit); }
+        let metadata =
+            canonical_term_bytes(metadata).map_err(|_| ExecutableErrorV1::MalformedProgram)?;
+        if metadata.len() > 1024 * 1024 {
+            return Err(ExecutableErrorV1::ResourceLimit);
+        }
         bytes.extend_from_slice(b"CSM1");
         bytes.extend_from_slice(&(metadata.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&metadata);
@@ -2198,11 +2257,20 @@ pub fn decode_executable_physical_plan_v1(
     };
     let input = decode_input_plan(&mut decoder)?;
     let program = decode_program_body(&mut decoder)?;
-    let source_metadata = if decoder.is_complete() { None } else {
-        if decoder.take(4)? != b"CSM1" { return Err(ExecutableErrorV1::MalformedPhysicalPlan); }
+    let source_metadata = if decoder.is_complete() {
+        None
+    } else {
+        if decoder.take(4)? != b"CSM1" {
+            return Err(ExecutableErrorV1::MalformedPhysicalPlan);
+        }
         let length = decoder.u32()? as usize;
-        if length > 1024 * 1024 { return Err(ExecutableErrorV1::ResourceLimit); }
-        Some(decode_canonical_term_bytes(decoder.take(length)?).map_err(|_| ExecutableErrorV1::MalformedPhysicalPlan)?)
+        if length > 1024 * 1024 {
+            return Err(ExecutableErrorV1::ResourceLimit);
+        }
+        Some(
+            decode_canonical_term_bytes(decoder.take(length)?)
+                .map_err(|_| ExecutableErrorV1::MalformedPhysicalPlan)?,
+        )
     };
     if !decoder.is_complete() {
         return Err(ExecutableErrorV1::MalformedPhysicalPlan);
@@ -4275,7 +4343,13 @@ impl ExecutableProcessRuntimeV1 {
         );
         let mut trace = ExecutableEvaluationTraceV1::default();
         let (next_configuration, mut bridge_step) = self
-            .prepare_step_traced(occurrence, step_ordinal, configuration_ordinal, &self.configuration, Some(&mut trace))
+            .prepare_step_traced(
+                occurrence,
+                step_ordinal,
+                configuration_ordinal,
+                &self.configuration,
+                Some(&mut trace),
+            )
             .map_err(ExecutableCarrierErrorV1::Executable)?;
         bridge_step.input_observation = Some(occurrence_id);
         let execution = self
@@ -4531,7 +4605,13 @@ impl ExecutableProcessRuntimeV1 {
             .apply_ingress(&ingress)
             .map_err(ExecutableCarrierErrorV1::Ingress)?;
 
-        self.retain_executed_event(&bridge_step, step_ordinal, configuration_ordinal, &next_configuration, trace);
+        self.retain_executed_event(
+            &bridge_step,
+            step_ordinal,
+            configuration_ordinal,
+            &next_configuration,
+            trace,
+        );
         self.configuration = next_configuration;
         self.configuration_id = bridge_step.after;
         self.last_step = Some(bridge_step);
@@ -4584,7 +4664,13 @@ impl ExecutableProcessRuntimeV1 {
         let (configuration_ordinal, next_configuration_ordinal) =
             stage_runtime_ordinal(self.identity_ordinals.next_configuration)?;
         let mut trace = ExecutableEvaluationTraceV1::default();
-        let (next, step) = self.prepare_step_traced(occurrence, step_ordinal, configuration_ordinal, &self.configuration, Some(&mut trace))?;
+        let (next, step) = self.prepare_step_traced(
+            occurrence,
+            step_ordinal,
+            configuration_ordinal,
+            &self.configuration,
+            Some(&mut trace),
+        )?;
         self.retain_executed_event(&step, step_ordinal, configuration_ordinal, &next, trace);
         self.configuration_id = step.after;
         self.configuration = next;
@@ -4600,7 +4686,13 @@ impl ExecutableProcessRuntimeV1 {
         step_ordinal: u64,
         configuration_ordinal: u64,
     ) -> Result<(Vec<ExecutableSlotV1>, ExecutableStepV1), ExecutableErrorV1> {
-        self.prepare_step_traced(occurrence, step_ordinal, configuration_ordinal, &self.configuration, None)
+        self.prepare_step_traced(
+            occurrence,
+            step_ordinal,
+            configuration_ordinal,
+            &self.configuration,
+            None,
+        )
     }
 
     fn prepare_step_traced(
@@ -4615,83 +4707,140 @@ impl ExecutableProcessRuntimeV1 {
             allocation_root: self.allocation.root,
             step_ordinal,
             reads: None,
+            bindings: None,
+            relational_occurrence: None,
         };
         let mut selected = Vec::new();
-        let mut selected_targets = BTreeMap::new();
-        for rule in self
+        let mut selected_targets = BTreeMap::<u16, u8>::new();
+        let mut join_visits = 0;
+        let mut selected_matches = 0_usize;
+        for (rule_index, rule) in self
             .program
             .rules
             .iter()
             .enumerate()
             .filter(|(_, rule)| rule.entry == occurrence.entry)
         {
-            let (rule_index, rule) = rule;
-            let structural_match = rule.required_present.iter().all(|slot| {
-                configuration
-                    .get(usize::from(*slot))
-                    .is_some_and(|slot| slot.value().is_some())
-            }) && rule.required_absent.iter().all(|slot| {
-                configuration
-                    .get(usize::from(*slot))
-                    .is_some_and(|slot| slot.value().is_none())
-            });
-            let mut rule_trace = ExecutableRuleEvaluationV1 { rule: rule_index as u16,
-                required_present: rule.required_present.iter().map(|slot| (*slot, configuration[usize::from(*slot)].value().is_some())).collect(),
-                required_absent: rule.required_absent.iter().map(|slot| (*slot, configuration[usize::from(*slot)].value().is_none())).collect(),
-                predicates: Vec::new(), selected: false, effects: Vec::new() };
-            if !structural_match {
-                if let Some(trace) = &mut trace { trace.push(rule_trace); }
-                continue;
-            }
-            let matches = rule
-                .predicates
+            let structural_match = rule
+                .required_present
                 .iter()
-                .try_fold(true, |matches, predicate| {
-                    if !matches {
-                        return Ok(false);
-                    }
-                    let evaluated = evaluate_explained(
-                        predicate,
-                        configuration,
-                        &occurrence.arguments,
-                        evaluation,
-                    )?;
-                    let value = evaluated.value.clone();
-                    rule_trace.predicates.push(evaluated);
-                    Ok::<_, ExecutableErrorV1>(
-                        matches && value.as_boolean().ok_or(ExecutableErrorV1::TypeMismatch)?,
-                    )
-                })?;
-            if matches {
-                rule_trace.selected = true;
-                // All matching occurrences observe pre-state. Overlapping
-                // effects require an explicit additive contribution contract;
-                // ordinary replacement/removal is an atomic conflict.
-                for (slot, additive) in rule
+                .all(|slot| configuration[usize::from(*slot)].value().is_some())
+                && rule
+                    .required_absent
+                    .iter()
+                    .all(|slot| configuration[usize::from(*slot)].value().is_none());
+            let matches = if structural_match {
+                relational::match_rule(
+                    rule,
+                    configuration,
+                    &occurrence.arguments,
+                    evaluation,
+                    &mut join_visits,
+                )?
+            } else {
+                vec![(relational::Matched::default(), false)]
+            };
+            for (matched, accepted) in matches {
+                let trace_index = trace.as_ref().map(|trace| trace.rules.len());
+                let rule_trace = ExecutableRuleEvaluationV1 {
+                    rule: rule_index as u16,
+                    bindings: matched.bindings.clone(),
+                    required_present: rule
+                        .required_present
+                        .iter()
+                        .map(|slot| (*slot, configuration[usize::from(*slot)].value().is_some()))
+                        .collect(),
+                    required_absent: rule
+                        .required_absent
+                        .iter()
+                        .map(|slot| (*slot, configuration[usize::from(*slot)].value().is_none()))
+                        .collect(),
+                    predicates: matched.predicates,
+                    selected: accepted,
+                    effects: Vec::new(),
+                };
+                if let Some(trace) = &mut trace {
+                    trace.push(rule_trace);
+                }
+                if !accepted {
+                    continue;
+                }
+                for (slot, mode) in rule
                     .assignments
                     .iter()
                     .map(|(slot, expression)| {
                         (
                             *slot,
-                            matches!(expression, ExecutableExpressionV1::Accumulate(_)),
+                            match expression {
+                                ExecutableExpressionV1::Accumulate(_) => 1,
+                                ExecutableExpressionV1::RelationEffects(_) => 2,
+                                _ => 0,
+                            },
                         )
                     })
-                    .chain(rule.removals.iter().map(|slot| (*slot, false)))
+                    .chain(rule.removals.iter().map(|slot| (*slot, 0)))
                 {
-                    if let Some(prior_additive) = selected_targets.insert(slot, additive)
-                        && (!additive || !prior_additive)
+                    if let Some(prior) = selected_targets.insert(slot, mode)
+                        && (mode == 0 || mode != prior)
                     {
                         return Err(ExecutableErrorV1::ConflictingStateEffects(slot));
                     }
                 }
-                selected.push((rule_index, rule));
+                if !matched.bindings.is_empty() {
+                    selected_matches += 1;
+                    if selected_matches > 4096 {
+                        return Err(ExecutableErrorV1::ResourceLimit);
+                    }
+                }
+                selected.push((rule_index, rule, matched.bindings, trace_index));
             }
-            if let Some(trace) = &mut trace { trace.push(rule_trace); }
         }
         let mut next = configuration.to_vec();
         let mut contributions = BTreeMap::<u16, Vec<f64>>::new();
-        for (rule_index, rule) in &selected {
+        let mut row_effects = relational::RowEffects::default();
+        for (rule_index, rule, bindings, trace_index) in &selected {
+            let identity = relational::occurrence_identity(evaluation, *rule_index, bindings)?;
+            let evaluation = EvaluationContextV1 {
+                bindings: Some(bindings),
+                relational_occurrence: (!bindings.is_empty()).then_some(&identity),
+                ..evaluation
+            };
             for (slot, expression) in &rule.assignments {
+                if let ExecutableExpressionV1::RelationEffects(effects) = expression {
+                    for effect in effects {
+                        let (mode, subject, value) = effect.parts();
+                        let subject = evaluate_explained(
+                            subject,
+                            configuration,
+                            &occurrence.arguments,
+                            evaluation,
+                        )?;
+                        let mut value = evaluate_explained(
+                            value,
+                            configuration,
+                            &occurrence.arguments,
+                            evaluation,
+                        )?;
+                        row_effects.push(
+                            *slot,
+                            mode,
+                            subject.value.clone(),
+                            value.value.clone(),
+                            configuration,
+                        )?;
+                        value.reads.extend(subject.reads);
+                        if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
+                            trace.effect(
+                                *index,
+                                *slot,
+                                mode == 3,
+                                subject.value.as_referent().cloned(),
+                                Some(value),
+                            );
+                        }
+                    }
+                    continue;
+                }
                 if let ExecutableExpressionV1::Accumulate(delta) = expression {
                     let mut evaluated = evaluate_explained(
                         delta,
@@ -4701,7 +4850,9 @@ impl ExecutableProcessRuntimeV1 {
                     )?;
                     let delta = number(evaluated.value.clone())?;
                     evaluated.expression = expression.clone();
-                    if let Some(trace) = &mut trace { trace.effect(*rule_index as u16, *slot, true, Some(evaluated)); }
+                    if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
+                        trace.effect(*index, *slot, true, None, Some(evaluated));
+                    }
                     contributions.entry(*slot).or_default().push(delta);
                     continue;
                 }
@@ -4712,14 +4863,18 @@ impl ExecutableProcessRuntimeV1 {
                     evaluation,
                 )?;
                 let value = evaluated.value.clone();
-                if let Some(trace) = &mut trace { trace.effect(*rule_index as u16, *slot, false, Some(evaluated)); }
+                if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
+                    trace.effect(*index, *slot, false, None, Some(evaluated));
+                }
                 let target = next
                     .get_mut(usize::from(*slot))
                     .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?;
                 *target = value.into();
             }
             for slot in &rule.removals {
-                if let Some(trace) = &mut trace { trace.effect(*rule_index as u16, *slot, false, None); }
+                if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
+                    trace.effect(*index, *slot, false, None, None);
+                }
                 let target = next
                     .get_mut(usize::from(*slot))
                     .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?;
@@ -4742,6 +4897,7 @@ impl ExecutableProcessRuntimeV1 {
             }
             next[usize::from(slot)] = ExecutableValueV1::number(value)?.into();
         }
+        row_effects.apply(&mut next)?;
         let before = self.configuration_id;
         let after = ConfigurationId::from_bytes(runtime_identity_bytes(
             self.allocation.root,
@@ -5783,8 +5939,20 @@ fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableError
         return Err(ExecutableErrorV1::ResourceLimit);
     }
     for rule in &program.rules {
+        relational::validate_bindings(rule)?;
         for predicate in &rule.predicates {
-            validate_value_expression(predicate, 0)?;
+            if let ExecutableExpressionV1::RelationMatch(slot, subject, value) = predicate {
+                if initial_configuration
+                    .get(usize::from(*slot))
+                    .is_none_or(|state| state.kind() != ExecutableValueKindV1::RelationTable)
+                {
+                    return Err(ExecutableErrorV1::MalformedProgram);
+                }
+                validate_value_expression(subject, 0)?;
+                validate_value_expression(value, 0)?;
+            } else {
+                validate_value_expression(predicate, 0)?;
+            }
         }
         for (slot, expression) in &rule.assignments {
             if let ExecutableExpressionV1::Accumulate(delta) = expression {
@@ -5796,6 +5964,20 @@ fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableError
                     return Err(ExecutableErrorV1::MalformedProgram);
                 }
                 validate_value_expression(delta, 0)?;
+            } else if let ExecutableExpressionV1::RelationEffects(effects) = expression {
+                if initial_configuration
+                    .get(usize::from(*slot))
+                    .is_none_or(|state| state.kind() != ExecutableValueKindV1::RelationTable)
+                    || effects.is_empty()
+                    || effects.len() > MAX_PROGRAM_ITEMS
+                {
+                    return Err(ExecutableErrorV1::MalformedProgram);
+                }
+                for effect in effects {
+                    let (_, subject, value) = effect.parts();
+                    validate_value_expression(subject, 0)?;
+                    validate_value_expression(value, 0)?;
+                }
             } else {
                 validate_value_expression(expression, 0)?;
             }
@@ -5882,9 +6064,25 @@ fn validate_value_expression(
     }
     use ExecutableExpressionV1 as E;
     let children: Vec<&E> = match expression {
-        E::Accumulate(_) => return Err(ExecutableErrorV1::MalformedProgram),
+        E::Accumulate(_) | E::RelationMatch(..) | E::RelationEffects(_) => {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
         E::Constant(_) | E::Slot(_) | E::Argument(_) | E::FreshReferent { .. } => vec![],
+        E::Binding(binding) => {
+            if *binding >= 128 {
+                return Err(ExecutableErrorV1::ResourceLimit);
+            }
+            vec![]
+        }
         E::Not(value) => vec![value],
+        E::ReferentFacet { value, members, .. } => {
+            if members.len() > MAX_PROGRAM_ITEMS
+                || members.windows(2).any(|pair| pair[0] >= pair[1])
+            {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            vec![value]
+        }
         E::RelationRead(a, b)
         | E::RelationPresent(a, b)
         | E::RelationRemoveRow(a, b)
@@ -6054,6 +6252,7 @@ fn validate_projection_template(
     bindings: &BTreeMap<LocalRoleRefV2, ExecutableValueKindV1>,
     used: &mut BTreeSet<LocalRoleRefV2>,
 ) -> Result<(), ExecutableErrorV1> {
+    relational_projection::validate_selector(term)?;
     if let Some(atom) = term.as_atom() {
         if let Some((role, kind)) = projection_role(atom)? {
             if bindings.get(&role) != Some(&kind) {
@@ -6207,6 +6406,13 @@ fn realize_projection_term(
     bindings: &BTreeMap<LocalRoleRefV2, ExecutableProjectionBindingV1>,
     configuration: &[ExecutableSlotV1],
 ) -> Result<Term, ExecutableErrorV1> {
+    if relational_projection::row_selection(template).is_some() {
+        return projected_value_term(
+            template.scope(),
+            relational_projection::selected_value(template, bindings, configuration)?
+                .ok_or(ExecutableErrorV1::MissingState)?,
+        );
+    }
     if let Some(atom) = template.as_atom() {
         let Some((role, kind)) = projection_role(atom)? else {
             return Ok(template.clone());
@@ -6263,6 +6469,9 @@ fn projection_subtree_has_present_role(
     bindings: &BTreeMap<LocalRoleRefV2, ExecutableProjectionBindingV1>,
     configuration: &[ExecutableSlotV1],
 ) -> Result<bool, ExecutableErrorV1> {
+    if relational_projection::row_selection(term).is_some() {
+        return Ok(relational_projection::selected_value(term, bindings, configuration)?.is_some());
+    }
     if let Some(atom) = term.as_atom() {
         let Some((role, _)) = projection_role(atom)? else {
             return Ok(false);
@@ -6290,6 +6499,8 @@ struct EvaluationContextV1<'a> {
     allocation_root: [u8; IDENTITY_BYTES],
     step_ordinal: u64,
     reads: Option<&'a std::cell::RefCell<Vec<ExecutableReadV1>>>,
+    bindings: Option<&'a BTreeMap<u16, ExecutableValueV1>>,
+    relational_occurrence: Option<&'a [u8; IDENTITY_BYTES]>,
 }
 
 fn evaluate(
@@ -6303,30 +6514,65 @@ fn evaluate(
         E::Constant(value) => Ok(value.clone()),
         E::Slot(slot) => {
             let value = slots
-            .get(usize::from(*slot))
-            .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?
-            .value()
-            .cloned()
-            .ok_or(ExecutableErrorV1::MissingState)?;
-            if let Some(reads) = context.reads { reads.borrow_mut().push(ExecutableReadV1::State(*slot, value.clone())); }
+                .get(usize::from(*slot))
+                .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?
+                .value()
+                .cloned()
+                .ok_or(ExecutableErrorV1::MissingState)?;
+            if let Some(reads) = context.reads {
+                reads
+                    .borrow_mut()
+                    .push(ExecutableReadV1::State(*slot, value.clone()));
+            }
             Ok(value)
         }
         E::Argument(argument) => {
             let value = arguments
-            .get(usize::from(*argument))
-            .cloned()
-            .ok_or(ExecutableErrorV1::UnknownArgument(*argument))?;
-            if let Some(reads) = context.reads { reads.borrow_mut().push(ExecutableReadV1::Argument(*argument, value.clone())); }
+                .get(usize::from(*argument))
+                .cloned()
+                .ok_or(ExecutableErrorV1::UnknownArgument(*argument))?;
+            if let Some(reads) = context.reads {
+                reads
+                    .borrow_mut()
+                    .push(ExecutableReadV1::Argument(*argument, value.clone()));
+            }
             Ok(value)
         }
-        E::Accumulate(_) => Err(ExecutableErrorV1::MalformedProgram),
+        E::Binding(binding) => {
+            let value = context
+                .bindings
+                .and_then(|bindings| bindings.get(binding))
+                .cloned()
+                .ok_or(ExecutableErrorV1::MalformedProgram)?;
+            if let Some(reads) = context.reads {
+                reads
+                    .borrow_mut()
+                    .push(ExecutableReadV1::Binding(*binding, value.clone()));
+            }
+            Ok(value)
+        }
+        E::ReferentFacet {
+            value,
+            domain,
+            members,
+        } => relational::facet_value(
+            evaluate(value, slots, arguments, context)?,
+            *domain,
+            members,
+        )
+        .ok_or(ExecutableErrorV1::TypeMismatch),
+        E::Accumulate(_) | E::RelationMatch(..) | E::RelationEffects(_) => {
+            Err(ExecutableErrorV1::MalformedProgram)
+        }
         E::FreshReferent { domain, binder } => {
             Ok(ExecutableValueV1::Referent(ExecutableReferentV1::created(
                 *domain,
                 runtime_domain_hash(
                     "clause/runtime-referent/v1",
                     &[
-                        &context.allocation_root,
+                        context
+                            .relational_occurrence
+                            .unwrap_or(&context.allocation_root),
                         &context.step_ordinal.to_be_bytes(),
                         &domain.to_be_bytes(),
                         &binder.to_be_bytes(),
@@ -6751,6 +6997,39 @@ fn encode_expression(
             bytes.push(2);
             bytes.extend_from_slice(&argument.to_le_bytes());
         }
+        E::Binding(binding) => {
+            bytes.push(25);
+            bytes.extend_from_slice(&binding.to_le_bytes());
+        }
+        E::ReferentFacet {
+            value,
+            domain,
+            members,
+        } => {
+            bytes.push(28);
+            encode_expression(bytes, value)?;
+            bytes.extend_from_slice(&domain.to_le_bytes());
+            encode_count(bytes, members.len())?;
+            for member in members {
+                bytes.extend_from_slice(&member.to_le_bytes());
+            }
+        }
+        E::RelationMatch(slot, subject, value) => {
+            bytes.push(26);
+            bytes.extend_from_slice(&slot.to_le_bytes());
+            encode_expression(bytes, subject)?;
+            encode_expression(bytes, value)?;
+        }
+        E::RelationEffects(effects) => {
+            bytes.push(27);
+            encode_count(bytes, effects.len())?;
+            for effect in effects {
+                let (mode, subject, value) = effect.parts();
+                bytes.push(mode);
+                encode_expression(bytes, subject)?;
+                encode_expression(bytes, value)?;
+            }
+        }
         E::Accumulate(value) => {
             bytes.push(24);
             encode_expression(bytes, value)?;
@@ -7077,6 +7356,45 @@ impl<'a> Decoder<'a> {
                 Box::new(self.expression(next)?),
             ),
             24 => E::Accumulate(Box::new(self.expression(next)?)),
+            25 => E::Binding(self.u16()?),
+            28 => {
+                let value = Box::new(self.expression(next)?);
+                let domain = self.u32()?;
+                let count = self.count()?;
+                let members = (0..count)
+                    .map(|_| self.u32())
+                    .collect::<Result<Vec<_>, _>>()?;
+                if members.windows(2).any(|pair| pair[0] >= pair[1]) {
+                    return Err(ExecutableErrorV1::MalformedProgram);
+                }
+                E::ReferentFacet {
+                    value,
+                    domain,
+                    members,
+                }
+            }
+            26 => E::RelationMatch(
+                self.u16()?,
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+            ),
+            27 => {
+                let count = self.count()?;
+                let mut effects = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let mode = self.byte()?;
+                    let subject = self.expression(next)?;
+                    let value = self.expression(next)?;
+                    effects.push(match mode {
+                        0 => ExecutableRelationEffectV1::Put(subject, value),
+                        1 => ExecutableRelationEffectV1::Insert(subject, value),
+                        2 => ExecutableRelationEffectV1::Remove(subject, value),
+                        3 => ExecutableRelationEffectV1::Accumulate(subject, value),
+                        _ => return Err(ExecutableErrorV1::MalformedProgram),
+                    });
+                }
+                E::RelationEffects(effects)
+            }
             _ => return Err(ExecutableErrorV1::MalformedProgram),
         })
     }
