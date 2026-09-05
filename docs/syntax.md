@@ -674,7 +674,17 @@ equal numeric values do not collapse distinct referents. `sum 1.0` counts those
 substitutions. Empty queries yield zero. Summation follows deterministic match
 order against the same pre-state as the enclosing rule. Non-finite arithmetic
 and exhausted finite matching fail explicitly, without publishing a prefix sum
-or changing state. The current slice does not admit nested or correlated sums.
+or changing state. An explicit `given` list supplies correlated query inputs:
+
+```clause
+    sum 1.0 given ?device where { ?device charge ?charge; ?charge > 0.0 } as ?count
+```
+
+Only listed values cross the lexical boundary, with their checked types. A
+query can take referents or scalars from row bindings and handler arguments;
+omitting `given` retains the closed query above. Its reads remain part of the
+enclosing rule's explanation. Nested queries are not yet admitted. See
+clause:test-vectors/authoring/query-inputs.clause for optional-row counting.
 
 The checked example is clause:test-vectors/authoring/finite-sums.clause.
 

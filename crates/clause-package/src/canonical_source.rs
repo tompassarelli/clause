@@ -344,8 +344,9 @@ pub enum CanonicalExecutableExpressionV1 {
     Argument(u16),
     /// Rule-local value bound by a finite relation match, not a host argument.
     Binding(u16),
-    /// Numeric sum over a closed finite query, with query-local bindings.
+    /// Numeric sum over a finite query with explicit inputs and local bindings.
     Sum {
+        inputs: Vec<Self>,
         predicates: Vec<CanonicalExecutablePredicateV1>,
         value: Box<Self>,
     },
@@ -1154,6 +1155,7 @@ struct GeneralSumCst {
     origin: CanonicalSourceOriginV1,
     parameter: Vec<u8>,
     value: CanonicalScalarExpressionV1,
+    inputs: Vec<Vec<u8>>,
     parameter_sources: Vec<ScalarParameterSourceCst>,
     selectors: Vec<ScalarStateSelectorCst>,
     predicates: Vec<CanonicalScalarPredicateV1>,
@@ -8867,6 +8869,17 @@ fn parse_general_sum(
     if !parameter.starts_with('?') || parameter.contains(char::is_whitespace) {
         return Err(error());
     }
+    let (value, inputs) = if let Some((value, inputs)) = value.split_once(" given ") {
+        let inputs = inputs.split_whitespace().map(|name| name.as_bytes().to_vec()).collect::<Vec<_>>();
+        if inputs.is_empty() || inputs.iter().any(|name| !name.starts_with(b"?"))
+            || inputs.iter().collect::<BTreeSet<_>>().len() != inputs.len()
+        {
+            return Err(error());
+        }
+        (value, inputs)
+    } else {
+        (value, vec![])
+    };
     let value = parse_scalar_expression(value, "").ok_or_else(error)?;
     let mut parameter_sources = Vec::new();
     let mut selectors = Vec::new();
@@ -8887,6 +8900,7 @@ fn parse_general_sum(
     let bound = parameter_sources.iter()
         .flat_map(|source| [&source.parameter, &source.subject])
         .chain(selectors.iter().map(|selector| &selector.source.subject))
+        .chain(&inputs)
         .filter(|name| name.starts_with(b"?"))
         .cloned().collect::<BTreeSet<_>>();
     let mut used = BTreeSet::new();
@@ -8897,7 +8911,7 @@ fn parse_general_sum(
     if !used.is_subset(&bound) {
         return Err(error());
     }
-    Ok(GeneralSumCst { origin, parameter: parameter.as_bytes().to_vec(), value,
+    Ok(GeneralSumCst { origin, parameter: parameter.as_bytes().to_vec(), value, inputs,
         parameter_sources, selectors, predicates })
 }
 

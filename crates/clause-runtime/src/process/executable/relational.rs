@@ -12,21 +12,24 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
         bound: &mut BTreeSet<u16>,
         pattern: bool,
         depth: usize,
-        closed: bool,
+        query_inputs: Option<usize>,
     ) -> Result<(), ExecutableErrorV1> {
         if depth > MAX_EXPRESSION_DEPTH {
             return Err(ExecutableErrorV1::ResourceLimit);
         }
         match value {
-            E::Sum { predicates, value } => {
-                if closed || pattern {
+            E::Sum { inputs, predicates, value } => {
+                if query_inputs.is_some() || pattern {
                     return Err(ExecutableErrorV1::MalformedProgram);
+                }
+                for input in inputs {
+                    check(input, bound, false, depth + 1, None)?;
                 }
                 let mut local = BTreeSet::new();
                 for predicate in predicates {
-                    check(predicate, &mut local, false, depth + 1, true)?;
+                    check(predicate, &mut local, false, depth + 1, Some(inputs.len()))?;
                 }
-                check(value, &mut local, false, depth + 1, true)?;
+                check(value, &mut local, false, depth + 1, Some(inputs.len()))?;
             }
             E::Binding(binding) => {
                 if usize::from(*binding) >= MAX_BINDINGS {
@@ -38,19 +41,19 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
                     return Err(ExecutableErrorV1::MalformedProgram);
                 }
             }
-            E::ReferentFacet { value, .. } => check(value, bound, pattern, depth + 1, closed)?,
+            E::ReferentFacet { value, .. } => check(value, bound, pattern, depth + 1, query_inputs)?,
             E::RelationMatch(_, a, b) => {
-                check(a, bound, true, depth + 1, closed)?;
-                check(b, bound, true, depth + 1, closed)?;
+                check(a, bound, true, depth + 1, query_inputs)?;
+                check(b, bound, true, depth + 1, query_inputs)?;
             }
             E::RelationEffects(effects) => {
                 for effect in effects {
                     let (_, a, b) = effect.parts();
-                    check(a, bound, false, depth + 1, closed)?;
-                    check(b, bound, false, depth + 1, closed)?;
+                    check(a, bound, false, depth + 1, query_inputs)?;
+                    check(b, bound, false, depth + 1, query_inputs)?;
                 }
             }
-            E::Not(a) | E::Accumulate(a) | E::SquareRoot(a) => check(a, bound, false, depth + 1, closed)?,
+            E::Not(a) | E::Accumulate(a) | E::SquareRoot(a) => check(a, bound, false, depth + 1, query_inputs)?,
             E::RelationRead(a, b)
             | E::RelationPresent(a, b)
             | E::RelationRemoveRow(a, b)
@@ -66,18 +69,21 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
             | E::SetInsert(a, b)
             | E::SetContains(a, b)
             | E::SetRemove(a, b) => {
-                check(a, bound, false, depth + 1, closed)?;
-                check(b, bound, false, depth + 1, closed)?;
+                check(a, bound, false, depth + 1, query_inputs)?;
+                check(b, bound, false, depth + 1, query_inputs)?;
             }
             E::RelationPut(a, b, c)
             | E::RelationInsert(a, b, c)
             | E::RelationRemoveValue(a, b, c)
             | E::Clamp(a, b, c) => {
-                check(a, bound, false, depth + 1, closed)?;
-                check(b, bound, false, depth + 1, closed)?;
-                check(c, bound, false, depth + 1, closed)?;
+                check(a, bound, false, depth + 1, query_inputs)?;
+                check(b, bound, false, depth + 1, query_inputs)?;
+                check(c, bound, false, depth + 1, query_inputs)?;
             }
-            E::Argument(_) | E::FreshReferent { .. } if closed => {
+            E::Argument(ordinal) if query_inputs.is_some_and(|count| usize::from(*ordinal) >= count) => {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            E::FreshReferent { .. } if query_inputs.is_some() => {
                 return Err(ExecutableErrorV1::MalformedProgram);
             }
             E::Constant(_) | E::Slot(_) | E::Argument(_) | E::FreshReferent { .. } => {}
@@ -86,10 +92,10 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
     }
     let mut bound = BTreeSet::new();
     for predicate in &rule.predicates {
-        check(predicate, &mut bound, false, 0, false)?;
+        check(predicate, &mut bound, false, 0, None)?;
     }
     for (_, value) in &rule.assignments {
-        check(value, &mut bound, false, 0, false)?;
+        check(value, &mut bound, false, 0, None)?;
     }
     Ok(())
 }
@@ -120,11 +126,15 @@ pub(super) struct Matched {
 }
 
 pub(super) fn sum(
+    inputs: &[ExecutableExpressionV1],
     predicates: &[ExecutableExpressionV1],
     value: &ExecutableExpressionV1,
     configuration: &[ExecutableSlotV1],
+    arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    let inputs = inputs.iter().map(|input| evaluate(input, configuration, arguments, context))
+        .collect::<Result<Vec<_>, _>>()?;
     let query = ExecutableRuleV1 {
         entry: 0,
         predicates: predicates.to_vec(),
@@ -133,7 +143,7 @@ pub(super) fn sum(
     };
     let mut visits = 0;
     let mut total = 0.0;
-    for (matched, accepted) in match_rule(&query, configuration, &[],
+    for (matched, accepted) in match_rule(&query, configuration, &inputs,
         EvaluationContextV1 { bindings: None, ..context }, &mut visits)? {
         if let Some(reads) = context.reads {
             for predicate in &matched.predicates {
@@ -141,7 +151,7 @@ pub(super) fn sum(
             }
         }
         if accepted {
-            let contribution = evaluate(value, configuration, &[],
+            let contribution = evaluate(value, configuration, &inputs,
                 EvaluationContextV1 { bindings: Some(&matched.bindings), ..context })?;
             total += contribution.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
             if !total.is_finite() {

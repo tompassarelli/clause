@@ -1,0 +1,45 @@
+F64
+Bool
+Device
+
+relation charge
+  reads {device: Device} charge {value: F64}
+  subject device
+  mode given device yields value: maybe
+relation available
+  reads {device: Device} available {value: Bool}
+  subject device
+  mode given device yields value: one
+
+first
+  shape: Device
+second
+  shape: Device
+first charge 2.0
+first available false
+second available false
+
+on inspect ?device
+  when
+    ?device available ?prior
+    sum 1.0 given ?device where { ?device charge ?charge; ?charge > 0.0 } as ?count
+  withdraw
+    ?device available ?prior
+  include
+    ?device available (?count > 0.0)
+
+on deplete ?device
+  when
+    ?device charge ?charge
+  withdraw
+    ?device charge ?charge
+
+on spawn ?device
+  when
+    ?device charge ?charge
+  create
+    ?new
+      shape: Device
+  include
+    ?new charge ?charge
+    ?new available false

@@ -10,6 +10,60 @@ Use that pin's workbench directly:
 
 Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.
 
+## Explicit finite-query inputs
+
+A query's given list passes exact typed values from the enclosing rule. All other query variables remain local. Count matching optional rows to distinguish presence from absence, including runtime-created referents and withdrawal; exhaustion still fails explicitly.
+
+Catalog ID: `query-inputs`
+
+```clause
+F64
+Bool
+Device
+
+relation charge
+  reads {device: Device} charge {value: F64}
+  subject device
+  mode given device yields value: maybe
+relation available
+  reads {device: Device} available {value: Bool}
+  subject device
+  mode given device yields value: one
+
+first
+  shape: Device
+second
+  shape: Device
+first charge 2.0
+first available false
+second available false
+
+on inspect ?device
+  when
+    ?device available ?prior
+    sum 1.0 given ?device where { ?device charge ?charge; ?charge > 0.0 } as ?count
+  withdraw
+    ?device available ?prior
+  include
+    ?device available (?count > 0.0)
+
+on deplete ?device
+  when
+    ?device charge ?charge
+  withdraw
+    ?device charge ?charge
+
+on spawn ?device
+  when
+    ?device charge ?charge
+  create
+    ?new
+      shape: Device
+  include
+    ?new charge ?charge
+    ?new available false
+```
+
 ## Checked scalar equality
 
 Equality expressions compare matching Boolean, numeric or Text values and produce Bool. Toggle uses the current admitted pre-state, including runtime-created rows; mixed scalar types are rejected.

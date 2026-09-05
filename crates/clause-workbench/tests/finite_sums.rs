@@ -75,3 +75,57 @@ fn exhausted_sum_returns_no_prefix_and_does_not_change_the_world() {
     assert_eq!(result(&frame, b"count"), 18.0);
     assert_eq!(result(&frame, b"total"), 32.0);
 }
+
+const INPUT_SOURCE: &str = include_str!("../../../test-vectors/authoring/query-inputs.clause");
+
+fn availability(frame: &Term) -> Vec<bool> {
+    let table = projected_relation_table_v1(field(field(frame, b"relations"), b"available"))
+        .unwrap().unwrap();
+    table.rows().values().flatten().map(|value| *value == V::Boolean(true)).collect()
+}
+
+#[test]
+fn explicit_query_inputs_distinguish_absence_and_created_referents() {
+    let mut w = ResidentSourceWorkbenchV1::open(INPUT_SOURCE.as_bytes()).unwrap();
+    let first = availability(&run(&mut w, b"inspect", &[]));
+    assert_eq!(first.iter().filter(|value| **value).count(), 1);
+    assert_eq!(first.len(), 2);
+    run(&mut w, b"spawn", &[]);
+    let created = availability(&run(&mut w, b"inspect", &[]));
+    assert_eq!(created.len(), 3);
+    assert_eq!(created.iter().filter(|value| **value).count(), 2);
+    run(&mut w, b"deplete", &[]);
+    assert!(availability(&run(&mut w, b"inspect", &[])).iter().all(|value| !value));
+
+    let closed = INPUT_SOURCE.replace(" given ?device", "");
+    let mut w = ResidentSourceWorkbenchV1::open(closed.as_bytes()).unwrap();
+    assert!(availability(&run(&mut w, b"inspect", &[])).iter().all(|value| *value));
+}
+
+#[test]
+fn query_inputs_carry_outer_scalars_and_handler_arguments() {
+    let source = std::str::from_utf8(SOURCE).unwrap()
+        .replace("sum ?value where", "sum ?value + ?prior-total given ?prior-total where");
+    let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), -2.0);
+    assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), -4.0);
+
+    let source = INPUT_SOURCE.replace("on inspect ?device", "on inspect ?device ?threshold")
+        .replace("given ?device where", "given ?device ?threshold where")
+        .replace("?charge > 0.0", "?charge > ?threshold");
+    let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    assert_eq!(availability(&run(&mut w, b"inspect", &[V::number(1.0).unwrap()])).iter().filter(|value| **value).count(), 1);
+    assert!(availability(&run(&mut w, b"inspect", &[V::number(3.0).unwrap()])).iter().all(|value| !value));
+}
+
+#[test]
+fn query_inputs_reject_unknown_duplicate_and_mistyped_values() {
+    for source in [
+        INPUT_SOURCE.replace("given ?device", "given ?device ?unknown"),
+        INPUT_SOURCE.replace("given ?device", "given ?device ?device"),
+        INPUT_SOURCE.replace("given ?device where { ?device charge", "given ?prior where { ?prior charge"),
+        INPUT_SOURCE.replace("?charge > 0.0", "?charge > ?prior"),
+    ] {
+        assert!(ResidentSourceWorkbenchV1::open(source.as_bytes()).is_err());
+    }
+}

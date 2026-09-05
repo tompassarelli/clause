@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "query-inputs",
+        title: "Explicit finite-query inputs",
+        summary: "A query's given list passes exact typed values from the enclosing rule. All other query variables remain local. Count matching optional rows to distinguish presence from absence, including runtime-created referents and withdrawal; exhaustion still fails explicitly.",
+        source: include_str!("../../../test-vectors/authoring/query-inputs.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "scalar-equality",
         title: "Checked scalar equality",
         summary: "Equality expressions compare matching Boolean, numeric or Text values and produce Bool. Toggle uses the current admitted pre-state, including runtime-created rows; mixed scalar types are rejected.",
