@@ -287,6 +287,7 @@ impl ResidentSourceWorkbenchV1 {
         selected: &clause_package::CanonicalScalarEffectV1,
         replacement: &[u8],
     ) -> Result<ResidentSourceGenerationV1, ResidentSourceWorkbenchErrorV1> {
+        let _profile = clause_runtime::source_profile_scope_v1(clause_runtime::SourceProfilePhaseV1::NativeEdit);
         if captured_handle != self.generation.handle || !self.scalar_effects()?.contains(selected) {
             return Err(ResidentSourceWorkbenchErrorV1("stale structured source operation".into()));
         }

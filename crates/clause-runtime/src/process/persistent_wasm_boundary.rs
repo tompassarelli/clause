@@ -431,6 +431,7 @@ impl WasmPersistentSessionBoundaryV1 {
         open: &[u8],
         witness: &[u8],
     ) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+        let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::Transfer);
         if handle.slot != SLOT || self.generation != Some(handle.generation) {
             return Err(WasmProcessStatusV1::StaleSessionHandle);
         }
@@ -449,6 +450,7 @@ impl WasmPersistentSessionBoundaryV1 {
     }
 
     fn open_inner(&mut self, bytes: &[u8], continuity: Option<&super::CheckedExecutableSourceEditV1>) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+        let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::Instantiate);
         let request = decode_wasm_session_open_v1(bytes)?;
         validate_limits(request.limits)?;
         if self.exhausted {

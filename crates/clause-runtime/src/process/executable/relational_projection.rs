@@ -34,6 +34,7 @@ impl ExecutablePhysicalPlanV1 {
         scope: TermScope,
         package: &clause_package::CanonicalSourcePackageSliceV1,
     ) -> Result<(), ExecutableErrorV1> {
+        let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RowProjection);
         if package.relational_projection.is_empty() {
             return Ok(());
         }

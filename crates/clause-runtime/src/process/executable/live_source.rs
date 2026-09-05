@@ -58,6 +58,7 @@ impl ExecutablePhysicalPlanV1 {
         artifact: clause_package::CanonicalSourceArtifactIdV1,
         root: ProgramChangeOccurrenceId,
     ) -> Result<(), ExecutableErrorV1> {
+        let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SnapshotMetadata);
         self.project_source_rows(scope, package)?;
         let projection = self
             .program
@@ -404,11 +405,17 @@ pub fn check_executable_source_edit_v1(
     witness: &ExecutableSourceEditV1,
     scope: TermScope,
 ) -> Result<CheckedExecutableSourceEditV1, ExecutableErrorV1> {
+    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::WitnessCheck);
     let rejected = |_| ExecutableErrorV1::MalformedProgram;
+    let phase = source_profile_scope_v1(SourceProfilePhaseV1::SourceRead);
     let old_cst = read_canonical_source_v1(&witness.old_source).map_err(rejected)?;
+    drop(phase);
+    let phase = source_profile_scope_v1(SourceProfilePhaseV1::Allocation);
     let old_allocations =
         plan_independent_canonical_source_allocations_v1(&old_cst, witness.old_root)
             .map_err(rejected)?;
+    drop(phase);
+    let phase = source_profile_scope_v1(SourceProfilePhaseV1::OfferedEdit);
     let offered = canonical_scalar_effects_v1(&old_cst, &old_allocations).map_err(rejected)?;
     let selected = offered
         .iter()
@@ -425,16 +432,23 @@ pub fn check_executable_source_edit_v1(
         witness.new_root,
     )
     .map_err(rejected)?;
+    drop(phase);
     let context = CanonicalSourceContextV1 {
         universe: scope.universe,
         semantics: scope.semantics,
     };
+    let phase = source_profile_scope_v1(SourceProfilePhaseV1::OldElaboration);
     let old = elaborate_canonical_source_package_v1(&old_cst, context, &old_allocations)
         .map_err(rejected)?;
+    drop(phase);
+    let phase = source_profile_scope_v1(SourceProfilePhaseV1::NewElaboration);
     let new = elaborate_canonical_source_package_v1(edit.source(), context, edit.plan())
         .map_err(rejected)?;
+    drop(phase);
+    let phase = source_profile_scope_v1(SourceProfilePhaseV1::Cpp1Decode);
     let old_plan = decode_executable_physical_plan_v1(&witness.old_cpp1)?;
     let new_plan = decode_executable_physical_plan_v1(&witness.new_cpp1)?;
+    drop(phase);
     let roles = old_plan
         .program
         .projection
@@ -543,6 +557,7 @@ pub fn check_executable_source_edit_v1(
     expected_new.project_referent_input_domains(scope)?;
     expected_old.bind_source_snapshot(scope, &old, old_cst.artifact(), witness.old_root)?;
     expected_new.bind_source_snapshot(scope, &new, edit.source().artifact(), witness.new_root)?;
+    let _compare = source_profile_scope_v1(SourceProfilePhaseV1::CompareAndMap);
     if expected_old != old_plan {
         return Err(ExecutableErrorV1::SourceContinuityRejected(
             "old source does not realize exact bound CPP1",
@@ -740,6 +755,7 @@ impl ExecutableProcessRuntimeV1 {
         previous: &Self,
         checked: &CheckedExecutableSourceEditV1,
     ) -> Result<(), ExecutableErrorV1> {
+        let _profile = source_profile_scope_v1(SourceProfilePhaseV1::Migration);
         if previous.candidate.is_some() {
             return Err(ExecutableErrorV1::SourceContinuityRejected(
                 "settle hidden candidate before changed source edit",

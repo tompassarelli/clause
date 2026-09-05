@@ -35,6 +35,8 @@ pub use explanation::*;
 mod relational;
 pub use relational::ExecutableRelationEffectV1;
 mod relational_projection;
+mod source_profile;
+pub use source_profile::*;
 
 static ALLOCATED_RUNTIME_ROOTS_V1: OnceLock<Mutex<BTreeSet<[u8; IDENTITY_BYTES]>>> =
     OnceLock::new();
@@ -880,6 +882,7 @@ pub fn lower_canonical_executable_program_v1(
     handlers: &[CanonicalExecutableHandlerV1],
     projection_roles: &[LocalRoleRefV2],
 ) -> Result<ExecutableCanonicalProgramV1, ExecutableErrorV1> {
+    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::Lowering);
     if state_cells.len() > MAX_PROGRAM_ITEMS
         || handlers.len() > MAX_PROGRAM_ITEMS
         || projection_roles.len() < state_cells.len()
