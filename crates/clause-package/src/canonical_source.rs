@@ -5981,18 +5981,14 @@ fn validate_keyboard_handler_targets(
             .iter()
             .filter(|handler| handler.designation == binding.handler_designation)
             .collect::<Vec<_>>();
-        let [handler] = matching.as_slice() else {
-            return Err(if matching.is_empty() {
-                CanonicalSourceErrorV1::MissingKeyboardHandler {
-                    designation: binding.handler_designation.clone(),
-                }
-            } else {
-                CanonicalSourceErrorV1::AmbiguousKeyboardHandler {
-                    designation: binding.handler_designation.clone(),
-                }
+        if matching.is_empty() {
+            return Err(CanonicalSourceErrorV1::MissingKeyboardHandler {
+                designation: binding.handler_designation.clone(),
             });
-        };
-        if handler.trigger != CanonicalHandlerTriggerV1::External || handler.argument_count != 0 {
+        }
+        if matching.iter().any(|handler|
+            handler.trigger != CanonicalHandlerTriggerV1::External || handler.argument_count != 0)
+        {
             let origin = cst
                 .items
                 .iter()

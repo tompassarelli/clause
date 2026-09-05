@@ -950,8 +950,14 @@ pub fn lower_canonical_executable_program_v1(
     }
     let mut rules = Vec::new();
     let mut handler_bindings = Vec::with_capacity(ordered_handlers.len());
+    let mut event_entries = BTreeMap::new();
     for (ordinal, handler) in ordered_handlers.iter().enumerate() {
-        let entry = u16::try_from(ordinal).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
+        let mut entry = u16::try_from(ordinal).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
+        // A named zero-input event selects all its rules in one Step, while
+        // each source handler retains its own identity for edits and diagnostics.
+        if handler.trigger == CanonicalHandlerTriggerV1::External && handler.argument_count == 0 {
+            entry = *event_entries.entry(handler.designation.clone()).or_insert(entry);
+        }
         handler_bindings.push(ExecutableCanonicalHandlerBindingV1 {
             handler: handler.id,
             trigger: handler.trigger,

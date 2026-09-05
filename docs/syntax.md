@@ -660,6 +660,14 @@ constraint solver or a completed collection-function implementation.
 
 ## Laws and derivation authorization
 
+Multiple zero-input external `on` clauses with the same event name contribute
+rules to one atomic Step. All read the same pre-state; this permits an action
+and its accepted/rejected result to share one input without executing in source
+order. Incompatible overlapping effects still reject. Each authored clause
+retains its own identity for scalar edits and diagnostics. This grouping does
+not apply to tick scheduling or overload handlers with different arguments.
+The checked example is clause:test-vectors/authoring/event-branches.clause.
+
 A handler's `when` section can bind a closed finite numeric query:
 
 ```clause

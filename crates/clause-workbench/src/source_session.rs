@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
@@ -189,7 +189,8 @@ impl ResidentSourceWorkbenchV1 {
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
-        let [binding] = matching.as_slice() else {
+        let Some(binding) = matching.first().filter(|first|
+            matching.iter().all(|binding| binding.entry == first.entry && binding.argument_count == first.argument_count)) else {
             return Err(ResidentSourceWorkbenchErrorV1(format!(
                 "source handler designation is missing or ambiguous: {}",
                 String::from_utf8_lossy(designation)
@@ -346,7 +347,8 @@ impl ResidentSourceWorkbenchV1 {
     /// requiring dummy arguments for a historical event query.
     fn diagnostic_entry(&self, designation: &[u8]) -> Result<u16, ResidentSourceWorkbenchErrorV1> {
         let bindings = self.handlers.get(designation).ok_or_else(|| ResidentSourceWorkbenchErrorV1("unknown diagnostic handler".into()))?;
-        let [binding] = bindings.as_slice() else { return Err(ResidentSourceWorkbenchErrorV1("ambiguous diagnostic handler".into())); };
+        let Some(binding) = bindings.first().filter(|first| bindings.iter().all(|binding| binding.entry == first.entry))
+            else { return Err(ResidentSourceWorkbenchErrorV1("ambiguous diagnostic handler".into())); };
         Ok(binding.entry)
     }
 
@@ -972,27 +974,27 @@ fn bind_source_keyboard_events(
                 .iter()
                 .filter(|(_, handler)| handler.designation == source.handler_designation)
                 .collect::<Vec<_>>();
-            let [(handler, meaning)] = semantic_matches.as_slice() else {
+            if semantic_matches.is_empty() {
                 return Err(ResidentSourceWorkbenchErrorV1(format!(
-                    "source keyboard binding target is missing or ambiguous: {}",
+                    "source keyboard binding target is missing: {}",
                     String::from_utf8_lossy(&source.handler_designation)
                 )));
-            };
-            if meaning.trigger != CanonicalHandlerTriggerV1::External || meaning.argument_count != 0
+            }
+            if semantic_matches.iter().any(|(_, meaning)|
+                meaning.trigger != CanonicalHandlerTriggerV1::External || meaning.argument_count != 0)
             {
                 return Err(ResidentSourceWorkbenchErrorV1(format!(
                     "source keyboard binding target is not a zero-argument external handler: {}",
                     String::from_utf8_lossy(&source.handler_designation)
                 )));
             }
-            let lowered = bindings
-                .iter()
-                .find(|binding| binding.handler == **handler)
-                .ok_or_else(|| {
-                    ResidentSourceWorkbenchErrorV1(
-                        "source keyboard binding target was not lowered".into(),
-                    )
-                })?;
+            let entries = semantic_matches.iter().map(|(handler, _)|
+                bindings.iter().find(|binding| binding.handler == **handler).map(|binding| binding.entry)
+                    .ok_or_else(|| ResidentSourceWorkbenchErrorV1("source keyboard binding target was not lowered".into())))
+                .collect::<Result<BTreeSet<_>, _>>()?;
+            if entries.len() != 1 {
+                return Err(ResidentSourceWorkbenchErrorV1("source keyboard rules did not lower to one event".into()));
+            }
             Ok(ExecutableInputBindingV1 {
                 role,
                 source: ExecutableInputSourceV1::Keyboard {
@@ -1003,7 +1005,7 @@ fn bind_source_keyboard_events(
                     },
                 },
                 occurrence: ExecutableOccurrenceV1 {
-                    entry: lowered.entry,
+                    entry: *entries.first().expect("exactly one event entry"),
                     arguments: Vec::new(),
                 },
             })

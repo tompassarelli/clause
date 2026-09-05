@@ -503,8 +503,8 @@ pub fn check_executable_source_edit_v1(
         {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
-        let new_entry = u16::try_from(new_lowered.handlers.len())
-            .map_err(|_| ExecutableErrorV1::ResourceLimit)?;
+        let new_entry = new_lowered.program.rules.iter().map(|rule| rule.entry).max()
+            .and_then(|entry| entry.checked_add(1)).ok_or(ExecutableErrorV1::ResourceLimit)?;
         entries.insert(checkpoint.entry, new_entry);
         expected_old.program.rules.push(checkpoint.clone());
         let mut replacement = checkpoint.clone();

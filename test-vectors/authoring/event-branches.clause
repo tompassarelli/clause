@@ -1,0 +1,45 @@
+F64
+Bool
+Device
+
+relation charge
+  reads {device: Device} charge {value: F64}
+  subject device
+  mode given device yields value: one
+relation accepted
+  reads {device: Device} accepted {value: Bool}
+  subject device
+  mode given device yields value: one
+relation attempts
+  reads {device: Device} attempts {value: F64}
+  subject device
+  mode given device yields value: one
+
+device
+  shape: Device
+device charge 1.0
+device accepted false
+device attempts 0.0
+
+bind keyboard Use down to use
+
+on use ?device
+  when
+    ?device charge ?charge
+    ?charge > 0.0
+  withdraw
+    ?device charge ?charge
+  include
+    ?device charge ?charge - 1.0
+
+on use ?device
+  when
+    ?device charge ?charge
+    ?device accepted ?accepted
+    ?device attempts ?attempts
+  withdraw
+    ?device accepted ?accepted
+    ?device attempts ?attempts
+  include
+    ?device accepted (?charge > 0.0)
+    ?device attempts ?attempts + 1.0
