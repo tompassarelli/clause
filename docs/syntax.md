@@ -660,6 +660,24 @@ constraint solver or a completed collection-function implementation.
 
 ## Laws and derivation authorization
 
+A handler's `when` section can bind a closed finite numeric query:
+
+```clause
+    sum ?amount where { ?item enabled true; ?item amount ?amount } as ?total
+```
+
+The query uses positive relation-row patterns and scalar comparisons, separated
+by semicolons. Its variables are local: they neither capture enclosing handler
+variables nor escape through anything except the F64 result. Every distinct
+complete row substitution contributes once, including runtime-created referents;
+equal numeric values do not collapse distinct referents. `sum 1.0` counts those
+substitutions. Empty queries yield zero. Summation follows deterministic match
+order against the same pre-state as the enclosing rule. Non-finite arithmetic
+and exhausted finite matching fail explicitly, without publishing a prefix sum
+or changing state. The current slice does not admit nested or correlated sums.
+
+The checked example is clause:test-vectors/authoring/finite-sums.clause.
+
 Durable rules are named laws whose binders and premises precede dependent
 conclusions:
 

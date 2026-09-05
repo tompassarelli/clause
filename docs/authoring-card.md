@@ -10,6 +10,88 @@ Use that pin's workbench directly:
 
 Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.
 
+## Closed finite query sums
+
+Sums F64 contributions over exact finite row matches in the same pre-state. Query-local variables do not capture the enclosing handler; an empty query yields zero, distinct equal-valued referents contribute independently, and exhausted search is an error.
+
+Catalog ID: `finite-sums`
+
+```clause
+F64
+Bool
+Item
+Report
+
+relation enabled
+  reads {item: Item} enabled {value: Bool}
+  subject item
+  mode given item yields value: one
+relation amount
+  reads {item: Item} amount {value: F64}
+  subject item
+  mode given item yields value: one
+relation total
+  reads {report: Report} total {value: F64}
+  subject report
+  mode given report yields value: one
+relation count
+  reads {report: Report} count {value: F64}
+  subject report
+  mode given report yields value: one
+
+first
+  shape: Item
+second
+  shape: Item
+report
+  shape: Report
+first enabled true
+first amount -2.0
+second enabled false
+second amount 2.0
+report total 0.0
+report count 0.0
+
+on measure ?report
+  when
+    ?report total ?prior-total
+    ?report count ?prior-count
+    sum 1.0 where { ?item enabled true; ?item amount ?value } as ?count
+    sum ?value where { ?item enabled true; ?item amount ?value } as ?total
+  withdraw
+    ?report total ?prior-total
+    ?report count ?prior-count
+  include
+    ?report total ?total
+    ?report count ?count
+
+on enable-all ?item
+  when
+    ?item enabled ?prior
+  withdraw
+    ?item enabled ?prior
+  include
+    ?item enabled true
+
+on clear ?item
+  when
+    ?item enabled ?prior
+  withdraw
+    ?item enabled ?prior
+  include
+    ?item enabled false
+
+on create-item ?report ?amount
+  when
+    ?report total ?prior
+  create
+    ?item
+      shape: Item
+  include
+    ?item amount ?amount
+    ?item enabled true
+```
+
 ## Explicit semantic applications
 
 Applies one Shape and two scalar roles to a subject without confusing those applications with denotation or representation.

@@ -1,0 +1,73 @@
+F64
+Bool
+Item
+Report
+
+relation enabled
+  reads {item: Item} enabled {value: Bool}
+  subject item
+  mode given item yields value: one
+relation amount
+  reads {item: Item} amount {value: F64}
+  subject item
+  mode given item yields value: one
+relation total
+  reads {report: Report} total {value: F64}
+  subject report
+  mode given report yields value: one
+relation count
+  reads {report: Report} count {value: F64}
+  subject report
+  mode given report yields value: one
+
+first
+  shape: Item
+second
+  shape: Item
+report
+  shape: Report
+first enabled true
+first amount -2.0
+second enabled false
+second amount 2.0
+report total 0.0
+report count 0.0
+
+on measure ?report
+  when
+    ?report total ?prior-total
+    ?report count ?prior-count
+    sum 1.0 where { ?item enabled true; ?item amount ?value } as ?count
+    sum ?value where { ?item enabled true; ?item amount ?value } as ?total
+  withdraw
+    ?report total ?prior-total
+    ?report count ?prior-count
+  include
+    ?report total ?total
+    ?report count ?count
+
+on enable-all ?item
+  when
+    ?item enabled ?prior
+  withdraw
+    ?item enabled ?prior
+  include
+    ?item enabled true
+
+on clear ?item
+  when
+    ?item enabled ?prior
+  withdraw
+    ?item enabled ?prior
+  include
+    ?item enabled false
+
+on create-item ?report ?amount
+  when
+    ?report total ?prior
+  create
+    ?item
+      shape: Item
+  include
+    ?item amount ?amount
+    ?item enabled true

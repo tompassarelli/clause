@@ -791,6 +791,12 @@ pub enum ExecutableExpressionV1 {
     Slot(u16),
     Argument(u16),
     Binding(u16),
+    /// Closed, pure finite query. Equal values from distinct matches contribute
+    /// independently; query bindings do not escape into the enclosing rule.
+    Sum {
+        predicates: Vec<Self>,
+        value: Box<Self>,
+    },
     ReferentFacet {
         value: Box<Self>,
         domain: u32,
@@ -1056,6 +1062,13 @@ fn lower_canonical_expression(
         }
         CanonicalExecutableExpressionV1::Binding(binding) => {
             ExecutableExpressionV1::Binding(*binding)
+        }
+        CanonicalExecutableExpressionV1::Sum { predicates, value } => {
+            ExecutableExpressionV1::Sum {
+                predicates: predicates.iter().map(|predicate|
+                    lower_canonical_predicate(predicate, slots)).collect::<Result<_, _>>()?,
+                value: Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+            }
         }
         CanonicalExecutableExpressionV1::ReferentFacet {
             value,
@@ -6067,6 +6080,20 @@ fn validate_value_expression(
     }
     use ExecutableExpressionV1 as E;
     let children: Vec<&E> = match expression {
+        E::Sum { predicates, value } => {
+            if predicates.is_empty() || predicates.len() > MAX_PROGRAM_ITEMS {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            for predicate in predicates {
+                if let E::RelationMatch(_, subject, value) = predicate {
+                    validate_value_expression(subject, depth + 1)?;
+                    validate_value_expression(value, depth + 1)?;
+                } else {
+                    validate_value_expression(predicate, depth + 1)?;
+                }
+            }
+            vec![value]
+        }
         E::Accumulate(_) | E::RelationMatch(..) | E::RelationEffects(_) => {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
@@ -6515,6 +6542,7 @@ fn evaluate(
     use ExecutableExpressionV1 as E;
     match expression {
         E::Constant(value) => Ok(value.clone()),
+        E::Sum { predicates, value } => relational::sum(predicates, value, slots, context),
         E::Slot(slot) => {
             let value = slots
                 .get(usize::from(*slot))
@@ -6992,6 +7020,14 @@ fn encode_expression(
             bytes.push(0);
             encode_value(bytes, value)?;
         }
+        E::Sum { predicates, value } => {
+            bytes.push(29);
+            encode_count(bytes, predicates.len())?;
+            for predicate in predicates {
+                encode_expression(bytes, predicate)?;
+            }
+            encode_expression(bytes, value)?;
+        }
         E::Slot(slot) => {
             bytes.push(1);
             bytes.extend_from_slice(&slot.to_le_bytes());
@@ -7360,6 +7396,12 @@ impl<'a> Decoder<'a> {
             ),
             24 => E::Accumulate(Box::new(self.expression(next)?)),
             25 => E::Binding(self.u16()?),
+            29 => {
+                let count = self.count()?;
+                let predicates = (0..count).map(|_| self.expression(next))
+                    .collect::<Result<Vec<_>, _>>()?;
+                E::Sum { predicates, value: Box::new(self.expression(next)?) }
+            }
             28 => {
                 let value = Box::new(self.expression(next)?);
                 let domain = self.u32()?;

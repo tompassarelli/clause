@@ -339,6 +339,11 @@ pub enum CanonicalExecutableExpressionV1 {
     Argument(u16),
     /// Rule-local value bound by a finite relation match, not a host argument.
     Binding(u16),
+    /// Numeric sum over a closed finite query, with query-local bindings.
+    Sum {
+        predicates: Vec<CanonicalExecutablePredicateV1>,
+        value: Box<Self>,
+    },
     /// A domain facet justified by exact declared memberships; created values
     /// retain their actual domain and cannot gain a facet by a cast.
     ReferentFacet {
@@ -1124,6 +1129,7 @@ struct GeneralHandlerCst {
     required_sources: Vec<ScalarParameterSourceCst>,
     selectors: Vec<ScalarStateSelectorCst>,
     scalar_bindings: Vec<ScalarLawBindingCst>,
+    sums: Vec<GeneralSumCst>,
     predicates: Vec<CanonicalScalarPredicateV1>,
     boolean_conditions: Vec<BooleanRelationUseCst>,
     assignments: Vec<GeneralAssignmentCst>,
@@ -1131,6 +1137,16 @@ struct GeneralHandlerCst {
     insertions: Vec<GeneralAssignmentCst>,
     removals: Vec<ScalarParameterSourceCst>,
     includes: Vec<HandlerIncludeCst>,
+}
+
+#[derive(Clone, Debug)]
+struct GeneralSumCst {
+    origin: CanonicalSourceOriginV1,
+    parameter: Vec<u8>,
+    value: CanonicalScalarExpressionV1,
+    parameter_sources: Vec<ScalarParameterSourceCst>,
+    selectors: Vec<ScalarStateSelectorCst>,
+    predicates: Vec<CanonicalScalarPredicateV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -2190,6 +2206,8 @@ fn general_handler_relation_designations(
         .chain(&handler.membership_sources)
         .chain(&handler.required_sources)
         .chain(&handler.removals)
+        .chain(handler.sums.iter().flat_map(|sum| sum.parameter_sources.iter()
+            .chain(sum.selectors.iter().map(|selector| &selector.source))))
         .map(|source| source.relation.clone())
         .chain(
             handler
@@ -2234,7 +2252,7 @@ fn relational_handler_origins(cst: &CanonicalSourceCstV1) -> BTreeSet<CanonicalS
         .collect::<Vec<_>>();
     let mut origins = handlers
         .iter()
-        .filter(|handler| !handler.creations.is_empty())
+        .filter(|handler| !handler.creations.is_empty() || !handler.sums.is_empty())
         .map(|handler| handler.origin)
         .collect::<BTreeSet<_>>();
     let mut relations = handlers
@@ -8484,9 +8502,19 @@ fn parse_general_handler(
     let mut membership_sources = Vec::new();
     let mut selectors = Vec::new();
     let mut scalar_bindings = BTreeMap::<Vec<u8>, ScalarLawBindingCst>::new();
+    let mut sums = BTreeMap::<Vec<u8>, GeneralSumCst>::new();
     let mut predicates = Vec::new();
     let mut boolean_conditions = Vec::new();
     for (condition, condition_origin) in &when {
+        if condition.starts_with("sum ") {
+            let sum = parse_general_sum(condition, *condition_origin)?;
+            if seen_arguments.contains(&sum.parameter)
+                || sums.insert(sum.parameter.clone(), sum).is_some()
+            {
+                return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+            }
+            continue;
+        }
         if let Some(predicate) = parse_scalar_predicate(condition, "") {
             predicates.push(predicate);
             continue;
@@ -8674,12 +8702,22 @@ fn parse_general_handler(
     if used_parameters.iter().any(|parameter| {
         !parameter_sources.contains_key(parameter)
             && !scalar_bindings.contains_key(parameter)
+            && !sums.contains_key(parameter)
             && !seen_arguments.contains(parameter)
             && !seen_creations.contains(parameter)
             && parameter != subject.as_bytes()
             && !parameter_sources
                 .values()
                 .any(|source| source.subject == *parameter)
+    }) {
+        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+    }
+    if sums.keys().any(|parameter| {
+        parameter_sources.contains_key(parameter)
+            || scalar_bindings.contains_key(parameter)
+            || seen_creations.contains(parameter)
+            || parameter == subject.as_bytes()
+            || parameter_sources.values().any(|source| &source.subject == parameter)
     }) {
         return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
     }
@@ -8699,6 +8737,7 @@ fn parse_general_handler(
         required_sources,
         selectors,
         scalar_bindings: scalar_bindings.into_values().collect(),
+        sums: sums.into_values().collect(),
         predicates,
         boolean_conditions,
         assignments,
@@ -8707,6 +8746,51 @@ fn parse_general_handler(
         removals,
         includes,
     }))
+}
+
+fn parse_general_sum(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<GeneralSumCst, CanonicalSourceErrorV1> {
+    let error = || CanonicalSourceErrorV1::InvalidGeneralHandler { origin };
+    let (value, query) = source.strip_prefix("sum ").ok_or_else(error)?
+        .split_once(" where { ").ok_or_else(error)?;
+    let (query, parameter) = query.rsplit_once(" } as ").ok_or_else(error)?;
+    if !parameter.starts_with('?') || parameter.contains(char::is_whitespace) {
+        return Err(error());
+    }
+    let value = parse_scalar_expression(value, "").ok_or_else(error)?;
+    let mut parameter_sources = Vec::new();
+    let mut selectors = Vec::new();
+    let mut predicates = Vec::new();
+    for condition in query.split(';').map(str::trim) {
+        if let Some(predicate) = parse_scalar_predicate(condition, "") {
+            predicates.push(predicate);
+        } else if let Some(selector) = parse_scalar_state_selector(condition, origin) {
+            selectors.push(selector);
+        } else {
+            parameter_sources.extend(parse_general_state_declaration(condition, "")
+                .ok_or_else(error)?);
+        }
+    }
+    if parameter_sources.is_empty() && selectors.is_empty() {
+        return Err(error());
+    }
+    let bound = parameter_sources.iter()
+        .flat_map(|source| [&source.parameter, &source.subject])
+        .chain(selectors.iter().map(|selector| &selector.source.subject))
+        .filter(|name| name.starts_with(b"?"))
+        .cloned().collect::<BTreeSet<_>>();
+    let mut used = BTreeSet::new();
+    collect_scalar_expression_parameters(&value, &mut used);
+    for predicate in &predicates {
+        collect_predicate_parameters(predicate, &mut used);
+    }
+    if !used.is_subset(&bound) {
+        return Err(error());
+    }
+    Ok(GeneralSumCst { origin, parameter: parameter.as_bytes().to_vec(), value,
+        parameter_sources, selectors, predicates })
 }
 
 fn parse_general_insertion(

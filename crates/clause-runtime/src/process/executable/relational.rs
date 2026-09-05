@@ -12,11 +12,22 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
         bound: &mut BTreeSet<u16>,
         pattern: bool,
         depth: usize,
+        closed: bool,
     ) -> Result<(), ExecutableErrorV1> {
         if depth > MAX_EXPRESSION_DEPTH {
             return Err(ExecutableErrorV1::ResourceLimit);
         }
         match value {
+            E::Sum { predicates, value } => {
+                if closed || pattern {
+                    return Err(ExecutableErrorV1::MalformedProgram);
+                }
+                let mut local = BTreeSet::new();
+                for predicate in predicates {
+                    check(predicate, &mut local, false, depth + 1, true)?;
+                }
+                check(value, &mut local, false, depth + 1, true)?;
+            }
             E::Binding(binding) => {
                 if usize::from(*binding) >= MAX_BINDINGS {
                     return Err(ExecutableErrorV1::ResourceLimit);
@@ -27,19 +38,19 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
                     return Err(ExecutableErrorV1::MalformedProgram);
                 }
             }
-            E::ReferentFacet { value, .. } => check(value, bound, pattern, depth + 1)?,
+            E::ReferentFacet { value, .. } => check(value, bound, pattern, depth + 1, closed)?,
             E::RelationMatch(_, a, b) => {
-                check(a, bound, true, depth + 1)?;
-                check(b, bound, true, depth + 1)?;
+                check(a, bound, true, depth + 1, closed)?;
+                check(b, bound, true, depth + 1, closed)?;
             }
             E::RelationEffects(effects) => {
                 for effect in effects {
                     let (_, a, b) = effect.parts();
-                    check(a, bound, false, depth + 1)?;
-                    check(b, bound, false, depth + 1)?;
+                    check(a, bound, false, depth + 1, closed)?;
+                    check(b, bound, false, depth + 1, closed)?;
                 }
             }
-            E::Not(a) | E::Accumulate(a) => check(a, bound, false, depth + 1)?,
+            E::Not(a) | E::Accumulate(a) => check(a, bound, false, depth + 1, closed)?,
             E::RelationRead(a, b)
             | E::RelationPresent(a, b)
             | E::RelationRemoveRow(a, b)
@@ -55,16 +66,19 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
             | E::SetInsert(a, b)
             | E::SetContains(a, b)
             | E::SetRemove(a, b) => {
-                check(a, bound, false, depth + 1)?;
-                check(b, bound, false, depth + 1)?;
+                check(a, bound, false, depth + 1, closed)?;
+                check(b, bound, false, depth + 1, closed)?;
             }
             E::RelationPut(a, b, c)
             | E::RelationInsert(a, b, c)
             | E::RelationRemoveValue(a, b, c)
             | E::Clamp(a, b, c) => {
-                check(a, bound, false, depth + 1)?;
-                check(b, bound, false, depth + 1)?;
-                check(c, bound, false, depth + 1)?;
+                check(a, bound, false, depth + 1, closed)?;
+                check(b, bound, false, depth + 1, closed)?;
+                check(c, bound, false, depth + 1, closed)?;
+            }
+            E::Argument(_) | E::FreshReferent { .. } if closed => {
+                return Err(ExecutableErrorV1::MalformedProgram);
             }
             E::Constant(_) | E::Slot(_) | E::Argument(_) | E::FreshReferent { .. } => {}
         }
@@ -72,10 +86,10 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
     }
     let mut bound = BTreeSet::new();
     for predicate in &rule.predicates {
-        check(predicate, &mut bound, false, 0)?;
+        check(predicate, &mut bound, false, 0, false)?;
     }
     for (_, value) in &rule.assignments {
-        check(value, &mut bound, false, 0)?;
+        check(value, &mut bound, false, 0, false)?;
     }
     Ok(())
 }
@@ -103,6 +117,39 @@ impl ExecutableRelationEffectV1 {
 pub(super) struct Matched {
     pub bindings: BTreeMap<u16, ExecutableValueV1>,
     pub predicates: Vec<ExecutableEvaluatedExpressionV1>,
+}
+
+pub(super) fn sum(
+    predicates: &[ExecutableExpressionV1],
+    value: &ExecutableExpressionV1,
+    configuration: &[ExecutableSlotV1],
+    context: EvaluationContextV1,
+) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    let query = ExecutableRuleV1 {
+        entry: 0,
+        predicates: predicates.to_vec(),
+        required_present: vec![], required_absent: vec![],
+        assignments: vec![], removals: vec![],
+    };
+    let mut visits = 0;
+    let mut total = 0.0;
+    for (matched, accepted) in match_rule(&query, configuration, &[],
+        EvaluationContextV1 { bindings: None, ..context }, &mut visits)? {
+        if let Some(reads) = context.reads {
+            for predicate in &matched.predicates {
+                reads.borrow_mut().extend(predicate.reads.iter().cloned());
+            }
+        }
+        if accepted {
+            let contribution = evaluate(value, configuration, &[],
+                EvaluationContextV1 { bindings: Some(&matched.bindings), ..context })?;
+            total += contribution.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
+            if !total.is_finite() {
+                return Err(ExecutableErrorV1::NumericDomain);
+            }
+        }
+    }
+    ExecutableValueV1::number(total)
 }
 
 fn unify(

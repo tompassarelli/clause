@@ -16,6 +16,15 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "finite-sums",
+        title: "Closed finite query sums",
+        summary: "Sums F64 contributions over exact finite row matches in the same pre-state. Query-local variables do not capture the enclosing handler; an empty query yields zero, distinct equal-valued referents contribute independently, and exhausted search is an error.",
+        source: include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../test-vectors/authoring/finite-sums.clause"
+        )),
+    },
+    AuthoringExampleV1 {
         slug: "explicit-semantic-applications",
         title: "Explicit semantic applications",
         summary: "Applies one Shape and two scalar roles to a subject without confusing those applications with denotation or representation.",

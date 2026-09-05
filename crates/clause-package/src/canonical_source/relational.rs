@@ -103,14 +103,13 @@ fn facet(
     })
 }
 
-pub(super) fn checked_handler(
+fn checked_conditions(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
     source: &GeneralHandlerCst,
-) -> Result<CanonicalExecutableHandlerV1, CanonicalSourceErrorV1> {
+) -> Result<(Vec<CanonicalExecutablePredicateV1>, BTreeMap<Vec<u8>, CanonicalExecutableExpressionV1>), CanonicalSourceErrorV1> {
     use CanonicalExecutableExpressionV1 as E;
     use CanonicalExecutablePredicateV1 as P;
-    use CanonicalRelationEffectV1 as R;
     let error = || CanonicalSourceErrorV1::MissingExecutableBinding {
         origin: source.origin,
     };
@@ -220,6 +219,29 @@ pub(super) fn checked_handler(
         ));
     }
     drop(operand);
+    for sum in &source.sums {
+        // A closed query shares the ordinary row checker, but neither captures
+        // the enclosing rule's bindings nor produces state effects.
+        let query = GeneralHandlerCst {
+            origin: sum.origin,
+            producer: source.producer.clone(),
+            designation: source.designation.clone(),
+            subject: Vec::new(),
+            arguments: vec![], creations: vec![],
+            parameter_sources: sum.parameter_sources.clone(),
+            membership_sources: vec![], required_sources: vec![],
+            selectors: sum.selectors.clone(), scalar_bindings: vec![], sums: vec![],
+            predicates: sum.predicates.clone(), boolean_conditions: vec![],
+            assignments: vec![], accumulations: vec![], insertions: vec![],
+            removals: vec![], includes: vec![],
+        };
+        let mut domains = check_domains(cst, plan, &query)?;
+        check_expression(&sum.value, b"F64", &mut domains, sum.origin)?;
+        let (predicates, bindings) = checked_conditions(cst, plan, &query)?;
+        let value = relational_scalar_expression(cst, plan, &sum.value, &bindings,
+            Some(b"F64"), sum.origin)?;
+        variables.insert(sum.parameter.clone(), E::Sum { predicates, value: Box::new(value) });
+    }
     for required in &source.required_sources {
         let subject = subject_expression(cst, plan, &variables, required, source.origin)?;
         let relation = resolved_state_relation(cst, plan, &required.relation, source.origin)?;
@@ -287,6 +309,19 @@ pub(super) fn checked_handler(
             relational_scalar_expression(cst, plan, right, &variables, expected, source.origin)?,
         ));
     }
+    Ok((predicates, variables))
+}
+
+pub(super) fn checked_handler(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    source: &GeneralHandlerCst,
+) -> Result<CanonicalExecutableHandlerV1, CanonicalSourceErrorV1> {
+    use CanonicalExecutableExpressionV1 as E;
+    use CanonicalExecutablePredicateV1 as P;
+    use CanonicalRelationEffectV1 as R;
+    let error = || CanonicalSourceErrorV1::MissingExecutableBinding { origin: source.origin };
+    let (mut predicates, variables) = checked_conditions(cst, plan, source)?;
     let mut effects = BTreeMap::<CanonicalStateRefV1, Vec<R>>::new();
     for (assignments, mode) in [
         (&source.assignments, 0),
@@ -454,8 +489,15 @@ fn check_domains(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
     source: &GeneralHandlerCst,
-) -> Result<(), CanonicalSourceErrorV1> {
+) -> Result<BTreeMap<Vec<u8>, Vec<u8>>, CanonicalSourceErrorV1> {
     let mut domains = BTreeMap::new();
+    for sum in &source.sums {
+        constrain(&mut domains, &sum.parameter, b"F64", sum.origin)?;
+    }
+    for selector in &source.selectors {
+        let relation = resolved_state_relation(cst, plan, &selector.source.relation, selector.origin)?;
+        constrain(&mut domains, &selector.source.subject, relation.subject_domain, selector.origin)?;
+    }
     for creation in &source.creations {
         constrain(
             &mut domains,
@@ -548,7 +590,7 @@ fn check_domains(
         check_expression(a, &domain, &mut domains, source.origin)?;
         check_expression(b, &domain, &mut domains, source.origin)?;
     }
-    Ok(())
+    Ok(domains)
 }
 
 fn subject_expression(
