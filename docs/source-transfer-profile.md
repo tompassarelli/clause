@@ -59,8 +59,14 @@ Example (after heavy-slot admission and pinned/scoped tool setup):
 cargo test -p clause-workbench --test source_profile --test live_semantics --test created_collections --locked -j 2
 cargo run -p clause-workbench --example source-transfer-profile --locked -j 2 -- target/source-transfer-profile EXACT_SOURCE_COMMIT 3
 # Fresh runtime Wasm goes in target/source-transfer-profile/wasm.
-bun browser/jump-arena-shell/src/source-transfer-profile.ts /absolute/owned/lane/target/source-transfer-profile 3
+bun browser/jump-arena-shell/src/source-transfer-profile.ts /absolute/owned/lane/target/source-transfer-profile 3 EXACT_DRIVER_COMMIT
 ```
+
+The Wasm driver drains the existing physical-retirement batches after timing
+and before the next sample (at most 4,097 calls). Otherwise a synchronous test
+can open again before the adapter's scheduled timer finishes retirement and
+correctly receive SessionOccupied. This drain does not affect the measured
+transfer and is not a change to runtime ownership or reclamation semantics.
 
 No baseline timing, overhead or speedup is claimed by this initial authored
 driver. Steady Admission/per-frame costs remain a separate required M5 artifact.

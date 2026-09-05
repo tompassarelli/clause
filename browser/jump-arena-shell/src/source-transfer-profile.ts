@@ -14,7 +14,8 @@ function object(value: unknown): Record<string, unknown> {
 }
 const directory = Bun.argv[2];
 const samples = Number(Bun.argv[3] ?? "3");
-if (!directory || !Number.isInteger(samples) || samples < 1 || samples > 5) throw new Error("expected artifact directory and 1..5 samples");
+const driverSourceCommit = Bun.argv[4];
+if (!directory || !Number.isInteger(samples) || samples < 1 || samples > 5 || !/^[0-9a-f]{40}$/.test(driverSourceCommit ?? "")) throw new Error("expected artifact directory, 1..5 samples, and exact driver source commit");
 const location = (name: string) => `${directory}/${name}`;
 const bytes = async (name: string) => [...new Uint8Array(await file(location(name)).arrayBuffer())];
 const runtime = await file(location("wasm/clause_runtime_bg.wasm")).arrayBuffer();
@@ -51,13 +52,20 @@ for (const name of ["encounter", "collections"]) {
     if (result._tag !== "SessionStarted") throw new Error(result.reason);
     if (profiled && object(profile).truncated !== false) throw new Error("incomplete phase evidence");
     observations.push({ index, warmup: index === 0, profiled, wallMs, profile });
+    // Physical retirement is intentionally deferred by the passive adapter.
+    // Drain its existing bounded runtime batches outside measurement before
+    // opening a different world. Do not depend on timer/file-I/O scheduling.
+    let reclaimCalls = 0;
+    while (module.clause_session_v1_reclaim_retired()) {
+      if (++reclaimCalls > 4096) throw new Error("retirement exceeded driver bound");
+    }
     port.disposeSession(result.session);
   }
   const sha256 = (value: ArrayBuffer | number[]) => new CryptoHasher("sha256").update(value instanceof ArrayBuffer ? value : new Uint8Array(value)).digest("hex");
   variants[name] = { sourceSha256: sha256(source), initialCwr1Sha256: sha256(initial), editedCwr1Sha256: sha256(edited), cet1Sha256: sha256(witness), observations };
 }
 const native = object(await file(location("native.json")).json());
-const report = { compiler: native.compiler, runtimeSha256: new CryptoHasher("sha256").update(runtime).digest("hex"),
+const report = { compiler: native.compiler, driverSourceCommit, runtimeSha256: new CryptoHasher("sha256").update(runtime).digest("hex"),
   measurement: "Wasm checked source transfer with passive byte adapter; no renderer", samplesPerMode: samples, variants };
 await write(location("wasm.json"), `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify(report));
