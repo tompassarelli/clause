@@ -3,7 +3,8 @@
 This follow-on starts from the unoptimized, committed native/fresh-Wasm
 baseline in `source-transfer-profile.md`. The large outer-minus-Transfer
 residual does **not** establish JavaScript parsing alone as its cause.
-No owning optimization has been made and no new timing is claimed yet.
+The local phase attribution and owning byte-custody optimization are measured
+below; browser-visible speed remains a separate consumer observation.
 
 The opt-in synchronous JavaScript observer has 13 fixed phase counters and
 at most 64 nested records. It retains only call counts and inclusive/exclusive
@@ -63,6 +64,43 @@ same housekeeping outside every timer.
 
 New focused tests cover observer return/throw transparency, re-entry,
 incomplete scopes, finite nested accounting, truncation and bounded test
-retirement. Native/fresh-Wasm checks and before/after measurement remain
-pending heavy-slot admission. Reuse or other optimization may start only
-after this expanded baseline attributes the dominant phase.
+retirement. Native source-profile checks passed 2/2 and observer/lifecycle checks
+passed 3/3. The complete adapter typecheck passed. The measurements below use
+fresh Wasm and unchanged source witnesses with ordinary runtime verification.
+
+## Local byte-custody result, September 5
+
+Baseline driver/runtime: `9a52cfcd1c03ec42f38d2e6d4c8291021a7370e0`.
+Optimized driver: `313e27e151997f6d8d39b37331450d2185d95054`.
+Both use identical release Wasm SHA-256
+`bdbd0ac82d0ad786277164c2ecb1a095a17f43319dfc4aa386c030f0f52b07bc`,
+identical source/CWR1/CET1 fixtures, Bun 1.3.13 and a six-CPU/8GiB local scope.
+One warm-up is excluded, followed by three alternating off/on samples per
+variant. Native fixture preparation and all I/O/setup remain outside the
+Wasm transfer timer. No renderer or competing heavy command participates.
+
+| Fixture | Before off samples (ms) | After off samples (ms) | Median reduction |
+| --- | --- | --- | --- |
+| Encounter | 2930.90, 2906.13, 2900.14 | 268.12, 280.19, 241.21 | 90.77% |
+| Collections | 868.77, 877.05, 893.20 | 124.09, 115.66, 114.71 | 86.81% |
+
+The baseline larger fixture spends about 1.69s in frozen byte snapshots and
+0.91s assembling the opening request, versus about 0.20s in the checked runtime
+transfer. A bounded copy-method probe found that slice/Array.from followed by
+freezing retained the cost. The owning change therefore keeps large internal
+snapshots as immutable binary text, already used for canonical term custody,
+and validates unused blob extents without creating discarded byte vectors.
+Only the Wasm ingress materializes the exact byte array. Public request bytes,
+wire formats, witness replay, runtime checking and world semantics are unchanged.
+
+New producer-mutation and malformed-octet/blob-bound checks plus the existing
+CWI1 command-custody check passed 3/3. The same fresh-Wasm transfer driver
+completed both variants after the change. The remaining local transfer lower
+bound is dominated by the actual runtime check; native compilation and the
+browser's rendering/scheduling are separate costs. The older Droplet timings
+are not like-for-like local comparisons. Three samples show a large local
+effect, not an isolated hardware-independent bound or a browser FPS claim.
+
+Raw artifacts: clause:build/source-transfer-outer-20260905/baseline and
+clause:build/source-transfer-outer-20260905/immutable-bytes. The latter retains
+the baseline compiler's exact fixtures and Wasm, changing only the driver.
