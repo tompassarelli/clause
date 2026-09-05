@@ -10,6 +10,34 @@ Use that pin's workbench directly:
 
 Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.
 
+## Checked scalar equality
+
+Equality expressions compare matching Boolean, numeric or Text values and produce Bool. Toggle uses the current admitted pre-state, including runtime-created rows; mixed scalar types are rejected.
+
+Catalog ID: `scalar-equality`
+
+```clause
+Bool
+Item
+
+relation selected
+  reads {item: Item} selected {value: Bool}
+  subject item
+  mode given item yields value: one
+
+first
+  shape: Item
+first selected false
+
+on toggle ?item
+  when
+    ?item selected ?prior
+  withdraw
+    ?item selected ?prior
+  include
+    ?item selected (?prior = false)
+```
+
 ## Boolean results from scalar comparisons
 
 Ordered F64 comparisons >, >=, < and <= produce Bool values. Numeric arithmetic binds more tightly; all assigned values read the same pre-transition state, so a numeric update and its completion flag can be one atomic rule.

@@ -1050,6 +1050,10 @@ fn lower_canonical_expression(
         ))
     };
     Ok(match expression {
+        CanonicalExecutableExpressionV1::Equal(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Equal(left, right)
+        }
         CanonicalExecutableExpressionV1::GreaterThan(left, right) => {
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::GreaterThan(left, right)
@@ -1719,6 +1723,10 @@ fn lower_scalar_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::Equal(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Equal(left, right)
+        }
         CanonicalScalarExpressionV1::GreaterThan(left, right) => {
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::GreaterThan(left, right)

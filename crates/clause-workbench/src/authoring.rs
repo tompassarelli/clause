@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "scalar-equality",
+        title: "Checked scalar equality",
+        summary: "Equality expressions compare matching Boolean, numeric or Text values and produce Bool. Toggle uses the current admitted pre-state, including runtime-created rows; mixed scalar types are rejected.",
+        source: include_str!("../../../test-vectors/authoring/scalar-equality.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "scalar-comparison",
         title: "Boolean results from scalar comparisons",
         summary: "Ordered F64 comparisons >, >=, < and <= produce Bool values. Numeric arithmetic binds more tightly; all assigned values read the same pre-transition state, so a numeric update and its completion flag can be one atomic rule.",

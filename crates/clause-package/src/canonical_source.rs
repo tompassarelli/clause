@@ -335,6 +335,7 @@ pub struct CanonicalStateCellV1 {
 /// declared argument ordinals local to the handler, never physical slots.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalExecutableExpressionV1 {
+    Equal(Box<Self>, Box<Self>),
     GreaterThan(Box<Self>, Box<Self>),
     LessThanOrEqual(Box<Self>, Box<Self>),
     SquareRoot(Box<Self>),
@@ -506,6 +507,7 @@ pub struct CanonicalReferentInputBindingV1 {
 /// Physical state coordinates are deliberately supplied only by refinement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalScalarExpressionV1 {
+    Equal(Box<Self>, Box<Self>),
     GreaterThan(Box<Self>, Box<Self>),
     LessThanOrEqual(Box<Self>, Box<Self>),
     SquareRoot(Box<Self>),
@@ -4370,6 +4372,10 @@ fn canonical_scalar_executable_expression(
             let (left, right) = pair(left, right)?;
             CanonicalExecutableExpressionV1::GreaterThan(left, right)
         }
+        CanonicalScalarExpressionV1::Equal(left, right) => {
+            let (left, right) = pair(left, right)?;
+            CanonicalExecutableExpressionV1::Equal(left, right)
+        }
         CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
             let (left, right) = pair(left, right)?;
             CanonicalExecutableExpressionV1::LessThanOrEqual(left, right)
@@ -4448,6 +4454,10 @@ fn expand_scalar_law_bindings(
         CanonicalScalarExpressionV1::GreaterThan(left, right) => {
             let (left, right) = pair(left, right, expanding)?;
             CanonicalScalarExpressionV1::GreaterThan(left, right)
+        }
+        CanonicalScalarExpressionV1::Equal(left, right) => {
+            let (left, right) = pair(left, right, expanding)?;
+            CanonicalScalarExpressionV1::Equal(left, right)
         }
         CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
             let (left, right) = pair(left, right, expanding)?;
@@ -4536,6 +4546,10 @@ fn canonical_general_executable_expression(
         CanonicalScalarExpressionV1::GreaterThan(left, right) => {
             let (left, right) = pair(left, right)?;
             Ok(CanonicalExecutableExpressionV1::GreaterThan(left, right))
+        }
+        CanonicalScalarExpressionV1::Equal(left, right) => {
+            let (left, right) = pair(left, right)?;
+            Ok(CanonicalExecutableExpressionV1::Equal(left, right))
         }
         CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
             let (left, right) = pair(left, right)?;
@@ -4809,6 +4823,10 @@ fn relational_scalar_expression(
         CanonicalScalarExpressionV1::GreaterThan(left, right) => {
             let (left, right) = pair(left, right, Some(b"F64"))?;
             CanonicalExecutableExpressionV1::GreaterThan(left, right)
+        }
+        CanonicalScalarExpressionV1::Equal(left, right) => {
+            let (left, right) = pair(left, right, None)?;
+            CanonicalExecutableExpressionV1::Equal(left, right)
         }
         CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
             let (left, right) = pair(left, right, Some(b"F64"))?;
@@ -9194,12 +9212,13 @@ impl ScalarExpressionParser<'_> {
     fn comparison(&mut self) -> Option<CanonicalScalarExpressionV1> {
         let left = self.additive()?;
         self.skip_spaces();
-        let operation = [b">=".as_slice(), b"<=", b">", b"<"]
+        let operation = [b">=".as_slice(), b"<=", b">", b"<", b"="]
             .into_iter().find(|operator| self.take_exact(operator));
         let Some(operation) = operation else { return Some(left) };
         let right = self.additive()?;
         let (left, right) = (Box::new(left), Box::new(right));
         Some(match operation {
+            b"=" => CanonicalScalarExpressionV1::Equal(left, right),
             b">" => CanonicalScalarExpressionV1::GreaterThan(left, right),
             b"<" => CanonicalScalarExpressionV1::GreaterThan(right, left),
             b"<=" => CanonicalScalarExpressionV1::LessThanOrEqual(left, right),
@@ -9378,7 +9397,8 @@ fn collect_scalar_expression_parameters(
         CanonicalScalarExpressionV1::Parameter(parameter) => {
             parameters.insert(parameter.clone());
         }
-        CanonicalScalarExpressionV1::GreaterThan(left, right)
+        CanonicalScalarExpressionV1::Equal(left, right)
+        | CanonicalScalarExpressionV1::GreaterThan(left, right)
         | CanonicalScalarExpressionV1::LessThanOrEqual(left, right)
         | CanonicalScalarExpressionV1::Concatenate(left, right)
         | CanonicalScalarExpressionV1::Add(left, right)
@@ -9970,7 +9990,8 @@ fn tick_guard_literal(expression: CanonicalScalarExpressionV1) -> Option<Canonic
         CanonicalScalarExpressionV1::Boolean(value) => Some(CanonicalScalarValueV1::Boolean(value)),
         CanonicalScalarExpressionV1::Symbol(value) => Some(CanonicalScalarValueV1::Symbol(value)),
         CanonicalScalarExpressionV1::Text(value) => Some(CanonicalScalarValueV1::Text(value)),
-        CanonicalScalarExpressionV1::GreaterThan(_, _)
+        CanonicalScalarExpressionV1::Equal(_, _)
+        | CanonicalScalarExpressionV1::GreaterThan(_, _)
         | CanonicalScalarExpressionV1::LessThanOrEqual(_, _)
         | CanonicalScalarExpressionV1::SquareRoot(_)
         | CanonicalScalarExpressionV1::Current
@@ -11370,18 +11391,39 @@ fn scalar_expression_matches_value(
     expression: &CanonicalScalarExpressionV1,
     initial: &CanonicalScalarValueV1,
 ) -> bool {
+    scalar_expression_matches_kind(expression, initial, initial)
+}
+
+fn scalar_expression_matches_kind(
+    expression: &CanonicalScalarExpressionV1,
+    expected: &CanonicalScalarValueV1,
+    current: &CanonicalScalarValueV1,
+) -> bool {
+    let matches = |value, kind| scalar_expression_matches_kind(value, kind, current);
+    let initial = expected;
     match expression {
+        CanonicalScalarExpressionV1::Equal(left, right) => {
+            matches!(initial, CanonicalScalarValueV1::Boolean(_))
+                && [
+                    CanonicalScalarValueV1::Boolean(false),
+                    CanonicalScalarValueV1::Number(0),
+                    CanonicalScalarValueV1::Text(String::new()),
+                    CanonicalScalarValueV1::Symbol(Vec::new()),
+                ].iter().any(|kind| matches(left, kind) && matches(right, kind))
+        }
         CanonicalScalarExpressionV1::GreaterThan(left, right)
         | CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
             matches!(initial, CanonicalScalarValueV1::Boolean(_))
-                && scalar_expression_matches_value(left, &CanonicalScalarValueV1::Number(0))
-                && scalar_expression_matches_value(right, &CanonicalScalarValueV1::Number(0))
+                && matches(left, &CanonicalScalarValueV1::Number(0))
+                && matches(right, &CanonicalScalarValueV1::Number(0))
         }
         CanonicalScalarExpressionV1::SquareRoot(value) => {
             matches!(initial, CanonicalScalarValueV1::Number(_))
-                && scalar_expression_matches_value(value, initial)
+                && matches(value, initial)
         }
-        CanonicalScalarExpressionV1::Current => true,
+        CanonicalScalarExpressionV1::Current => {
+            std::mem::discriminant(current) == std::mem::discriminant(initial)
+        }
         CanonicalScalarExpressionV1::Parameter(_) => true,
         CanonicalScalarExpressionV1::Number(_) => {
             matches!(initial, CanonicalScalarValueV1::Number(_))
@@ -11397,16 +11439,16 @@ fn scalar_expression_matches_value(
         }
         CanonicalScalarExpressionV1::Concatenate(left, right) => {
             matches!(initial, CanonicalScalarValueV1::Text(_))
-                && scalar_expression_matches_value(left, initial)
-                && scalar_expression_matches_value(right, initial)
+                && matches(left, initial)
+                && matches(right, initial)
         }
         CanonicalScalarExpressionV1::Add(left, right)
         | CanonicalScalarExpressionV1::Subtract(left, right)
         | CanonicalScalarExpressionV1::Multiply(left, right)
         | CanonicalScalarExpressionV1::Divide(left, right) => {
             matches!(initial, CanonicalScalarValueV1::Number(_))
-                && scalar_expression_matches_value(left, initial)
-                && scalar_expression_matches_value(right, initial)
+                && matches(left, initial)
+                && matches(right, initial)
         }
     }
 }

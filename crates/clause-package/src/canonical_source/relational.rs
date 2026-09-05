@@ -446,7 +446,7 @@ fn expression_domain<'a>(
         S::Number(_) | S::SquareRoot(_) | S::Add(..) | S::Subtract(..) | S::Multiply(..) | S::Divide(..) => {
             Some(b"F64")
         }
-        S::Boolean(_) | S::GreaterThan(..) | S::LessThanOrEqual(..) => Some(b"Bool"),
+        S::Boolean(_) | S::Equal(..) | S::GreaterThan(..) | S::LessThanOrEqual(..) => Some(b"Bool"),
         S::Text(_) | S::Concatenate(..) => Some(b"Text"),
         S::Parameter(name) => domains.get(name).map(Vec::as_slice),
         _ => None,
@@ -468,6 +468,14 @@ fn check_expression(
     }
     match expression {
         S::Parameter(name) => constrain(domains, name, expected, origin)?,
+        S::Equal(a, b) => {
+            let domain = expression_domain(a, domains)
+                .or_else(|| expression_domain(b, domains))
+                .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?
+                .to_vec();
+            check_expression(a, &domain, domains, origin)?;
+            check_expression(b, &domain, domains, origin)?;
+        }
         S::SquareRoot(value) => check_expression(value, b"F64", domains, origin)?,
         S::Add(a, b) | S::Subtract(a, b) | S::Multiply(a, b) | S::Divide(a, b)
         | S::GreaterThan(a, b) | S::LessThanOrEqual(a, b) => {

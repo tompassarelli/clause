@@ -390,6 +390,7 @@ fn substitute(
     use CanonicalScalarExpressionV1::*;
     match expression {
         Parameter(name) => bindings.get(name).unwrap_or(expression).clone(),
+        Equal(a, b) => Equal(Box::new(substitute(a, bindings)), Box::new(substitute(b, bindings))),
         GreaterThan(a, b) => GreaterThan(Box::new(substitute(a, bindings)), Box::new(substitute(b, bindings))),
         LessThanOrEqual(a, b) => LessThanOrEqual(Box::new(substitute(a, bindings)), Box::new(substitute(b, bindings))),
         SquareRoot(value) => SquareRoot(Box::new(substitute(value, bindings))),
