@@ -20,8 +20,12 @@ pub enum SourceProfilePhaseV1 {
     Instantiate,
     Migration,
     NativeEdit,
+    SourceEditBulk,
+    ClearIo,
+    InstallEvent,
+    EventExport,
 }
-const NAMES: [&str; 15] = [
+const NAMES: [&str; 19] = [
     "transfer",
     "witness-check",
     "source-read",
@@ -37,6 +41,10 @@ const NAMES: [&str; 15] = [
     "instantiate",
     "migration",
     "native-edit",
+    "source-edit-bulk",
+    "clear-io",
+    "install-event",
+    "event-export",
 ];
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -49,7 +57,7 @@ pub struct SourceProfileMeasurementV1 {
 pub struct ExecutableSourceProfileV1 {
     pub wall_milliseconds: f64,
     pub truncated: bool,
-    pub phases: [SourceProfileMeasurementV1; 15],
+    pub phases: [SourceProfileMeasurementV1; 19],
 }
 impl ExecutableSourceProfileV1 {
     /// Fixed field names and finite numeric measurements; no source or secrets.
@@ -117,7 +125,7 @@ pub fn begin_executable_source_profile_v1() -> bool {
             report: ExecutableSourceProfileV1 {
                 wall_milliseconds: 0.0,
                 truncated: false,
-                phases: [SourceProfileMeasurementV1::default(); 15],
+                phases: [SourceProfileMeasurementV1::default(); 19],
             },
         });
         true

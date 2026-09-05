@@ -1,4 +1,5 @@
 import * as workbench from "./workbench.js";
+import { enterSourceTransferPhase, leaveSourceTransferPhase, observeSourceTransferPhase } from "./source-transfer-observation.js";
 
 function equivalent(left: unknown, right: unknown): boolean {
   return (
@@ -623,6 +624,8 @@ function exact_byte_array_p(
   bytes: unknown,
   maximum: number,
 ): bytes is ExactBytes {
+  const profile = enterSourceTransferPhase("byte-validation");
+  try {
   return (
     Array.isArray(bytes) &&
     bytes.length >= 1 &&
@@ -635,9 +638,12 @@ function exact_byte_array_p(
         byte <= 255,
     )
   );
+  } finally { leaveSourceTransferPhase(profile); }
 }
 
 function require_request(request: unknown): ExactProcessRequest {
+  const profile = enterSourceTransferPhase("request-custody");
+  try {
   if (
     typeof request !== "object" ||
     request === null ||
@@ -649,6 +655,7 @@ function require_request(request: unknown): ExactProcessRequest {
   return ExactProcessRequest(
     frozen_byte_range(request.bytes, 0, request.bytes.length),
   );
+  } finally { leaveSourceTransferPhase(profile); }
 }
 
 function process_status(status: unknown): number {
@@ -736,6 +743,8 @@ function frozen_byte_range(
   start: number,
   end: number,
 ): ExactBytes {
+  const profile = enterSourceTransferPhase("frozen-byte-range");
+  try {
   const result: number[] = [];
   return (() => {
     let index = start;
@@ -750,6 +759,7 @@ function frozen_byte_range(
       }
     }
   })();
+  } finally { leaveSourceTransferPhase(profile); }
 }
 
 function canonical_byte_range(
@@ -952,6 +962,8 @@ function require_allocation_epoch(record: ParsedBlob): ExactBytes {
 function parse_persistent_cartridge_bang(
   request: unknown,
 ): PersistentCartridge {
+  const profile = enterSourceTransferPhase("cartridge-parse");
+  try {
   const checked = require_request(request);
   const bytes = checked.bytes;
   if (
@@ -1069,6 +1081,8 @@ function parse_persistent_cartridge_bang(
       throw new Error("CWR1 cartridge shape is incomplete");
     })();
   }
+  const assembly = enterSourceTransferPhase("cws1-assembly");
+  try {
   const open_bytes = [67, 87, 83, 49];
   bytes.slice(4, physical_plan.next).forEach((byte: number) => {
     open_bytes.push(byte);
@@ -1085,6 +1099,8 @@ function parse_persistent_cartridge_bang(
     Object.freeze(open_bytes),
     Object.freeze(occurrences_result.values),
   );
+  } finally { leaveSourceTransferPhase(assembly); }
+  } finally { leaveSourceTransferPhase(profile); }
 }
 
 function process_request_occurrences_bang(
@@ -2874,21 +2890,27 @@ export function editSourceSession(
   witness: ExactBytes,
   policy: workbench.WorkbenchPolicy,
 ): workbench.SessionCompletion {
+  const profile = enterSourceTransferPhase("adapter");
   try {
     const previous = require_live_session(incomingSession);
     if (!Number.isSafeInteger(generation) || generation <= previous.sourceGeneration) {
       throw new Error("source edit requires a fresh captured generation");
     }
     if (!is_source_edit_module(module)) throw new Error("Wasm runtime lacks checked source edit API");
-    if (!exact_byte_array_p(witness, cwr1_max_bytes)) throw new Error("source edit witness exceeds bound");
+    if (!observeSourceTransferPhase("witness-validation", () => exact_byte_array_p(witness, cwr1_max_bytes))) throw new Error("source edit witness exceeds bound");
     const cartridge = parse_persistent_cartridge_bang(request);
-    const status = module.clause_session_v1_source_edit_bulk(
+    const status = observeSourceTransferPhase("bulk-call", () => module.clause_session_v1_source_edit_bulk(
       previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value),
-      new Uint8Array(cartridge.openBytes), new Uint8Array(witness),
-    );
+      observeSourceTransferPhase("typed-array-construction", () => new Uint8Array(cartridge.openBytes)),
+      observeSourceTransferPhase("typed-array-construction", () => new Uint8Array(witness)),
+    ));
     if (status !== 0) throw new Error(`checked source edit rejected: ${process_status(status)}`);
-    const event = decode_cse1_event([...module.clause_session_v1_event_bulk()]);
+    const eventBytes = observeSourceTransferPhase("event-array-construction", () =>
+      [...observeSourceTransferPhase("event-bulk", () => module.clause_session_v1_event_bulk())]);
+    const event = observeSourceTransferPhase("cse1-decode", () => decode_cse1_event(eventBytes));
     if (event.kind !== "opened" || event.sequence !== 0) throw new Error("source edit returned invalid replacement custody");
+    const construction = enterSourceTransferPhase("session-construction");
+    try {
     const session = WasmSession(
       Object.freeze({ slot: event.slot, generation: event.generation }), generation,
       event.packageId, event.sessionId, event.allocation,
@@ -2898,9 +2920,10 @@ export function editSourceSession(
     previous.disposed.value = true;
     setTimeout(() => reclaim_retired_session_bang(module), 0);
     return workbench["->SessionStarted"](session, event.world, workbench["create-workbench-envelope"](policy, "[]"));
+    } finally { leaveSourceTransferPhase(construction); }
   } catch (error) {
     return workbench["->SessionFailed"](reject_reason(error));
-  }
+  } finally { leaveSourceTransferPhase(profile); }
 }
 
 interface DiagnosticWasmModule extends SessionWasmModule {

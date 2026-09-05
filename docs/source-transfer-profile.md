@@ -59,7 +59,7 @@ Example (after heavy-slot admission and pinned/scoped tool setup):
 cargo test -p clause-workbench --test source_profile --test live_semantics --test created_collections --locked -j 2
 cargo run -p clause-workbench --example source-transfer-profile --locked -j 2 -- target/source-transfer-profile EXACT_SOURCE_COMMIT 3
 # Fresh runtime Wasm goes in target/source-transfer-profile/wasm.
-bun browser/jump-arena-shell/src/source-transfer-profile.ts /absolute/owned/lane/target/source-transfer-profile 3 EXACT_DRIVER_COMMIT
+bun browser/jump-arena-shell/src/source-transfer-profile.ts /absolute/owned/lane/target/source-transfer-profile 3 EXACT_DRIVER_COMMIT EXACT_RUNTIME_COMMIT
 ```
 
 The Wasm driver drains the existing physical-retirement batches after timing

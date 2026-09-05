@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { file } from "bun";
 import * as wasm from "./wasm-cartridge-port.js";
 import * as workbench from "./workbench.js";
+import { settleRetiredWasmSession } from "./wasm-test-lifecycle.js";
 
 function completed<T>(action: (done: (value: T) => unknown) => unknown): T {
   const values: T[] = []; action(value => values.push(value)); expect(values).toHaveLength(1); return values[0];
@@ -60,6 +61,9 @@ test("fresh Wasm iterates exact created occurrences, preserves them through chec
   if (edited._tag !== "SessionStarted") throw new Error(edited.reason);
   session = edited.session; revision = 0; sequence = 0;
   expect(() => wasm.explainSession(module, previous, Number(entries.tick))).toThrow();
+  // Reclaim revoked physical storage before subsequent continuity checks and
+  // the next independent world; file I/O is not a retirement barrier.
+  settleRetiredWasmSession(module);
   frame = run([], 125);
   expect(object(frame["cinder-1"]).vitality).toBe(93);
   const after = rows(frame, "burn-target").map(row => object(object(row.subject).identity));

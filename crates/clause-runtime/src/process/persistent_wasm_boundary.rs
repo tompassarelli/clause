@@ -341,6 +341,7 @@ impl WasmPersistentSessionBoundaryV1 {
     }
 
     pub fn clear_io(&mut self) {
+        let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::ClearIo);
         self.request.clear();
         self.event.clear();
         self.status = WasmProcessStatusV1::Ready;
@@ -378,6 +379,7 @@ impl WasmPersistentSessionBoundaryV1 {
     pub fn source_edit_bulk(
         &mut self, handle: WasmSessionHandleV1, sequence: u64, open: &[u8], witness: &[u8],
     ) -> Result<(), WasmProcessStatusV1> {
+        let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::SourceEditBulk);
         self.clear_io();
         match self.open_source_edit(handle, sequence, open, witness) {
             Ok(event) => self.install_event(event),
@@ -619,6 +621,7 @@ impl WasmPersistentSessionBoundaryV1 {
     }
 
     fn install_event(&mut self, event: WasmSessionEventV1) -> Result<(), WasmProcessStatusV1> {
+        let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::InstallEvent);
         let bytes = encode_wasm_session_event_v1(&event);
         if bytes.len() > WASM_SESSION_EVENT_LIMIT_V1 || bytes.len() > WASM_PROCESS_RESPONSE_LIMIT_V1
         {
@@ -2039,6 +2042,7 @@ mod wasm_exports {
 
     #[wasm_bindgen]
     pub fn clause_session_v1_event_bulk() -> Vec<u8> {
+        let _profile = crate::source_profile_scope_v1(crate::SourceProfilePhaseV1::EventExport);
         SESSION_BOUNDARY.with_borrow(|boundary| boundary.event().to_vec())
     }
 
