@@ -10,6 +10,43 @@ Use that pin's workbench directly:
 
 Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.
 
+## Boolean results from scalar comparisons
+
+Ordered F64 comparisons >, >=, < and <= produce Bool values. Numeric arithmetic binds more tightly; all assigned values read the same pre-transition state, so a numeric update and its completion flag can be one atomic rule.
+
+Catalog ID: `scalar-comparison`
+
+```clause
+F64
+Bool
+Meter
+
+relation reading
+  reads {meter: Meter} reading {value: F64}
+  subject meter
+  mode given meter yields value: one
+relation positive
+  reads {meter: Meter} positive {value: Bool}
+  subject meter
+  mode given meter yields value: one
+
+meter
+  shape: Meter
+meter reading 25.0
+meter positive false
+
+on measure ?meter
+  when
+    ?meter reading ?value
+    ?meter positive ?prior
+  withdraw
+    ?meter reading ?value
+    ?meter positive ?prior
+  include
+    ?meter reading 0.0
+    ?meter positive (?value > 0.0)
+```
+
 ## Checked scalar square root
 
 sqrt(expression) computes the finite F64 square root, including zero. It composes with arithmetic and source-law bindings; nonnumeric values are rejected, and negative inputs fail without admitting a changed world.

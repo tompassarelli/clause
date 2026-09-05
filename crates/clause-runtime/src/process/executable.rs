@@ -1050,6 +1050,14 @@ fn lower_canonical_expression(
         ))
     };
     Ok(match expression {
+        CanonicalExecutableExpressionV1::GreaterThan(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::GreaterThan(left, right)
+        }
+        CanonicalExecutableExpressionV1::LessThanOrEqual(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::LessThanOrEqual(left, right)
+        }
         CanonicalExecutableExpressionV1::SquareRoot(value) => ExecutableExpressionV1::SquareRoot(Box::new(
             lower_canonical_expression(value, slots, depth + 1)?,
         )),
@@ -1711,6 +1719,14 @@ fn lower_scalar_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::GreaterThan(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::GreaterThan(left, right)
+        }
+        CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::LessThanOrEqual(left, right)
+        }
         CanonicalScalarExpressionV1::SquareRoot(value) => ExecutableExpressionV1::SquareRoot(Box::new(
             lower_scalar_expression(value, state_slot, parameter_slots, depth + 1)?,
         )),

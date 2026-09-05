@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "scalar-comparison",
+        title: "Boolean results from scalar comparisons",
+        summary: "Ordered F64 comparisons >, >=, < and <= produce Bool values. Numeric arithmetic binds more tightly; all assigned values read the same pre-transition state, so a numeric update and its completion flag can be one atomic rule.",
+        source: include_str!("../../../test-vectors/authoring/scalar-comparison.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "scalar-square-root",
         title: "Checked scalar square root",
         summary: "sqrt(expression) computes the finite F64 square root, including zero. It composes with arithmetic and source-law bindings; nonnumeric values are rejected, and negative inputs fail without admitting a changed world.",

@@ -334,6 +334,8 @@ pub struct CanonicalStateCellV1 {
 /// declared argument ordinals local to the handler, never physical slots.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalExecutableExpressionV1 {
+    GreaterThan(Box<Self>, Box<Self>),
+    LessThanOrEqual(Box<Self>, Box<Self>),
     SquareRoot(Box<Self>),
     Constant(CanonicalScalarValueV1),
     State(CanonicalStateRefV1),
@@ -503,6 +505,8 @@ pub struct CanonicalReferentInputBindingV1 {
 /// Physical state coordinates are deliberately supplied only by refinement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalScalarExpressionV1 {
+    GreaterThan(Box<Self>, Box<Self>),
+    LessThanOrEqual(Box<Self>, Box<Self>),
     SquareRoot(Box<Self>),
     Current,
     Parameter(Vec<u8>),
@@ -4361,6 +4365,14 @@ fn canonical_scalar_executable_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::GreaterThan(left, right) => {
+            let (left, right) = pair(left, right)?;
+            CanonicalExecutableExpressionV1::GreaterThan(left, right)
+        }
+        CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
+            let (left, right) = pair(left, right)?;
+            CanonicalExecutableExpressionV1::LessThanOrEqual(left, right)
+        }
         CanonicalScalarExpressionV1::SquareRoot(value) => {
             CanonicalExecutableExpressionV1::SquareRoot(Box::new(
                 canonical_scalar_executable_expression(value, current, parameters, origin)?,
@@ -4432,6 +4444,14 @@ fn expand_scalar_law_bindings(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::GreaterThan(left, right) => {
+            let (left, right) = pair(left, right, expanding)?;
+            CanonicalScalarExpressionV1::GreaterThan(left, right)
+        }
+        CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
+            let (left, right) = pair(left, right, expanding)?;
+            CanonicalScalarExpressionV1::LessThanOrEqual(left, right)
+        }
         CanonicalScalarExpressionV1::SquareRoot(value) => {
             CanonicalScalarExpressionV1::SquareRoot(Box::new(
                 expand_scalar_law_bindings(value, bindings, expanding, origin)?,
@@ -4512,6 +4532,14 @@ fn canonical_general_executable_expression(
         ))
     };
     match &expression {
+        CanonicalScalarExpressionV1::GreaterThan(left, right) => {
+            let (left, right) = pair(left, right)?;
+            Ok(CanonicalExecutableExpressionV1::GreaterThan(left, right))
+        }
+        CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
+            let (left, right) = pair(left, right)?;
+            Ok(CanonicalExecutableExpressionV1::LessThanOrEqual(left, right))
+        }
         CanonicalScalarExpressionV1::SquareRoot(value) => {
             Ok(CanonicalExecutableExpressionV1::SquareRoot(Box::new(lower_expression(value)?)))
         }
@@ -4777,6 +4805,14 @@ fn relational_scalar_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::GreaterThan(left, right) => {
+            let (left, right) = pair(left, right, Some(b"F64"))?;
+            CanonicalExecutableExpressionV1::GreaterThan(left, right)
+        }
+        CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
+            let (left, right) = pair(left, right, Some(b"F64"))?;
+            CanonicalExecutableExpressionV1::LessThanOrEqual(left, right)
+        }
         CanonicalScalarExpressionV1::SquareRoot(value) => {
             CanonicalExecutableExpressionV1::SquareRoot(Box::new(lower_expression(value, Some(b"F64"))?))
         }
@@ -4830,6 +4866,32 @@ fn relational_scalar_expression(
     })
 }
 
+fn specialize_scalar_binding_case(
+    source: &GeneralHandlerCst,
+    case: &ScalarBindingCase,
+) -> Result<GeneralHandlerCst, CanonicalSourceErrorV1> {
+    let mut specialized = source.clone();
+    specialized.scalar_bindings.clear();
+    specialized.predicates = guarded_predicates(&source.predicates, case);
+    for predicate in &mut specialized.predicates {
+        let (left, right) = match predicate {
+            CanonicalScalarPredicateV1::Equal(a, b)
+            | CanonicalScalarPredicateV1::GreaterThan(a, b)
+            | CanonicalScalarPredicateV1::LessThanOrEqual(a, b) => (a, b),
+        };
+        *left = expand_scalar_law_bindings(left, &case.bindings, &mut BTreeSet::new(), source.origin)?;
+        *right = expand_scalar_law_bindings(right, &case.bindings, &mut BTreeSet::new(), source.origin)?;
+    }
+    for assignment in specialized.assignments.iter_mut()
+        .chain(&mut specialized.insertions).chain(&mut specialized.accumulations)
+    {
+        assignment.value = expand_scalar_law_bindings(
+            &assignment.value, &case.bindings, &mut BTreeSet::new(), source.origin,
+        )?;
+    }
+    Ok(specialized)
+}
+
 fn relational_checked_handler(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
@@ -4838,41 +4900,7 @@ fn relational_checked_handler(
     if !source.scalar_bindings.is_empty() {
         let mut compiled: Option<CanonicalExecutableHandlerV1> = None;
         for case in binding_cases(&source.scalar_bindings)? {
-            let mut specialized = source.clone();
-            specialized.scalar_bindings.clear();
-            specialized.predicates = guarded_predicates(&source.predicates, &case);
-            for predicate in &mut specialized.predicates {
-                let (left, right) = match predicate {
-                    CanonicalScalarPredicateV1::Equal(a, b)
-                    | CanonicalScalarPredicateV1::GreaterThan(a, b)
-                    | CanonicalScalarPredicateV1::LessThanOrEqual(a, b) => (a, b),
-                };
-                *left = expand_scalar_law_bindings(
-                    left,
-                    &case.bindings,
-                    &mut BTreeSet::new(),
-                    source.origin,
-                )?;
-                *right = expand_scalar_law_bindings(
-                    right,
-                    &case.bindings,
-                    &mut BTreeSet::new(),
-                    source.origin,
-                )?;
-            }
-            for assignment in specialized
-                .assignments
-                .iter_mut()
-                .chain(&mut specialized.insertions)
-                .chain(&mut specialized.accumulations)
-            {
-                assignment.value = expand_scalar_law_bindings(
-                    &assignment.value,
-                    &case.bindings,
-                    &mut BTreeSet::new(),
-                    source.origin,
-                )?;
-            }
+            let specialized = specialize_scalar_binding_case(source, &case)?;
             let mut handler = relational_checked_handler(cst, plan, &specialized)?;
             for rule in &mut handler.rules {
                 rule.law_origins = case.origins.clone();
@@ -5314,6 +5342,7 @@ fn checked_executable_handlers(
             .collect::<BTreeMap<_, _>>();
         let mut rules = Vec::with_capacity(solutions.len());
         for scalar_case in binding_cases(&source.scalar_bindings)? {
+            relational::check_domains(cst, plan, &specialize_scalar_binding_case(source, &scalar_case)?)?;
             let scalar_bindings = &scalar_case.bindings;
             let source_predicates = guarded_predicates(&source.predicates, &scalar_case);
             for solution in solutions.iter().cloned() {
@@ -9056,7 +9085,7 @@ fn parse_scalar_expression(source: &str, current: &str) -> Option<CanonicalScala
         cursor: 0,
         current,
     };
-    let expression = parser.additive()?;
+    let expression = parser.comparison()?;
     parser.skip_spaces();
     (parser.cursor == parser.source.len()).then_some(expression)
 }
@@ -9159,6 +9188,23 @@ struct ScalarExpressionParser<'a> {
 }
 
 impl ScalarExpressionParser<'_> {
+    fn comparison(&mut self) -> Option<CanonicalScalarExpressionV1> {
+        let left = self.additive()?;
+        self.skip_spaces();
+        let operation = [b">=".as_slice(), b"<=", b">", b"<"]
+            .into_iter().find(|operator| self.take_exact(operator));
+        let Some(operation) = operation else { return Some(left) };
+        let right = self.additive()?;
+        let (left, right) = (Box::new(left), Box::new(right));
+        Some(match operation {
+            b">" => CanonicalScalarExpressionV1::GreaterThan(left, right),
+            b"<" => CanonicalScalarExpressionV1::GreaterThan(right, left),
+            b"<=" => CanonicalScalarExpressionV1::LessThanOrEqual(left, right),
+            b">=" => CanonicalScalarExpressionV1::LessThanOrEqual(right, left),
+            _ => unreachable!(),
+        })
+    }
+
     fn additive(&mut self) -> Option<CanonicalScalarExpressionV1> {
         let mut value = self.multiplicative()?;
         loop {
@@ -9224,7 +9270,7 @@ impl ScalarExpressionParser<'_> {
         }
         if self.source.get(self.cursor) == Some(&b'(') {
             self.cursor += 1;
-            let value = self.additive()?;
+            let value = self.comparison()?;
             self.skip_spaces();
             (self.source.get(self.cursor) == Some(&b')')).then(|| self.cursor += 1)?;
             return Some(value);
@@ -9236,6 +9282,7 @@ impl ScalarExpressionParser<'_> {
         while let Some(byte) = self.source.get(self.cursor)
             && !byte.is_ascii_whitespace()
             && !matches!(*byte, b'+' | b'*' | b'/' | b'(' | b')')
+            && !matches!(*byte, b'>' | b'<')
         {
             self.cursor += 1;
         }
@@ -9328,7 +9375,9 @@ fn collect_scalar_expression_parameters(
         CanonicalScalarExpressionV1::Parameter(parameter) => {
             parameters.insert(parameter.clone());
         }
-        CanonicalScalarExpressionV1::Concatenate(left, right)
+        CanonicalScalarExpressionV1::GreaterThan(left, right)
+        | CanonicalScalarExpressionV1::LessThanOrEqual(left, right)
+        | CanonicalScalarExpressionV1::Concatenate(left, right)
         | CanonicalScalarExpressionV1::Add(left, right)
         | CanonicalScalarExpressionV1::Subtract(left, right)
         | CanonicalScalarExpressionV1::Multiply(left, right)
@@ -9918,7 +9967,9 @@ fn tick_guard_literal(expression: CanonicalScalarExpressionV1) -> Option<Canonic
         CanonicalScalarExpressionV1::Boolean(value) => Some(CanonicalScalarValueV1::Boolean(value)),
         CanonicalScalarExpressionV1::Symbol(value) => Some(CanonicalScalarValueV1::Symbol(value)),
         CanonicalScalarExpressionV1::Text(value) => Some(CanonicalScalarValueV1::Text(value)),
-        CanonicalScalarExpressionV1::SquareRoot(_)
+        CanonicalScalarExpressionV1::GreaterThan(_, _)
+        | CanonicalScalarExpressionV1::LessThanOrEqual(_, _)
+        | CanonicalScalarExpressionV1::SquareRoot(_)
         | CanonicalScalarExpressionV1::Current
         | CanonicalScalarExpressionV1::Parameter(_)
         | CanonicalScalarExpressionV1::Concatenate(_, _)
@@ -11317,6 +11368,12 @@ fn scalar_expression_matches_value(
     initial: &CanonicalScalarValueV1,
 ) -> bool {
     match expression {
+        CanonicalScalarExpressionV1::GreaterThan(left, right)
+        | CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
+            matches!(initial, CanonicalScalarValueV1::Boolean(_))
+                && scalar_expression_matches_value(left, &CanonicalScalarValueV1::Number(0))
+                && scalar_expression_matches_value(right, &CanonicalScalarValueV1::Number(0))
+        }
         CanonicalScalarExpressionV1::SquareRoot(value) => {
             matches!(initial, CanonicalScalarValueV1::Number(_))
                 && scalar_expression_matches_value(value, initial)
