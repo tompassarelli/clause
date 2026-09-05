@@ -5074,11 +5074,11 @@ fn relational_checked_handler(
     source: &GeneralHandlerCst,
 ) -> Result<CanonicalExecutableHandlerV1, CanonicalSourceErrorV1> {
     if !source.scalar_bindings.is_empty() {
-        relational::check_domains(cst, plan, source)?;
+        let domains = relational::check_domains(cst, plan, source)?;
         let mut compiled: Option<CanonicalExecutableHandlerV1> = None;
         for case in binding_cases(&source.scalar_bindings)? {
             let specialized = specialize_scalar_binding_case(source, &case)?;
-            let mut handler = relational_checked_handler(cst, plan, &specialized)?;
+            let mut handler = relational::checked_handler_with_domains(cst, plan, &specialized, domains.clone())?;
             for rule in &mut handler.rules {
                 rule.law_origins = case.origins.clone();
             }

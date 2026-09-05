@@ -47,3 +47,15 @@ fn text_operations_reject_wrong_types_and_wrong_arities() {
         assert!(ResidentSourceWorkbenchV1::open(source.as_bytes()).is_err(), "{expression}");
     }
 }
+
+#[test]
+fn typed_law_domains_survive_relational_specialization() {
+    let source = include_str!("../../../test-vectors/authoring/typed-text-law.clause");
+    let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let occurrence = workbench.handler_occurrence(b"record", &[ExecutableValueV1::text("世界").unwrap()]).unwrap();
+    workbench.run_occurrences_to_candidate(&[occurrence]).unwrap();
+    let frame = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes).unwrap();
+    assert_eq!(projected_text_value_v1(field(field(&frame, b"root"), b"output")).unwrap(), Some("世界"));
+    let invalid = source.replace("?item label ?value", "?item label (?value + 1.0)");
+    assert!(ResidentSourceWorkbenchV1::open(invalid.as_bytes()).is_err());
+}
