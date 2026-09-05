@@ -121,9 +121,9 @@ impl ExecutableRelationEffectV1 {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct Matched<'a> {
+pub(super) struct Matched {
     pub bindings: BTreeMap<u16, ExecutableValueV1>,
-    pub predicates: Vec<BorrowedEvaluation<'a>>,
+    pub predicates: Vec<EvaluatedValue>,
 }
 
 pub(super) fn sum(
@@ -252,13 +252,13 @@ fn bound_pattern(
 /// Complete finite positive matching or an explicit error. Never interpret a
 /// bound-exhausted prefix as no match. Duplicate derivations of the same exact
 /// substitution are one match; equal-valued distinct referents are not equal.
-pub(super) fn match_rule<'a>(
-    predicates: &'a [ExecutableExpressionV1],
+pub(super) fn match_rule(
+    predicates: &[ExecutableExpressionV1],
     configuration: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
     visits: &mut usize,
-) -> Result<Vec<(Matched<'a>, bool)>, ExecutableErrorV1> {
+) -> Result<Vec<(Matched, bool)>, ExecutableErrorV1> {
     let mut active = vec![Matched::default()];
     let mut rejected = Vec::new();
     for predicate in predicates {
@@ -340,8 +340,7 @@ pub(super) fn match_rule<'a>(
                             continue;
                         }
                         found = true;
-                        matched.predicates.push(BorrowedEvaluation {
-                            expression: predicate,
+                        matched.predicates.push(EvaluatedValue {
                             value: ExecutableValueV1::Boolean(true),
                             reads: vec![ExecutableReadV1::RelationRow(
                                 *slot,
@@ -357,8 +356,7 @@ pub(super) fn match_rule<'a>(
                 }
                 if !found {
                     let mut incoming = incoming;
-                    incoming.predicates.push(BorrowedEvaluation {
-                        expression: predicate,
+                    incoming.predicates.push(EvaluatedValue {
                         value: ExecutableValueV1::Boolean(false),
                         reads: vec![ExecutableReadV1::RelationSearch(
                             *slot,
@@ -379,7 +377,7 @@ pub(super) fn match_rule<'a>(
         } else {
             let mut next = Vec::new();
             for mut matched in active {
-                let evaluated = evaluate_borrowed(
+                let evaluated = evaluate_with_reads(
                     predicate,
                     configuration,
                     arguments,

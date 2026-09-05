@@ -18,22 +18,118 @@ pub enum ExecutableReadV1 {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExecutableEvaluatedExpressionV1 {
-    pub expression: ExecutableExpressionV1,
+    pub expression: ExecutableExpressionReferenceV1,
     pub value: ExecutableValueV1,
     pub reads: Vec<ExecutableReadV1>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ExpressionCoordinate {
+    Predicate(usize),
+    Assignment(usize),
+    RowEffectValue { assignment: usize, effect: usize },
+}
+
+/// A retained expression belongs to the exact immutable program that ran it.
+/// Keeping the program alive avoids copying its expression trees on every Step.
+#[derive(Clone)]
+pub struct ExecutableExpressionReferenceV1 {
+    program: std::sync::Arc<ExecutableProgramV1>,
+    rule: usize,
+    coordinate: ExpressionCoordinate,
+}
+
+impl ExecutableExpressionReferenceV1 {
+    pub(super) fn new(
+        program: &std::sync::Arc<ExecutableProgramV1>,
+        rule: usize,
+        coordinate: ExpressionCoordinate,
+    ) -> Self {
+        Self { program: std::sync::Arc::clone(program), rule, coordinate }
+    }
+}
+
+impl std::ops::Deref for ExecutableExpressionReferenceV1 {
+    type Target = ExecutableExpressionV1;
+
+    fn deref(&self) -> &Self::Target {
+        let rule = &self.program.rules[self.rule];
+        match self.coordinate {
+            ExpressionCoordinate::Predicate(index) => &rule.predicates[index],
+            ExpressionCoordinate::Assignment(index) => &rule.assignments[index].1,
+            ExpressionCoordinate::RowEffectValue { assignment, effect } => {
+                let ExecutableExpressionV1::RelationEffects(effects) = &rule.assignments[assignment].1 else {
+                    unreachable!("expression coordinate is created from a checked row effect")
+                };
+                effects[effect].parts().2
+            }
+        }
+    }
+}
+
+impl fmt::Debug for ExecutableExpressionReferenceV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&**self, formatter)
+    }
+}
+
+impl PartialEq for ExecutableExpressionReferenceV1 {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+
+#[cfg(test)]
+mod expression_reference_tests {
+    use super::*;
+
+    #[test]
+    fn retained_expressions_share_their_program_and_outlive_its_owner() {
+        use ExecutableExpressionV1 as E;
+        let predicate = E::Constant(ExecutableValueV1::Boolean(true));
+        let assignment = E::Accumulate(Box::new(E::Constant(ExecutableValueV1::number(3.0).unwrap())));
+        let row_value = E::Constant(ExecutableValueV1::number(7.0).unwrap());
+        let program = std::sync::Arc::new(ExecutableProgramV1 {
+            initial_configuration: vec![],
+            projection: None,
+            rules: vec![ExecutableRuleV1 {
+                entry: 0, predicates: vec![predicate.clone()],
+                required_present: vec![], required_absent: vec![], removals: vec![],
+                assignments: vec![(0, assignment.clone()), (1, E::RelationEffects(vec![
+                    ExecutableRelationEffectV1::Put(E::Argument(0), row_value.clone()),
+                ]))],
+            }],
+        });
+        let weak = std::sync::Arc::downgrade(&program);
+        let references = [
+            ExecutableExpressionReferenceV1::new(&program, 0, ExpressionCoordinate::Predicate(0)),
+            ExecutableExpressionReferenceV1::new(&program, 0, ExpressionCoordinate::Assignment(0)),
+            ExecutableExpressionReferenceV1::new(&program, 0, ExpressionCoordinate::RowEffectValue { assignment: 1, effect: 0 }),
+        ];
+        assert!(std::ptr::eq(&*references[0], &program.rules[0].predicates[0]));
+        for reference in &references {
+            assert!(std::ptr::eq(&**reference, &*reference.clone()));
+        }
+        drop(program);
+        for (reference, expected) in references.iter().zip([predicate, assignment, row_value]) {
+            assert_eq!(**reference, expected);
+            assert_eq!(format!("{reference:?}"), format!("{expected:?}"));
+        }
+        drop(references);
+        assert!(weak.upgrade().is_none());
+    }
 }
 
 #[derive(Clone)]
-pub(super) struct BorrowedEvaluation<'a> {
-    pub expression: &'a ExecutableExpressionV1,
+pub(super) struct EvaluatedValue {
     pub value: ExecutableValueV1,
     pub reads: Vec<ExecutableReadV1>,
 }
 
-impl BorrowedEvaluation<'_> {
-    pub fn into_owned(self) -> ExecutableEvaluatedExpressionV1 {
+impl EvaluatedValue {
+    pub fn retain(self, expression: ExecutableExpressionReferenceV1) -> ExecutableEvaluatedExpressionV1 {
         ExecutableEvaluatedExpressionV1 {
-            expression: self.expression.clone(),
+            expression,
             value: self.value,
             reads: self.reads,
         }
@@ -339,21 +435,12 @@ pub fn executable_intervention_result_term_v1(
     projection_object(scope, fields)
 }
 
-pub(super) fn evaluate_explained(
+pub(super) fn evaluate_with_reads(
     expression: &ExecutableExpressionV1,
     configuration: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
-) -> Result<ExecutableEvaluatedExpressionV1, ExecutableErrorV1> {
-    Ok(evaluate_borrowed(expression, configuration, arguments, context)?.into_owned())
-}
-
-pub(super) fn evaluate_borrowed<'a>(
-    expression: &'a ExecutableExpressionV1,
-    configuration: &[ExecutableSlotV1],
-    arguments: &[ExecutableValueV1],
-    context: EvaluationContextV1,
-) -> Result<BorrowedEvaluation<'a>, ExecutableErrorV1> {
+) -> Result<EvaluatedValue, ExecutableErrorV1> {
     let reads = std::cell::RefCell::new(Vec::new());
     let value = evaluate(
         expression,
@@ -364,8 +451,7 @@ pub(super) fn evaluate_borrowed<'a>(
             ..context
         },
     )?;
-    Ok(BorrowedEvaluation {
-        expression,
+    Ok(EvaluatedValue {
         value,
         reads: reads.into_inner(),
     })

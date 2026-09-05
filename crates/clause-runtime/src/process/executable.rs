@@ -3107,7 +3107,7 @@ pub struct ExecutableProcessRuntimeV1 {
     configuration_id: ConfigurationId,
     configuration: Vec<ExecutableSlotV1>,
     input: Option<ExecutableInputPlanV1>,
-    program: ExecutableProgramV1,
+    program: std::sync::Arc<ExecutableProgramV1>,
     physical_plan: ExecutablePhysicalPlanIdV1,
     physical_mode: ModeId,
     allocation: RuntimeAllocationEpochV1,
@@ -3230,7 +3230,7 @@ impl ExecutableProcessRuntimeV1 {
         )?);
         let physical_mode = physical_plan.plan.mode;
         let input = physical_plan.plan.input;
-        let program = physical_plan.plan.program;
+        let program = std::sync::Arc::new(physical_plan.plan.program);
         let configuration = materialize_initial_configuration(&program)?;
         Ok(Self {
             carrier,
@@ -4828,8 +4828,10 @@ impl ExecutableProcessRuntimeV1 {
                             .iter()
                             .map(|slot| (*slot, configuration[usize::from(*slot)].value().is_none()))
                             .collect(),
-                        predicates: matched.predicates.into_iter()
-                            .map(BorrowedEvaluation::into_owned).collect(),
+                        predicates: matched.predicates.into_iter().enumerate()
+                            .map(|(index, evaluated)| evaluated.retain(ExecutableExpressionReferenceV1::new(
+                                &self.program, rule_index, ExpressionCoordinate::Predicate(index),
+                            ))).collect(),
                         selected: accepted,
                         effects: Vec::new(),
                     };
@@ -4878,17 +4880,17 @@ impl ExecutableProcessRuntimeV1 {
                 relational_occurrence: (!bindings.is_empty()).then_some(&identity),
                 ..evaluation
             };
-            for (slot, expression) in &rule.assignments {
+            for (assignment, (slot, expression)) in rule.assignments.iter().enumerate() {
                 if let ExecutableExpressionV1::RelationEffects(effects) = expression {
-                    for effect in effects {
+                    for (effect_index, effect) in effects.iter().enumerate() {
                         let (mode, subject, value) = effect.parts();
-                        let subject = evaluate_explained(
+                        let subject = evaluate_with_reads(
                             subject,
                             configuration,
                             &occurrence.arguments,
                             evaluation,
                         )?;
-                        let mut value = evaluate_explained(
+                        let mut value = evaluate_with_reads(
                             value,
                             configuration,
                             &occurrence.arguments,
@@ -4908,28 +4910,32 @@ impl ExecutableProcessRuntimeV1 {
                                 *slot,
                                 mode == 3,
                                 subject.value.as_referent().cloned(),
-                                Some(value),
+                                Some(value.retain(ExecutableExpressionReferenceV1::new(
+                                    &self.program, *rule_index,
+                                    ExpressionCoordinate::RowEffectValue { assignment, effect: effect_index },
+                                ))),
                             );
                         }
                     }
                     continue;
                 }
                 if let ExecutableExpressionV1::Accumulate(delta) = expression {
-                    let mut evaluated = evaluate_explained(
+                    let evaluated = evaluate_with_reads(
                         delta,
                         configuration,
                         &occurrence.arguments,
                         evaluation,
                     )?;
                     let delta = number(evaluated.value.clone())?;
-                    evaluated.expression = expression.clone();
                     if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
-                        trace.effect(*index, *slot, true, None, Some(evaluated));
+                        trace.effect(*index, *slot, true, None, Some(evaluated.retain(
+                            ExecutableExpressionReferenceV1::new(&self.program, *rule_index, ExpressionCoordinate::Assignment(assignment)),
+                        )));
                     }
                     contributions.entry(*slot).or_default().push(delta);
                     continue;
                 }
-                let evaluated = evaluate_explained(
+                let evaluated = evaluate_with_reads(
                     expression,
                     configuration,
                     &occurrence.arguments,
@@ -4937,7 +4943,9 @@ impl ExecutableProcessRuntimeV1 {
                 )?;
                 let value = evaluated.value.clone();
                 if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
-                    trace.effect(*index, *slot, false, None, Some(evaluated));
+                    trace.effect(*index, *slot, false, None, Some(evaluated.retain(
+                        ExecutableExpressionReferenceV1::new(&self.program, *rule_index, ExpressionCoordinate::Assignment(assignment)),
+                    )));
                 }
                 let target = next
                     .get_mut(usize::from(*slot))
