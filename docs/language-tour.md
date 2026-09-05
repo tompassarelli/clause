@@ -45,8 +45,8 @@ on consume ?device
     ?device charge ?prior - 1.0
 ```
 
-This is the complete executable
-[charge example](../test-vectors/authoring/role-contracts.clause).
+This is the generated card's checked
+[role-contract example](authoring-card.md#ordinary-role-contracts).
 The role's description is ordinary Clause data. It needs no separate
 `relation`, `reads`, `subject`, or forward `mode` declaration.
 
@@ -85,8 +85,8 @@ A colon or grouped indentation delimits a multiword role such as
 
 ## Derivation and withdrawal
 
-A law relates its premises to its conclusions. In the
-[scheduling example](../test-vectors/authoring/recursive-dependencies.clause),
+A law relates its premises to its conclusions. In the generated card's checked
+[recursive-dependency example](authoring-card.md#recursive-dependencies-with-withdrawal),
 a prerequisite's blocker also blocks the dependent task:
 
 ```clause
@@ -128,9 +128,10 @@ may specialize the authored meaning; they may not silently replace it.
 
 ## Current boundaries
 
-The [authoring card](authoring-card.md) contains checked compiler examples.
-The [roadmap](roadmap.md) distinguishes implemented capabilities from the
-remaining general frontend, contract, collection, extension, and editing work.
+The [authoring card](authoring-card.md) contains generated checked examples.
+The [roadmap](roadmap.md) distinguishes those bounded capabilities, the active
+five-task scheduling delivery, and the unfinished frontend, collection,
+extension, query, and continuity work.
 
 The [syntax](syntax.md) defines source structure. The
 [foundation](foundation.md) defines meaning; the

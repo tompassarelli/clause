@@ -1,780 +1,275 @@
-# Clause Roadmap
-
-> **Status:** Current.
->
-> **Authority:** Sole authority for implementation status, dependency order,
-> milestone scope, and exit evidence. The [foundation](foundation.md) governs
-> semantics, [syntax](syntax.md) governs canonical source, and
-> [architecture](architecture.md) governs implementation boundaries.
-
-## Current position
-
-The resident compiler accepts ordinary binary role contracts expressed as
-domain/range/cardinality facts. The executable scheduling fixture uses those
-same roles in initial facts and positive recursive laws. Atomic reclosure
-preserves independently supported conclusions and removes unsupported cycles
-after the last root is withdrawn. Closure is bounded; exhaustion admits no
-partial result. Derived targets are currently separate many-valued tables,
-without direct external writes, negation, aggregates, or allocation in their
-recursive rules.
-
-Named-variable focus (`?task:`) now shares the fact reader's nested edge grammar
-across rule conditions and conclusions, handler reads, removals, insertions,
-and contributions. Focused recursive withdrawal and scalar expression editing
-run through the resident compiler; the edit preserves live state and source
-layout. This is not the completed extensible parser or formatter.
-
-Ordinary binary role contracts now check structural participation without
-nominal registration: required properties, scalar types, reference targets,
-and record fields. Atomic changes preserve required properties, and bare
-creation binders infer one domain from their inserted roles. The scheduling
-fixture contains no membership registry. Domains without ordinary contracts
-remain nominal. Behavioral conformance, multi-domain creation, declaration-free
-derived-role typing, and source-level explanation/hypothetical/repair queries
-remain work. Contract vocabulary still uses built-in spellings, not a general
-extension mechanism; `some` has no runtime table lowering yet. The fixture is
-not the completed interactive second application.
-
-The bounded resident compiler now composes finite F64 scalar laws by declared
-Reading and role bindings, including symbolic Readings, caller-independent
-binders, dependent results, source origins, and conservative output-uniqueness
-checking. Combat bounds and the bounded tick adapter use those same cases;
-there is no spelling-specific clamp law compiler. The general frontend,
-general recursive constraints, totality inference, and complete constraint solving
-remain unfinished. The existing tick adapter still recognizes a game-shaped
-state vocabulary and is not evidence of general game compilation.
-
-The structural reader now supports recursively nested denoted products and
-delimiter-aware commas. Bare indented heads are always subject focus; binding
-colon spacing is not semantic. The resident editor preserves the generation,
-live state, handlers, and pending candidate for unchanged or rejected source.
-Changed text still receives independent allocations; cross-edit identity
-continuity is not implemented by text matching.
-
-The existing finite-ground bootstrap checker also consumes certificates from
-positive least-fixed-point search. Its regression covers circular support,
-independent base evidence, distinct-value cardinality, and explicit exhaustion.
-This bounded model is neither source recursion nor a source-soundness theorem.
-
-Clause has accepted the process-first constitutional reset. The repository now
-contains experimental implementations of a process package, native execution,
-persistent native and Wasm sessions, materialization, and a playable browser
-shell. A bounded package-owned canonical reader lowers the jump arena's
-declarations and input, jump, tick, numeric-collect, and symbolic-collect
-handlers into a checked process package plus external CPP1 plans with exact
-source origins and ProgramChange-rooted allocation. Those plans execute through
-hidden candidates and separate Admission in focused native/Wasm/browser
-journeys. Laws, assertions, and the general source language remain typed
-unsupported outside that slice. These artifacts are useful executable evidence,
-but no end-to-end process-first capability is accepted or supported as the
-Clause language. There is still no supported parser, compiler, CLI, persistence
-format, runtime, Wasm boundary, renderer integration, or example application.
-
-The jump arena is a transitional in-repository conformance harness, not a
-Clause product or conquest application. Greywrought, maintained separately in
-the `greywrought-clause` repository, is the named game conquest application.
-No Greywrought source or asset belongs in this repository. Clause retains only
-compiler, checker, runtime, wire, and focused semantic fixtures. The jump-arena
-browser shell leaves the live tree after Greywrought and focused headless
-fixtures cover every unique proof it still supplies.
-
-The live `CLPV` v2 files supersede rejected process-v1 bytes as Rust experiment
-data only. There is no process-v1 compatibility decoder, and historical v1
-bytes have no semantic standing. `CLPV` is not a ratified canonical wire format:
-its current encoder and decoder are Rust-owned and lack a host-neutral byte
-specification and independent implementation.
-
-The exact CLCP v3 bytes, hashed manifest, 73-byte receipt, left-to-right KExpr
-evaluator, machine Continuation, evaluator step, fuel exhaustion,
-`admitPropose`, and `CompilerRevisionId` remain frozen compiler-machine
-mechanics. They are not silently reinterpreted as universal process semantics.
-Clause-owned outer Terms and envelopes must carry process identities, pins,
-authorizations, evidence, and governed deltas through that fixed machine.
-
-The semantic closure is now ratified at the documentation and fixture layer:
-generic typed allocation/continuity, canonical Admission requests and typed
-authorization use, heterogeneous causal order, Mode-owned Step boundaries,
-versioned open-system refinement, and reproducible semantics identity.
-Canonical syntax already has independent multi-emission; each emission now has
-the required stable projected identity slot. These are architecture facts, not
-claims that the current carriers enforce them.
-
-No implementation claim follows from a documentation specimen, commit hash,
-test transcript, or host prototype. Git history is recovery, not semantic
-authority. This status is classified by artifact below rather than bound to a
-checkpoint hash that becomes false on the next commit.
-
-## Artifact status matrix
-
-| Artifact | Semantic status | Wire status | Implementation status | Test status | Supported status | Supersedes | Constitutional gaps |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Foundation and syntax | Accepted semantic and source authorities, including semantic closure | Canonical ClauseSemanticsManifestV1 is only the exact ClauseSemanticsId preimage; mutable implementation/release state is not manifested | Documentation plus normative unexecuted closure fixtures | Manifest byte/root consistency only; semantic fixture executor remains open | Authority, not a toolchain | Process-first reset supersedes graph-first and clause-as-Application drafts | Full normative lexer/CST/elaboration implementation and Admission/causality/Step/refinement checkers remain open |
-| CLCP v1 and v3 compiler machine | Bounded compiler-machine mechanics; not universal process semantics | Ratified exact CLCP contracts | Lean reference/checker and historical Rust substrate | Lean vectors plus Rust parity/replay tests | Bootstrap evidence only | Earlier provisional compiler-machine carriers | Process-aware Compiler0, external genesis exercise, and accepted succession remain open |
-| Compiler Terms fixtures | Semantic candidate over neutral Terms | Exact JSON fixture transport, not a language package | Rust fixture/checking support | Positive and negative corpus checks | No | Earlier positional and slash-qualified specimens | Full formation, source-origin, static prerequisite, and physical-refinement bindings remain open |
-| Frozen v0 execution corpus | Historical observation oracle | Exact historical bytes and checksums | Lean/Rust historical consumers | Checksum and observation checks | No | Nothing; retained as a frozen oracle | No current syntax or process identity authority |
-| `CLPV` process-v2 corpus and `clause-package` | Experimental reduced admitted-stateful profile | Rust-owned experimental encoding | Encode, strict decode, package checks, identity carriers, partial `CausalRef`, and bounded arena declaration/handler reader with rooted allocation | Focused source/package and runtime journeys pass; the aggregate gate remains unreported | No | Rejected process-v1 bytes and decoder | Laws and assertions remain typed unsupported; handler lowering is a bounded arena subset; `CausalRef` omits authorization/effect nodes and configuration-succession closure; AdmissionRequestKey/use contracts; StepBoundaryRef/schema; retention plans; independent wire specification |
-| `clause-runtime` native and Wasm sessions | Reversible physical experiment; successful execution creates no Clause authority | Rust-owned request/response encodings plus external CPP1 physical-plan bytes | Source-derived input, jump, tick, numeric-collect, and symbolic-collect plans run through persistent native/Wasm sessions with `New` versus exact `Rematerialize`, hidden candidates, and separate Admission | Focused native and real Wasm/browser journeys pass; the aggregate gate remains unreported | No | Earlier construct-blind and one-shot runtime experiments | CPP1 checks shape/Mode/roles/bytes only; `StepProposalV2` has no StepBoundaryRef; accepted semantic-transition refinement witness, linearization/progress/resource checks, generic AllocationJudgment, and full package contract remain open |
-| `clause-materialization` | Experimental replaceable physical projection | JSON fixtures only | Cold scan, uniform grid, support, and work projection | Root gate reaches the crate; 32 tests pass | No | Historical substrate materialization probe | Exact admitted-delta input, occurrence-exact incremental contract, and accepted physical-plan binding |
-| Transitional jump-arena conformance harness and browser shell | Experimental game/transport evidence with no product standing | Bounded Rust/Wasm fixture bytes and generated JS declarations | Playable persistent shell plus Clause-authored input, jump, tick, numeric collect, and symbolic `active → collected` paths through separate Admission | Focused Rust, generated Beagle, and real Wasm/Bun journeys pass; browser generation remains outside the root Rust gate | No | Static and host-owned gameplay demonstrations; scheduled to be superseded by Greywrought plus focused headless fixtures | General source lowering for laws/assertions/handlers; one unified arena package/session; accepted native/Wasm semantic parity; controlled frame-allocation proof; enumerated successor coverage before shell removal |
-
-The root Rust gate remains the aggregate implementation gate, but its previously
-recorded red result predates the current runtime repairs and is stale. This
-constitutional documentation tranche does not rerun it and makes no green or
-red claim. No current Rust crate is supported regardless: the exact carrier
-gaps in the matrix remain open.
-
-## Preserved oracles
-
-The following evidence remains unchanged while the reset is implemented:
-
-- the three historical v0 payloads keep their exact bytes and original hashes
-  under `clause:test-vectors/execution/historical-v0/source-projections/`;
-  paths and classification metadata may change to preserve an honest
-  noncanonical-fixture boundary;
-- its six tags stay `returned`, `choices`, `yielded`, `suspended`, `failed`, and
-  `exhausted`;
-- pure dependency closure, State/effect fulfillment, and Program evolution
-  preserve their exact observations;
-- source-only movement preserves ApplicationId only when the exact
-  ProgramSnapshot, ApplicationForm, and nominal identity are unchanged;
-  cross-revision continuity uses separate ReferentId evidence;
-- equal assertion and premise occurrences remain distinct;
-- neutral Triple slots never acquire an inherent operator role;
-- CLCP v1/v3 exact-byte and replay evidence remains scoped to its published
-  contract; and
-- the unchanged position/radius source law remains the cold-semantics input for
-  later scan/indexed materialization parity.
-
-Ratified process-carrier fixtures extend these oracles; they do not rewrite
-them.
-
-## Lifecycle and sequencing
-
-Executable capability advances through three distinct states:
-
-1. An **experimental implementation or falsification artifact** may land with
-   explicit non-authority, a bounded claim, deterministic checks for that
-   claim, reversible scope, and no supported-language claim.
-2. A **semantic candidate** maps proposed behavior into the accepted process
-   constitution. It remains a candidate; Lean, Rust, a package, an index, a
-   browser, or successful execution cannot invent Clause meaning.
-3. **Supported or admitted capability** passes every applicable exact identity,
-   cross-host parity, negative-fixture, hidden-authority, cold-equivalence,
-   specialization, and absence gate before promotion or release.
-
-Constitutional dependencies block integration and promotion, not bounded
-independent experiments. Implementation can proceed in parallel where paths
-and semantic inputs are genuinely independent. No candidate may be integrated
-against superseded graph-first, proposition-first, clause-as-Application, or
-host-owned game semantics. A lower-case clause remains `ClauseJudgment`
-content over a neutral Term; it is neither every Term nor every Application.
-
-## General-purpose replacement gates
-
-Clause targets replacement of Rust, TypeScript, and other general-purpose
-languages above explicit irreducible operating-system, browser, device, and
-foreign boundaries. That target requires rich values and collections,
-parametric reuse, ownership and regions, layout and ABI control, concurrency,
-effects and system interfaces, native/Wasm/browser execution, FFI,
-modules/packages, and agent-grade tooling. None is supported today. The
-following bounded ladder controls the claim; implementation may proceed in
-parallel, but only a contiguous passed prefix counts as evidence.
-
-North is the named non-game systems adoption product for this ladder. North is
-not a Rust application that happens to consult Clause. Its accepted operator
-journeys provide concrete counterexamples and development pressure for Clause:
-when the next journey needs a missing general capability, repair that capability
-in Clause, repin North, and resume the same journey. Do not satisfy the journey
-by moving North-specific semantics into its Rust host. The target is that North
-feature changes are Clause-only above explicit passive operating-system and
-foreign adapters.
-
-| Gate | Required proof | Decision-changing failure |
-| --- | --- | --- |
-| 0 — bootstrap tractability | Fixed CLCP03 evaluator executes Compiler0 genesis/succession under the strict published resource bound; accepted source reaches package output with no host parser or semantic interpreter. | The trusted evaluator cannot run the minimum compiler within a bounded profile, or a host semantic shortcut is required. |
-| 1 — agent workbench | One long-lived stdio service runs accepted package definitions for `parse`, `check`, `explain`, `query`, `diff`, `propose`, `admit`, `run`, and `hotReload`. Arithmetic plus one relation/query yields exact `why`/`prevent`/`achieve`/`diff`, stable typed diagnostics with exact obligations/origins/dependencies, atomic base-pinned edits, a pure result, and no StateRevision. | Rust must parse, check, answer semantic queries, invent diagnostics, or execute another language; an edit can partially apply or silently rebase; interactive checking requires full Lean/succession replay. |
-| 2 — values and static reuse | Rich numbers, Unicode Text, Bytes, algebraic values, sequences/maps, rank-1 parameter/constraint telescopes, total static normalization, terminating complete resolution, exact scope commitments, distinct semantic/physical reuse keys, and separate compilation pass exact positive and negative cases. | Ordinary data work needs host types, ambient or incomplete constraint search, open instantiation, whole-graph invalidation, or source/runtime ceremony inconsistent with the compact surface. |
-| 3 — local state and lifetime | Loops, builders, request-local caches, and a frame state machine use affine Activation-local configuration, one exact reclamation root plus Borrow/Lease edges, ownership-consuming split/join/suspension, explicit observable close, bounded nonobservable mechanical reclaim, an explicit bounded managed-island option outside the game hot path, and bounded trace retention. | Ordinary mutation requires Admission/StateRevision, hidden tracing/ARC/finalizers, observable destructor semantics at deallocation, or lifetime/history rules cannot determine a bounded runtime protocol. |
-| 4 — physical competence | Clause-owned physical IR validates direct calls, registers, packed layouts, declared ABI, checking/specialization/physical cache separation, and native/Wasm parity; the bounded frame performs no controlled allocation after initialization. | Generic graph execution remains the hot path, layout/resource control requires Rust semantics, specialization changes declared observations/diagnostics, or zero-allocation exceeds its measured accounting domain. |
-| 5 — systems competence | Checked concurrency, continuations, files, data transforms, networking, time, browser APIs, and explicit FFI preserve local/effect/Admission distinctions and bounded resources. | External work requires arbitrary host mutation, opaque scheduler semantics, or governance on ephemeral local state. |
-| 6 — product development | Greywrought and North are built and evolved through revision-pinned hot reload, passive hosts, and Clause-only semantic changes above their named foreign boundaries. | A feature change requires Rust/JavaScript/TypeScript semantic edits, frame-loop GC/allocation, silent migration, or unqueryable causality. |
-| 7 — replacement evidence | Modules/packages, tooling, reproducible distribution, independent implementation, and measured agent development loops let Greywrought and North remain Clause-authored above named FFI boundaries with exact explanations and competitive target behavior. | Hidden host language, unbounded semantic tax, missing ordinary-program capability, or irreproducible package/runtime behavior remains load-bearing. |
-
-Gate 1 is intentionally small. Rust owns stdio framing, exact pins, bounded
-caches, transactions, and scheduling. Semantic operations execute accepted
-Clause package definitions through CLCP03 and `clause-runtime`. Interactive
-requests may consume accepted incremental summaries; exact Lean and compiler-
-succession replay remains a promotion gate rather than an edit-loop tax.
-Human-readable Clause source remains the compact audit and token surface.
-
-Gates 2–4 do not count from semantic IR alone. The syntax authority already
-ratifies one canonical source unit combining a rank-1 generic declaration/use,
-ordinary loop and collection builder, and semantically relevant move, borrow,
-region, and Lease boundaries. The exact UTF-8/LF bytes printed in
-[`syntax.md`](syntax.md) and copied into the adoption spike must pass parse,
-check, byte-identical canonical print/parse, and one transactional workbench
-edit with exact diagnostics plus affected and preserved dependency/cache sets.
-
-## Phase 0 — Freeze and crosswalk oracles
-
-**Status:** The v0 execution/admission/replay observations and original source-
-payload hashes are frozen; the slash-bearing source projections are quarantined
-under the historical noncanonical fixture path. An experimental process-v2
-Rust corpus exists, but it is a reduced profile and not the ratified companion.
-The semantic-closure-v1 metamorphic/negative corpus is now the normative
-companion, while its executable checker remains open.
-
-Freeze the three exact original v0 source-payload byte streams and their actual
-execution observations for:
-
-- recursive pure dependency closure and its ground-rule negatives;
-- independently identified assertion occurrences;
-- candidate State delta versus admitted StateRevision;
-- effect intent, attempt, receipt, trace replay, and later receipt admission;
-  and
-- two Program changes from exact predecessors, including stale-base rejection.
-
-Repair and extend the experimental process-v2 cases into one ratified process
-carrier for the current gaps:
-
-- pure arithmetic;
-- closure capture and source movement;
-- user-defined algebraic data plus exhaustive-match acceptance and exact
-  missing/unreachable-case rejection;
-- executable exact n-ary roles;
-- duplicate equal premise, Application, Activation, Step, and observation
-  occurrences;
-- query absence versus falsehood;
-- an ongoing service, suspension/resumption, cancellation, timeout without
-  receipt, and budget exhaustion; and
-- generated Rust/JavaScript/Wasm observation parity when those artifacts exist.
-
-The eventual ratified companion maps the frozen v0 observations into the new
-identity and causal domains without changing v0 bytes or inferring IDs from
-fixture-local names.
-
-**Exit evidence:** exact v0 checksum preservation, explicit crosswalk rules,
-and negative vectors for wrong-mode, open form, ambiguous mode, stale revision,
-unauthorized cancellation, fabricated receipt, and ungrounded cycle.
-
-## Phase 1 — Process constitution
-
-**Status:** Accepted documentation authority; no carrier implementation claim.
-
-Land one internally consistent public authority defining:
-
-- running, FormationJudgment, ApplicationForm, Application, Activation,
-  Configuration, Step, Run, Continuation, Observation, Result, Value,
-  Judgment, Admission, and Trace;
-- exact typed identity/equivalence rules;
-- RelationSchema, activation-scoped result relations, revision-indexed
-  RelationExtension, OperatorRef, Mode, Reading, ExecutionAuthorization, and
-  capability;
-- StaticActivationBasis with an exact checked-candidate or admitted-constitution
-  binding, separated from each Mode's possibly empty named/RoleId-indexed
-  DynamicPrerequisiteSchema, exact bindings, and occurrence-only cause
-  projection;
-- affine Activation-local configuration, anonymous reductions, Step cuts,
-  escape/alias/concurrency rules, and admission-free local mutation;
-- rank-1 static parameter and constraint telescopes, total static
-  normalization, terminating complete constraint resolution, exact resolution-
-  scope commitments, distinct instantiation/provenance/specialization/physical
-  reuse keys, and separate compilation;
-- one exact Owned/RegionMember/ForeignManaged allocation root plus separate
-  Borrow/Lease obligations, explicit observable close before bounded
-  nonobservable mechanical reclamation, deterministic regions, explicitly
-  bounded managed islands, bounded trace retention, and exact cycle/foreign-
-  boundary rules;
-- ProgramSnapshot as process constitution and StateRevision as admitted process
-  boundary;
-- exact long-lived Program/world pinning;
-- three independent real-effect slots for governed-or-preauthorized intent,
-  issued EffectAuthorization, and CapabilityEvidence, with governed-only
-  Admission and exact attempt/optional-receipt/observation/Judgment/later-
-  Admission causality;
-- graph-as-canonical-carrier and cold-semantics refinement; and
-- the implementation DAG and falsifiers in this roadmap.
-
-**Exit evidence:** one clean exact-object documentation review with no
-contradictory clause-as-Application, graph-authority, rest/motion, overloaded
-Run arrow, or continuation/candidate-delta collapse in the edited authority
-set.
-
-## Phase 2 — Checked formation and process identities
-
-**Status:** Semantics ratified; not implemented.
-
-Introduce the smallest host-neutral checked distinctions:
-
-```text
-RelationSchemaId
-RoleId
-OperatorRef
-ModeId
-InstantiationUseRef
-InstantiationKey
-SpecializationKey
-PhysicalReuseKey
-ApplicationShapeId
-ApplicationId
-ActivationId
-StepId
-RunId
-ContinuationId
-ObservationId
-```
-
-`InstantiationUseRef` is exact snapshot provenance. `InstantiationKey` is a
-cross-snapshot interface-checking key, `SpecializationKey` adds body/transitive
-semantics, and `PhysicalReuseKey` adds lowering, target/profile, ABI/layout/
-strategy, and physical dependencies. Their presence prevents a host-only cache
-from deciding compatibility; none is nominal identity or authority.
-Keep `ReferentId` as the established nominal referent identity; do not add an
-indistinct universal `ConceptId`. Raw transport bytes may share width while
-semantic ID domains remain non-interchangeable.
-`ClauseId` is retired as a public identity domain; every nominal Application
-has ApplicationId, while raw, quoted, open, or merely structural forms are not
-anonymous Applications.
-
-RelationSchemaId and OperatorRef pair `ProgramSnapshotId` with typed snapshot-
-local declaration identity; RoleId is local to its exact RelationSchemaId, and
-ModeId is local to its exact OperatorRef. A changed ProgramSnapshot never
-silently preserves any of them. Cross-revision continuity, where a real
-consumer requires it, is a separate ReferentId relation with explicit evidence.
-ProgramRevision lineage alone never supplies declaration identity or
-continuity.
-
-Every ApplicationShapeId commits to ClauseSemanticsId, exact RelationSchemaId,
-exact OperatorRef, the exact eligible ModeId set, named-role bindings, context
-requirements, exact InstantiationUseRefs with their InstantiationKeys and
-SpecializationKeys, and the complete resolved semantic-dependency/declaration
-closure, including proof that the closure is empty where applicable.
-PhysicalReuseKey is excluded.
-
-Implement closed ApplicationForm formation, nominal Application allocation,
-fresh Activation with an exact StaticActivationBasis, InitialContext,
-slot-preserving DynamicPrerequisiteBindings, separate occurrence-only
-ActivationCauseFrontier, ActivationStartRecord, and Run membership,
-before/after Configurations under one stable ActivationId, fresh nominal StepIds
-whose StepRecords separately carry finite typed StepCauseFrontiers and exact
-configuration transitions, the normal first-Step ActivationStart singleton and
-sole ready-cancellation pair, nonfirst IncomingRunEdges from frontier and/or
-configuration succession, the closed Serial/Split/Branch/Join affine
-configuration-transition sum with typed BranchSlots and atomic split
-Step/instance/child/binding/token co-formation, exact HandoffFrom binding to the
-Continuation emitter and destination basis/pins with well-founded occurrence
-provenance and distinct ActivationStart ancestry projection, one exact
-ActivationStartRecord from which fixed continuation pins derive, and typed
-outcomes. Machine/KExpr reductions remain compiler mechanics rather
-than semantic Steps.
-
-**Exit evidence:** exact positive/negative identity vectors, reload and mobility
-tests, one Application activated twice with distinct ActivationIds,
-independently nominalized equal-shaped Applications with distinct
-ApplicationIds, one Activation across several Steps, concurrent Steps without
-invented total order, and no revision from pure running.
-
-## Phase 3 — Relation, operator, mode, and authorization split
-
-**Status:** Semantics ratified; not implemented.
-
-Make role schema, extensional content, process operator, executable mode, source
-Reading, derivation authorization, ExecutionAuthorization, admission authority,
-and effect capability explicitly separate. Activation selects one exact Mode
-only after role closure and a valid StaticActivationBasis. It then checks only
-the named/RoleId-indexed dynamic-prerequisite slots that Mode declares, closing
-their multiplicity exactly and projecting only occurrence-producing evidence
-into the separate causal frontier; the entire schema may be empty. A relation
-with zero modes remains valid and non-executable. Checked-candidate running may
-read a pinned admitted world, persist nonauthoritative output/Continuation, and
-simulate effects inertly, but fabricates no revision, real attempt, or
-constitutive authority. Joining an authoritative RuntimeSession, proposing
-authoritative world change, relying on constitutive Program authority, or
-performing a real effect uses an admitted-constitution binding.
-
-A RelationSchema with no OperatorRef can still form checked bindings,
-relational rows, proposition/assertion content, and patterns. It cannot form an
-ApplicationForm.
-
-Retain the accepted readable `relation` block as source grouping sugar whose
-checked elaboration produces the separate objects. Ordinary source must not
-acquire identity or process bookkeeping ceremony.
-For the currently ratified projection, no `mode` clause means schema plus
-Reading only, while one or more `mode` clauses also establish the grouped
-OperatorRef. The semantic carrier may represent an operator with zero modes,
-but its distinct canonical source spelling remains unratified rather than
-ambiguous.
-
-**Exit evidence:** n-ary complete-role vectors, multiple modes on one operator,
-non-executable relation diagnosis, no positional role recovery, no implicit
-assertion, and exact revision-indexed relational querying.
-
-## Phase 4 — Early pure/local general-purpose slice
-
-**Status:** Not implemented. The CLCP03 Rust and Compiler0 candidates are
-preserved but not accepted.
-
-The first implementation slice tests the cheap ordinary case before bundling
-the entire process/effect model. It uses one accepted semantic carrier and the
-real Compiler0/package/runtime path, not a disposable host interpreter:
-
-1. implement checked Application/Activation/Step identity, exact
-   StaticActivationBasis, exact possibly-empty DynamicPrerequisiteSchema and
-   bindings, occurrence-only cause projection, affine ActivationConfiguration,
-   anonymous reductions, and exact Step cuts;
-2. complete strict bounded CLCP03 Rust parity, execute and admit exact
-   Compiler0 from the external anchor, and prove one predecessor-bound
-   successor evaluation without changing the frozen machine contract;
-3. implement rich numbers, Unicode Text, Bytes, algebraic values,
-   sequences/maps, closure capture, exhaustive matching, exact n-ary formation,
-   rank-1 parameter/constraint telescopes, total static normalization,
-   terminating complete resolution, exact scope commitments, normalized
-   evidence, distinct checking/specialization/physical reuse keys, and separate
-   compilation;
-4. implement exact Owned/RegionMember/ForeignManaged roots, Borrow/Lease edges,
-   moves, ownership-consuming split/join/suspension, bounded failure restoration,
-   explicit observable close, bounded nonobservable mechanical reclaim,
-   deterministic regions plus one explicitly bounded non-game managed-island
-   fixture, exact cycle and trace-retention disposition, and the no-managed-
-   island/no-mandatory-GC/controlled-no-allocation native/Wasm game profile;
-5. lower the same accepted meaning through Clause-owned physical IR to direct
-   native and minimal Wasm artifacts with declared layout/ABI and checked
-   monomorphization, dictionary, and erasure strategies; and
-6. round-trip the already ratified combined generic/loop/builder/move/borrow/
-   region/Lease source fixture, then expose the one long-lived agent workbench
-   with exact `parse`, `check`, `explain`, `query`, `diff`, `propose`, `admit`,
-   `run`, and `hotReload` operations.
-
-The proving program is deliberately small: pure arithmetic, one relation and
-query, truth without implicit assertion, closure/ADT/n-ary formation, one
-Application activated twice, a local loop/builder/cache, and exact
-`why`/`prevent`/`achieve`/`diff`. Pure observations remain queryable without a
-revision. Thousands of local reductions create only declared Step cuts and no
-StateRevision, Admission, or mandatory retained trace. Interactive checks use accepted
-incremental summaries; exact Lean/compiler-succession replay gates promotion,
-not each edit.
-
-Streaming, cancellation, governed State, external effects, materialization,
-and passive rendering remain Phase 6 breadth. This split prevents a failure in
-ordinary values, static reuse, memory, or specialization from hiding behind a
-larger distributed-process demonstration.
-
-The semantic-model candidate remains scoped to
-`clause:lean/ClauseProcess.lean`, `clause:lean/ClauseProcess/**`, and the
-ratified successor to the experimental `clause:test-vectors/process-v2/**`
-corpus. The existing CLCP03 and Compiler0 recovery paths enumerated below remain
-inputs until the Phase 4 integrator applies their exact accepted deltas. One
-integrator owns shared manifests, target crate registration, the root corpus
-index, and the exact assembled package.
-
-**Exit evidence:** adoption-spike Phase B passes through the real accepted
-Compiler0/package/runtime/workbench, including all exact negatives; direct
-native and Wasm observations agree; the frame hot path satisfies its resource
-profile; and replacement Gates 0–4 have a contiguous passed prefix. The later
-Phase C program remains open.
-
-## Phase 5 — Compiler host-freeze, Terms, and materialization
-
-**Status:** Compiler Terms fixtures and the split `clause-package`,
-`clause-runtime`, and `clause-materialization` crates are integrated as
-experimental evidence. The Terms contract is still a semantic candidate;
-materialization is a replaceable physical experiment; neither establishes
-Admission or supported Clause behavior. Compiler0 and a complete independent
-process checker remain unimplemented.
-
-Bounded candidate work may proceed in parallel before this phase, but ordered
-integration begins only from the accepted Phase 4 process contract:
-
-1. preserve the accepted Terms object, independently review any follow-up
-   successor against exact declarations, static parameters and evidence, role
-   closure, Application/Activation/Step/Observation identity, and process
-   envelopes, and land only a clean accepted successor;
-2. complete Compiler0's wider lossless source occurrence preservation,
-   deterministic Reading selection, exact focus/binding/origins, canonical
-   printing, local recovery, semantic round trips, and Terms projection without
-   reintroducing provisional `JUDGMENT_ID` or check-decision payloads;
-3. perform one predecessor-authorized Compiler0-to-Compiler1 host-freeze change
-   covering exactly one binding form, one effect form, one typed macro, and one
-   diagnostic behavior with zero host semantic changes. Compiler0 already fixes
-   the accepted process envelope and Compiler1 merely populates it. The user-
-   defined algebraic-data/exhaustive-match positive and missing/unreachable
-   negatives also pass under the frozen hosts; and
-4. finish repair, independently review, and accept the current materialization
-   successor behind admitted semantic deltas, then complete cold scan/indexed
-   parity and end-to-end locality.
-
-The materialization seam is exact:
-
-```text
-AdmittedStateDelta {
-  ClauseSemanticsId, ProgramRevisionId, RuntimeSessionId,
-  predecessor StateRevisionId, result StateRevisionId,
-  producing ActivationId, producing StepId, semantic delta
-}
-
-MaterializationUpdate {
-  AdmittedStateDelta,
-  exact semantic graph ref, exact contract ref, exact physical plan ref,
-  physical budget
-}
-```
-
-Semantic governance creates `AdmittedStateDelta`. A materializer may validate,
-project, and apply `MaterializationUpdate` to a replaceable physical view and
-return a receipt or typed physical failure. It never allocates, admits, or owns
-State history. Graph, contract, and plan identity belong to the physical update
-and receipt; plan identity never enters `StateRevisionId`.
-
-Parallel candidate lanes remain path-disjoint. Every `clause-substrate` path
-below names a historical bootstrap or recovery location, not the target crate
-boundary:
-
-- Rust CLCP v3: `clause:crates/clause-substrate/src/compiler_package_v3/**`,
-  `clause:crates/clause-substrate/tests/compiler_package_v3.rs`, and
-  `clause:crates/clause-substrate/tests/evaluator_v3.rs`, plus the preserved
-  host-mechanics gates
-  `clause:crates/clause-substrate/tests/host_mechanics.rs` and
-  `clause:crates/clause-substrate/tests/fixtures/compiler_runtime/{host-mechanics.tsv,source-ast-mechanics.tsv}`;
-- Compiler0: `clause:compiler0/**`, `clause:tools/compiler0-materializer/**`,
-  and `clause:test-vectors/compiler-genesis/**`; this lane owns the lossless
-  parser/Reading selection, canonical printer, local recovery, and semantic
-  round-trip artifacts inside that scope;
-- Terms candidate: `clause:docs/compiler-terms.md` and
-  `clause:test-vectors/compiler-terms/**`; and
-- materialization candidate: `clause:crates/clause-materialization/**`. The old
-  `clause-substrate` materialization paths and `274136a` are recovery evidence
-  only.
-
-One integration owner alone edits shared workspace/package manifests, Lean
-build manifests and roots, `clause:crates/clause-substrate/src/lib.rs`, shared
-`clause:crates/clause-substrate/src/evaluator/mod.rs`,
-`clause:crates/clause-substrate/src/physical/mod.rs`,
-`clause:crates/clause-substrate/src/artifacts/mod.rs`, and shared corpus
-manifests/checksums. Scope-local corpus manifests remain with their named lane.
-Existing candidate edits to shared paths stay preserved as recovery evidence;
-the integrator reconciles them once, and candidate lanes make no further shared-
-path edits concurrently.
-
-The dirty Rust candidate's removals under
-`clause:crates/clause-substrate/src/compiler_package_v2/**`,
-`clause:crates/clause-substrate/tests/compiler_package_v2.rs`, and
-`clause:crates/clause-substrate/tests/evaluator_v2.rs` are not an accepted
-retirement. The Phase 5 integrator keeps v2 live until the accepted v3 successor
-and every in-tree consumer have migrated, ports any still-required oracle, and
-only then removes the complete v2 surface in that same integrated change.
-
-The current `clause-substrate` name and single-crate boundary are historical
-bootstrap artifacts, not the target architecture. Phase 4 establishes new
-process-facing `clause-package` and `clause-runtime` boundaries while retaining
-`clause-substrate` temporarily for frozen bootstrap consumers. After the
-accepted v3, runtime, and materialization successors have been reconciled from
-their recovery lanes, Phase 5 migrates every remaining consumer and completes
-the responsibility split:
-
-- `clause-package` owns exact CLCP codecs, canonical bytes, and package
-  validation;
-- `clause-runtime` owns the construct-blind evaluator and generic process
-  execution protocol; and
-- `clause-materialization` owns scan, index, and incremental physical
-  projections.
-
-Phase 4 may carry the minimal pure Wasm specialization needed by its falsifier;
-Phase 6 establishes `clause-wasm` as the complete bounded process transport
-adapter. The crate name `clause` is the target user-facing facade and CLI
-aggregation boundary; it delegates to the responsibility crates and owns no
-language semantics.
-No Rust crate named
-`clause-core`, `clause-common`, or `clause-semantics` may become a shared junk
-drawer or imply that host code owns language meaning. The old paths above name
-recovery scopes only; accepted deltas are applied to the target boundaries
-rather than merging candidate branch trees or duplicating frozen bytes.
-
-The unchanged spatial law must produce identical observation and occurrence-
-support multisets through cold scan and indexed/incremental plans. Repeated
-premise slots, self-joins, equal content from distinct Activations, fallback,
-allocation exhaustion, graph/plan pins, and disconnected-population locality
-must remain exact. Physical plan changes never change StateRevision identity.
-
-**Exit evidence:** the complete cross-phase adoption program passes: accepted
-Compiler1 host-freeze evolution, user-defined algebraic-data/exhaustive-match
-positive and negatives under frozen hosts, independently reviewed Terms and
-materialization objects, lossless source occurrences, deterministic Reading
-selection, canonical parse/print/parse meaning, local recovery and semantic
-round trips, construct-blind hosts, cold parity, and measured end-to-end
-locality without hidden whole-state work.
-
-## Phase 6 — Clause-owned transition, effects, Wasm, and passive rendering
-
-**Status:** No accepted or supported integrated implementation. Experimental
-native execution, headless jump behavior, bounded Wasm request/response
-adapters, persistent native/Wasm sessions, and a passive browser shell are in
-the repository. They remain physical evidence while the process identity,
-prerequisite, executable-plan, and carrier-authority defects in the artifact
-matrix are open. No separate `clause-wasm` responsibility crate exists.
-
-Complete the adoption-spike Phase C breadth on the same Phase 4 implementation:
-recursive derivation; an ongoing service with real suspension/restart;
-continuation handoff and cancellation races; budget exhaustion; governed State
-transition; honest external effects; and a hygienic compiler process proposing
-a Program delta. None may fork a toy runtime or reintroduce a mandatory dynamic
-Authorization for ordinary pure/local Modes.
-
-Define the minimum Clause-owned process ABI as opaque accepted package
-entrypoints. Rust provides generic evaluation, bounded canonical-byte transport,
-physical scheduling, and exact-base atomic commit mechanics; it owns no game or
-Clause construct meaning. Materialization consumes admitted deltas as a checked
-projection. Wasm exposes bounded byte arrays and physical handles only.
-
-The typed BJS shell maps canvas-scoped physical input to immutable observation
-frames and immutable render observations to Three.js. Admission-free frames
-pin exact Run, Activation, producing Step, and Observation identities plus
-optional unchanged `Wbase`; a frame projected from an admitted boundary also
-pins its exact StateRevision. The render observation is not itself admitted. The
-shell owns no movement integration, gravity, collision, jump, groundedness,
-candidate admission, clock policy, or state mutation. The public shell already
-has terminal disposal, canvas-scoped keyboard ownership, and honest static-
-sample labeling. Integration still requires the process-identity frame
-envelope, bounded preallocated pools/transport, and controlled no-allocation
-frame path.
-
-The renderer successor preallocates bounded instance pools, transport buffers,
-Wasm memory, active-frontier, continuation, and trace capacity; updates
-transforms in place; and disposes through an explicit process before wrapper
-reclaim. After initialization, the Clause/Wasm/adapter-controlled frame path
-performs no allocation, `memory.grow`, whole-frame clone, global scan,
-observable destructor/finalizer work, or unbounded teardown. Foreign calls
-retain declared contracts and
-stronger browser-wide claims require instrumentation. Freshness follows exact
-declared process causality and optional admitted-revision ancestry, never host
-callback order.
-
-Bounded process-ABI experiments already exist but remain non-promotable. After
-the process ABI is accepted, continue or reconcile them within these disjoint
-scopes:
-
-- Clause-owned mechanic laws and semantic vectors:
-  `clause:test-vectors/jump-arena/**`;
-- construct-blind native process runtime:
-  `clause:crates/clause-runtime/src/process/**` and
-  `clause:crates/clause-runtime/tests/process_runtime.rs`;
-- bounded canonical-byte Wasm adapter, currently housed experimentally in
-  `clause:crates/clause-runtime/src/process/*wasm_boundary.rs` and eventually
-  separated into `clause:crates/clause-wasm/**`; and
-- passive typed shell: `clause:browser/jump-arena-shell/**`.
-
-The rejected Rust `clause:crates/clause-substrate/src/transition.rs` and the
-unreviewed/rejected jump-law bases are evidence only, not accepted artifacts or
-lane scopes.
-One integration owner reconciles shared crate exports, the final browser
-entrypoint, and cross-lane parity fixtures after the four candidates are
-accepted. The root Cargo workspace already includes all four current Rust
-crates; workspace membership is not semantic acceptance.
-
-Prove a playable 3D mechanic whose movement, jump, no-double-jump, gravity,
-landing, collision, and render projection are Clause-owned. Then add one second
-substantial mechanic by changing Clause alone.
-
-The jump arena closes only this bounded predecessor proof. It receives no new
-gameplay, content, presentation, or product responsibility. Greywrought owns
-the real encounter and remains outside this repository. When Greywrought or a
-smaller headless Clause fixture covers one jump-arena proof, record that exact
-successor and remove the superseded browser-shell coverage. After every unique
-proof has a tested successor, remove `clause:browser/jump-arena-shell/**` and
-rename any retained `clause:test-vectors/jump-arena/**` cases by the semantic
-contract they actually test.
-
-**Exit evidence:** native/Wasm canonical boundary parity; exact process pins and
-optional revision pins where applicable; scan/indexed observation parity;
-candidate immutability before admission; effect-stage honesty; passive renderer
-boundary; and zero semantic-name switches in Rust or BJS.
-
-### Greywrought conquest proof
-
-Greywrought is the named external conquest application for Clause as an
-executable constitution of a persistent, branchable world. The application
-repository owns game source, assets, encounter design, and passive host code.
-Clause owns the language, checker, compiler, runtime, Admission, explanation,
-specialization, and exact cross-host contracts it consumes. No game source,
-asset bundle, renderer, input library, socket library, or deployment framework
-moves into this repository to satisfy the proof.
-
-The conquest passes only when one operator-visible journey demonstrates all of
-the following from authoritative records and exact pins:
-
-1. Change one consequential combat law in Clause source. The resident compiler
-   checks and installs a fresh generation without rebuilding the host,
-   restarting the server, or reloading the page; the named warm
-   source-save-to-first-admitted-browser-frame path remains below 250 ms on the
-   recorded reference machine.
-2. Replay the same exact Program, world, authority, context, observations, and
-   input branch through native and Wasm specialization. Their declared
-   semantic observations agree even when their physical schedules and layouts
-   differ.
-3. Submit one malformed or unauthorized law, behavior binding, or branch
-   outcome. It rejects before execution or authoritative mutation with a
-   stable typed reason and leaves no partial authority or successor revision.
-4. Query the admitted result end to end. The explanation names the selected
-   behavior and Mode, relevant laws and observations, exact causal supports,
-   hidden Candidate Delta, Admission decision, and resulting revision; it can
-   also answer the corresponding `prevent`, `achieve`, and semantic `diff`
-   questions.
-5. Play the decisive combat nucleus: projectile confirm, energy-spending burst
-   approach, buffered and directional-influence-sensitive melee, and
-   energy-aware disengagement against a readable Clause-authored enemy. A live
-   operator acceptance must find the encounter deliberately controllable and
-   meaningfully fun; component checks cannot substitute for this contact with
-   the game.
-6. Propose one action or law change from an untrusted agent or mod in a bounded
-   branch. It receives no ambient host-function or Admission authority and can
-   affect the authoritative world only through its Candidate Delta and the
-   separately authorized Admission decision.
-7. Make every consequential world-rule change for this journey in Clause alone.
-   TypeScript, Three.js, Rust, Wasm adapters, storage, and networking remain
-   passive hosts or explicit foreign boundaries and contain no duplicate game
-   semantics.
-
-Passing isolated native, Wasm, browser, hot-loop, rejection, explanation, or
-combat checks does not pass the conquest. One revision-pinned journey must tie
-them together. Failure identifies the smallest owning general Clause seam;
-Greywrought does not close it through host logic, precomputed domain facts,
-weakened laws, or a compatibility path.
-
-## Phase 7 — Relational recovery and systems breadth
-
-**Status:** The minimal canonical semantics manifest and derived semantics ID
-are materialized. No implementation attestation, publication, distribution, or
-supported-release work is admitted without an actual consumer.
-
-Prove that activation-scoped pure result relations, explicitly admitted
-RelationExtensions and assertions, causal edges, continuations, evidence, and
-occurrence-exact supports remain relationally queryable without treating every
-relation row as execution or pure observation as admission. Phase 4 has already
-proved direct calls, registers, packed layouts, erasure, and native/Wasm
-specialization; this phase extends the accepted physical IR to actor loops,
-async continuations, indexes, database queries, JavaScript/browser artifacts,
-FFI packages, modules, and later GPU kernels where useful.
-
-A production hot path must not route every reduction through a generic graph
-engine. Translation validation and the declared observable contract remain
-universal; physical allocation and schedule do not.
-
-**Exit evidence:** replacement Gates 0–7 pass contiguously; independent
-reproduction covers the complete pure/local and process/effect slices plus the
-browser and non-game product proofs; exact published objects, usable
-modules/packages/tooling, measured agent development loops and product
-performance, and consolidated documentation contain no superseded semantic
-authority.
-
-## Completion standard
-
-A roadmap item is complete as supported or admitted capability only when its
-authoritative representation, identity rules, diagnostics, canonical encoding
-where applicable, executable behavior, negative cases, and narrow exit proof
-land together. A Lean evaluation without a kernel-checked package-bound proof
-proves no Clause admission. A Rust, Wasm, or browser result without process
-traceability and declared parity proves no Clause meaning.
-
-Never remove working capability before a tested successor exists. Every in-tree
-consumer migrates before removal. Once migration is complete, superseded source,
-tests, docs, fixtures, generated artifacts, and consumers leave the live tree in
-the same change.
+# Clause roadmap
+
+> **Authority:** This document alone reports implementation status and
+> remaining delivery work. The [foundation](foundation.md) defines meaning,
+> [syntax](syntax.md) defines canonical source, and
+> [architecture](architecture.md) defines implementation boundaries.
+
+Clause is not a supported language or toolchain yet. The repository contains a
+resident bounded compiler/runtime, experimental process carriers, and focused
+native/Wasm/browser journeys. Passing a focused test establishes only its
+named slice.
+
+## What runs
+
+The resident source compiler uses ordinary `domain`, `range`, and
+`cardinality` facts as binary role contracts. The same role definitions govern
+initial facts, handler patterns, recursive laws, runtime tables, structural
+checking, and live edits.
+
+Structural participation is checked from required properties rather than a
+second nominal registry. A referenced Task must satisfy every required Task
+role; atomic changes cannot leave a required `one` role absent. Nominal
+domains without structural contracts still use membership. Bare creation
+binders infer one domain from inserted roles. Behavioral conformance,
+multi-domain creation, and general declaration-free derived-role typing remain
+unfinished. `some` is canonical but has no runtime table lowering.
+
+Named-variable focus such as `?task:` uses the same nested role grammar in law
+premises and conclusions, handler conditions, withdrawals, inclusions, and
+contributions. Flat and focused forms compile to the same bindings. This is a
+bounded reader feature, not the uniform extensible frontend.
+
+Authorized positive laws compute a bounded least fixed point. The runtime
+tracks independent support, preserves conclusions with surviving support, and
+removes consequences—including unsupported cycles—after the last root is
+withdrawn. Exhaustion rejects without admitting a prefix. Derived relations
+are currently separate many-valued tables; recursive negation, aggregation,
+allocation, general multi-input conclusions, and a source-soundness proof are
+not implemented.
+
+Finite F64 scalar laws support declared symbolic Readings, simultaneous
+binder substitution, composed expressions, guarded alternatives, exact source
+origins, and conservative uniqueness checking. Finite sums can join typed
+rows and accept explicit `given` inputs. The compiler does not provide general
+constraint solving, totality inference, or arbitrary collection functions.
+
+Handlers can create finite typed Referents, join their rows, replace one/maybe
+values, update many-valued relations, and combine explicit numeric
+`accumulate` contributions against one pre-state. Required properties are
+checked on initial and candidate worlds. [Created collections](created-collections.md)
+records the exact current bounds and unsupported cases.
+
+The resident source session preserves its accepted generation, live state,
+handlers, and pending candidate across unchanged or rejected source. Checked
+scalar expression edits preserve the existing target and created Referent
+identities when the explicit continuity mapping permits it. General structural
+continuity across arbitrary edits is not implemented; similar text never
+justifies identity retention.
+
+Typed keyboard, scalar, Text, occurrence, and Referent inputs reach handlers
+through explicit bindings. Persistent native and real Wasm sessions execute
+the bounded source-derived plans through hidden candidates and separate
+Admission. Current browser adapters are passive for the tested projections,
+but the complete process carrier, semantic refinement proof, controlled
+frame-allocation proof, and uniform frontend remain open.
+
+## Scheduling delivery
+
+The active scheduling vertical uses five Tasks—design, prototype, validation,
+documentation, and launch—with required title, duration, and completion roles.
+Two Root values supply independent obstructions. Positive laws derive direct
+and inherited blockers plus direct and inherited waiting dependencies.
+
+Three typed inputs exercise different changes:
+
+- `Resolve` withdraws one direct obstruction and recursively retracts only the
+  consequences that lose their final support.
+- `Complete` changes one Task from incomplete to complete only when finite
+  queries find no waiting prerequisite and no blocker.
+- `Extend` increments one duration expression while preserving the selected
+  Task identity.
+
+The source contains no Task membership registry. Wrong input domains must fail
+checking. A prerequisite cycle may remain waiting but cannot complete merely
+because all external obstructions were removed.
+
+The assembled native aggregate passed all 87 tests. An actual Chrome journey
+loaded the five-task Wasm application from the same compiled source, rejected
+blocked completion, retracted dependent support after `Resolve`, extended a
+duration, completed all five tasks, retained their identities, and reported no
+page errors.
+
+Scheduling delivery remains incomplete until it records independently authored
+fact and edit-touch counts, exposes explanation and bounded hypothetical
+queries, and measures the warm source-save-to-visible-result latency. The
+language and performance goals remain incomplete with it.
+
+## Remaining language path
+
+The next implementation work follows dependency order; later application work
+may proceed when it consumes only already-running semantics.
+
+### One frontend
+
+Replace built-in construct and vocabulary cases with one deterministic,
+lossless reader driven by declared grammars and Readings. Implement canonical
+printing, local recovery, multi-emission identity slots, precise source
+origins, hygienic binding, and checked edit continuity. Existing role
+contracts, focus, expressions, laws, handlers, input bindings, and created
+relations must pass through that one path without semantic duplicates.
+
+The frontend is complete only when adding a construct with binding and effects
+changes Clause-authored declarations and transformations rather than a Rust or
+Lean semantic switch. A `Compiler0 -> Compiler1` succession must change one
+binding form, one effect form, one typed macro, and one diagnostic without host
+semantic edits. Clause-defined algebraic data and exhaustive matching must
+accept complete cases and reject missing and unreachable cases through the
+same mechanism.
+
+### Relations, definitions, and collections
+
+Generalize positive recursive relations beyond the current binary finite
+tables while retaining exact support withdrawal, occurrence multiplicity,
+cardinality, and explicit exhaustion. Add reusable parameterized definitions,
+checked specialization, separately compiled constraints, rich algebraic
+values, Text and Bytes, sequences, maps, and ordinary collection operations.
+
+Every feature must be authored once and remain available to checking,
+execution, queries, explanations, optimization, and editing. Physical indexes
+and caches may change plans but not relation meaning, support, or identity.
+Negation and aggregation require explicit finite scope; failure to complete a
+search never becomes absence.
+
+### Queries, explanations, and editing
+
+Implement `select`, `any`, `why`, `prevent`, `achieve`, and semantic
+`diff` over the same admitted facts, laws, supports, occurrences, and
+candidate deltas used by execution. Hypothetical queries run in isolated
+bounded alternatives and report exhaustion separately from a result.
+
+Live edits must preserve only identities justified by checked continuity,
+explain every retained and fresh allocation, and never silently migrate a live
+Activation. Ordinary checked edits must reach the affected running behavior
+without whole-program restart or duplicated host logic.
+
+### Local state, lifetime, and physical code
+
+Implement loops, builders, request-local caches, and actor/frame state through
+affine Activation-local configuration rather than StateRevision ceremony.
+Parallel mutation must use ownership-consuming disjoint split/join; suspension
+must transfer exact configuration custody.
+
+Every allocation needs one owner, region, or foreign manager plus checked
+Borrow/Lease edges. Observable close is explicit. The native/Wasm hot path may
+not rely on hidden tracing collection, implicit reference counting, finalizers,
+or unbounded teardown.
+
+Clause-owned physical IR must support direct calls, registers, packed layouts,
+declared ABI, native and Wasm specialization, and separate checking,
+specialization, and physical-reuse keys. Optimized paths require exact
+refinement evidence for their values, identities, failures, effects, causal
+boundaries, and resource claims; generic graph execution is not the production
+hot path.
+
+### Processes and external boundaries
+
+Complete the host-neutral process carrier for Activation, Step, Run,
+Continuation, causal order, Authorization, capability, effect, and Admission.
+Add bounded services, suspension and restart, handoff and cancellation races,
+governed State transitions, honest external effects, and passive browser and
+operating-system adapters.
+
+Intent, issued effect Authorization, capability, attempt, receipt,
+observation, Judgment, and Admission remain distinct. Rejection leaves
+authoritative state unchanged; an external attempt cannot be erased by later
+rejection.
+
+The Clause-authored workbench must provide long-lived `parse`, `check`,
+`explain`, `query`, `diff`, `propose`, `admit`, `run`, and `hotReload`
+operations. Rust may own bounded transport, caches, scheduling, persistence,
+and foreign calls, but no source grammar, semantic query, or diagnostic rule.
+
+## Application proofs
+
+### Greywrought
+
+Greywrought remains in its own repository and owns game source, assets,
+encounters, and passive host code. Clause owns the language, compiler, runtime,
+Admission, explanation, specialization, and cross-host contracts it consumes.
+
+The game proof requires several tactically distinct encounters continuously
+playable on localhost. One revision-pinned operator journey must:
+
+1. change a consequential combat law in Clause and show the admitted result
+   without rebuilding the host, restarting the server, or reloading the page;
+2. replay the same Program, world, inputs, authority, and observations through
+   native and Wasm specialization with equal declared results;
+3. reject one malformed or unauthorized change before execution or
+   authoritative mutation;
+4. explain the result through the selected behavior, Mode, laws, observations,
+   supports, candidate delta, Admission, and successor, and answer the
+   corresponding bounded `prevent`, `achieve`, and `diff` questions;
+5. demonstrate projectile confirm, energy-spending burst approach, buffered
+   direction-sensitive melee, and energy-aware disengagement against readable
+   Clause-authored behavior; and
+6. admit an untrusted agent or mod proposal only through its bounded candidate
+   and a separate authorized decision.
+
+All consequential world rules for that journey remain Clause-only. Rust,
+TypeScript, Three.js, Wasm adapters, storage, and networking are passive or
+explicit foreign boundaries. A component test cannot substitute for direct
+play of the encounter.
+
+### Scheduling
+
+The scheduling application must remain substantially different from
+Greywrought while using the same language mechanisms. It must support the five
+task dependency journey above, recursive blockers and waiting, typed Resolve,
+Complete, and Extend actions, bounded explanation and hypothetical questions,
+and identity-preserving live edits from one authored source.
+
+Its proof records independent semantic facts and the number of edits needed for
+an ordinary requirement change. Duplicate registries, host-side dependency
+logic, or a second UI state model fail the proof even if the screen appears
+correct.
+
+## Performance claims
+
+Measure on the named reference PC rather than inferring performance from code
+shape. The target is:
+
+- 60 frames per second with real-time simulation;
+- 100 active actors;
+- ordinary checked edits visible within 250 ms on the warm
+  source-save-to-first-visible-result path; and
+- bounded memory, continuation, active-frontier, and trace residency over a
+  long run.
+
+The measurement must name the exact Program, runtime, target, actor count,
+workload, warm-up, controlled allocation domain, and observed distribution.
+A fast parser alone does not satisfy edit latency; a headless component alone
+does not establish frame or browser behavior.
+
+## Preserved contracts
+
+The historical v0 corpus retains its exact bytes and six outcomes:
+`returned`, `choices`, `yielded`, `suspended`, `failed`, and `exhausted`.
+It is an oracle, not current syntax or process authority.
+
+CLCP v1/v3 bytes, manifests, receipt replay, and compiler succession remain
+scoped to their published compiler-machine contracts. They are not universal
+process semantics.
+
+Neutral Triple positions never acquire an inherent operator role. Equal
+assertions, supports, and occurrences remain independent. Source movement
+preserves nominal identity only through the applicable exact continuity rules.
+
+Working capability is removed only after a tested successor covers each unique
+behavior and every in-tree consumer has migrated. Removal then means absence
+of superseded source, tests, fixtures, generated artifacts, documentation, and
+consumers.
+
+## Completion
+
+Clause is complete for this goal only when both applications are usable through
+one supported frontend, compiler, runtime, workbench, and canonical carrier;
+execution, explanation, bounded hypothetical queries, optimization, and live
+editing consume the same authored facts; recursive withdrawal, reuse,
+collections, specialization, continuity, and safe extension meet their
+contracts; native/Wasm/browser results agree at their declared boundaries; and
+the measured performance targets pass.
+
+Any remaining host-owned semantic case, duplicate authored fact, unsupported
+core form, fictitious authority, or unmeasured target remains an open item
+rather than a compatibility path or narrowed success claim.

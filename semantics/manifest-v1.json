@@ -3,7 +3,7 @@
   "content_commitments": {
     "architecture": {
       "path": "docs/architecture.md",
-      "sha256": "2f9e74312ded9352de411b3bb5d04655133743c5c8f6ed5ae5761a7c43996dc1"
+      "sha256": "4b40e8c806709259a3d65e7381b951e47ee65ef7ec9284f4d76861dff996a9e2"
     },
     "compiler_genesis": {
       "path": "docs/compiler-genesis.md",
@@ -11,7 +11,7 @@
     },
     "foundation": {
       "path": "docs/foundation.md",
-      "sha256": "2385e3c3b322482994b0907c05f5e1f59a81071de6d0f212f47d56e4d822f11a"
+      "sha256": "1528faccb1d0a2df35d5da864816ce1be5ed194638f3689e3726d943575e6c8e"
     },
     "selected_carrier_contract": [
       {
@@ -25,7 +25,7 @@
     ],
     "syntax": {
       "path": "docs/syntax.md",
-      "sha256": "b2bbeca3eea87bafd4a3bdfd5ab160fc7890aa04bcf865857241cab263601d93"
+      "sha256": "c0a42e5b23572215eaaae325929ff108d91d3b7140dd578b389e11c7e88eaa02"
     }
   },
   "corpus_roots": {
