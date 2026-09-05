@@ -443,7 +443,7 @@ fn expression_domain<'a>(
 ) -> Option<&'a [u8]> {
     use CanonicalScalarExpressionV1 as S;
     match expression {
-        S::Number(_) | S::Add(..) | S::Subtract(..) | S::Multiply(..) | S::Divide(..) => {
+        S::Number(_) | S::SquareRoot(_) | S::Add(..) | S::Subtract(..) | S::Multiply(..) | S::Divide(..) => {
             Some(b"F64")
         }
         S::Boolean(_) => Some(b"Bool"),
@@ -468,6 +468,7 @@ fn check_expression(
     }
     match expression {
         S::Parameter(name) => constrain(domains, name, expected, origin)?,
+        S::SquareRoot(value) => check_expression(value, b"F64", domains, origin)?,
         S::Add(a, b) | S::Subtract(a, b) | S::Multiply(a, b) | S::Divide(a, b) => {
             check_expression(a, b"F64", domains, origin)?;
             check_expression(b, b"F64", domains, origin)?;

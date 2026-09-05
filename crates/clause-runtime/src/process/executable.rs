@@ -787,6 +787,7 @@ pub fn decode_executable_occurrence_v1(
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExecutableExpressionV1 {
+    SquareRoot(Box<Self>),
     Constant(ExecutableValueV1),
     Slot(u16),
     Argument(u16),
@@ -1049,6 +1050,9 @@ fn lower_canonical_expression(
         ))
     };
     Ok(match expression {
+        CanonicalExecutableExpressionV1::SquareRoot(value) => ExecutableExpressionV1::SquareRoot(Box::new(
+            lower_canonical_expression(value, slots, depth + 1)?,
+        )),
         CanonicalExecutableExpressionV1::Constant(value) => {
             ExecutableExpressionV1::Constant(lower_scalar_value(value)?)
         }
@@ -1707,6 +1711,9 @@ fn lower_scalar_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::SquareRoot(value) => ExecutableExpressionV1::SquareRoot(Box::new(
+            lower_scalar_expression(value, state_slot, parameter_slots, depth + 1)?,
+        )),
         CanonicalScalarExpressionV1::Current => ExecutableExpressionV1::Slot(state_slot),
         CanonicalScalarExpressionV1::Parameter(parameter) => ExecutableExpressionV1::Slot(
             *parameter_slots
@@ -2072,6 +2079,9 @@ fn lower_tick_expression(
         ))
     };
     Ok(match expression {
+        CanonicalTickExpressionV1::SquareRoot(value) => ExecutableExpressionV1::SquareRoot(Box::new(
+            lower_tick_expression(value, binding, depth + 1)?,
+        )),
         CanonicalTickExpressionV1::Value(value) => lower_tick_value(*value, binding)?,
         CanonicalTickExpressionV1::Number(bits) => {
             ExecutableExpressionV1::Constant(ExecutableValueV1::Number(*bits))
@@ -6104,7 +6114,7 @@ fn validate_value_expression(
             }
             vec![]
         }
-        E::Not(value) => vec![value],
+        E::Not(value) | E::SquareRoot(value) => vec![value],
         E::ReferentFacet { value, members, .. } => {
             if members.len() > MAX_PROGRAM_ITEMS
                 || members.windows(2).any(|pair| pair[0] >= pair[1])
@@ -6682,6 +6692,13 @@ fn evaluate(
             let numerator = number(evaluate(left, slots, arguments, context)?)?;
             ExecutableValueV1::number(numerator / denominator)
         }
+        E::SquareRoot(value) => {
+            let value = number(evaluate(value, slots, arguments, context)?)?;
+            if value < 0.0 {
+                return Err(ExecutableErrorV1::NumericDomain);
+            }
+            ExecutableValueV1::number(value.sqrt())
+        }
         E::Clamp(value, lower, upper) => {
             let value = number(evaluate(value, slots, arguments, context)?)?;
             let lower = number(evaluate(lower, slots, arguments, context)?)?;
@@ -7095,6 +7112,10 @@ fn encode_expression(
         E::Subtract(a, b) => encode_binary(bytes, 4, a, b)?,
         E::Multiply(a, b) => encode_binary(bytes, 5, a, b)?,
         E::Divide(a, b) => encode_binary(bytes, 6, a, b)?,
+        E::SquareRoot(value) => {
+            bytes.push(30);
+            encode_expression(bytes, value)?;
+        }
         E::Clamp(a, b, c) => {
             bytes.push(7);
             encode_expression(bytes, a)?;
@@ -7396,6 +7417,7 @@ impl<'a> Decoder<'a> {
             ),
             24 => E::Accumulate(Box::new(self.expression(next)?)),
             25 => E::Binding(self.u16()?),
+            30 => E::SquareRoot(Box::new(self.expression(next)?)),
             29 => {
                 let count = self.count()?;
                 let predicates = (0..count).map(|_| self.expression(next))

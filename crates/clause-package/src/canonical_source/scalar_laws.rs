@@ -375,6 +375,7 @@ fn numeric_expression(value: &CanonicalScalarExpressionV1) -> bool {
     use CanonicalScalarExpressionV1::*;
     match value {
         Parameter(_) | Number(_) => true,
+        SquareRoot(value) => numeric_expression(value),
         Add(a, b) | Subtract(a, b) | Multiply(a, b) | Divide(a, b) => {
             numeric_expression(a) && numeric_expression(b)
         }
@@ -389,6 +390,7 @@ fn substitute(
     use CanonicalScalarExpressionV1::*;
     match expression {
         Parameter(name) => bindings.get(name).unwrap_or(expression).clone(),
+        SquareRoot(value) => SquareRoot(Box::new(substitute(value, bindings))),
         Add(a, b) => Add(
             Box::new(substitute(a, bindings)),
             Box::new(substitute(b, bindings)),

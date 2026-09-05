@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "scalar-square-root",
+        title: "Checked scalar square root",
+        summary: "sqrt(expression) computes the finite F64 square root, including zero. It composes with arithmetic and source-law bindings; nonnumeric values are rejected, and negative inputs fail without admitting a changed world.",
+        source: include_str!("../../../test-vectors/authoring/scalar-square-root.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "finite-sums",
         title: "Closed finite query sums",
         summary: "Sums F64 contributions over exact finite row matches in the same pre-state. Query-local variables do not capture the enclosing handler; an empty query yields zero, distinct equal-valued referents contribute independently, and exhausted search is an error.",

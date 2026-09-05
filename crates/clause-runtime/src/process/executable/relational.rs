@@ -50,7 +50,7 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
                     check(b, bound, false, depth + 1, closed)?;
                 }
             }
-            E::Not(a) | E::Accumulate(a) => check(a, bound, false, depth + 1, closed)?,
+            E::Not(a) | E::Accumulate(a) | E::SquareRoot(a) => check(a, bound, false, depth + 1, closed)?,
             E::RelationRead(a, b)
             | E::RelationPresent(a, b)
             | E::RelationRemoveRow(a, b)

@@ -334,6 +334,7 @@ pub struct CanonicalStateCellV1 {
 /// declared argument ordinals local to the handler, never physical slots.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalExecutableExpressionV1 {
+    SquareRoot(Box<Self>),
     Constant(CanonicalScalarValueV1),
     State(CanonicalStateRefV1),
     Argument(u16),
@@ -502,6 +503,7 @@ pub struct CanonicalReferentInputBindingV1 {
 /// Physical state coordinates are deliberately supplied only by refinement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalScalarExpressionV1 {
+    SquareRoot(Box<Self>),
     Current,
     Parameter(Vec<u8>),
     Number(u64),
@@ -557,6 +559,7 @@ pub enum CanonicalTickValueV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalTickExpressionV1 {
+    SquareRoot(Box<Self>),
     Value(CanonicalTickValueV1),
     Number(u64),
     Add(Box<Self>, Box<Self>),
@@ -4358,6 +4361,11 @@ fn canonical_scalar_executable_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::SquareRoot(value) => {
+            CanonicalExecutableExpressionV1::SquareRoot(Box::new(
+                canonical_scalar_executable_expression(value, current, parameters, origin)?,
+            ))
+        }
         CanonicalScalarExpressionV1::Current => {
             CanonicalExecutableExpressionV1::State(current.clone())
         }
@@ -4424,6 +4432,11 @@ fn expand_scalar_law_bindings(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::SquareRoot(value) => {
+            CanonicalScalarExpressionV1::SquareRoot(Box::new(
+                expand_scalar_law_bindings(value, bindings, expanding, origin)?,
+            ))
+        }
         CanonicalScalarExpressionV1::Parameter(parameter) if bindings.contains_key(parameter) => {
             if !expanding.insert(parameter.clone()) {
                 return Err(CanonicalSourceErrorV1::AmbiguousExecutableBinding { origin });
@@ -4499,6 +4512,9 @@ fn canonical_general_executable_expression(
         ))
     };
     match &expression {
+        CanonicalScalarExpressionV1::SquareRoot(value) => {
+            Ok(CanonicalExecutableExpressionV1::SquareRoot(Box::new(lower_expression(value)?)))
+        }
         CanonicalScalarExpressionV1::Concatenate(left, right) => {
             let (left, right) = pair(left, right)?;
             Ok(CanonicalExecutableExpressionV1::Concatenate(left, right))
@@ -4675,6 +4691,11 @@ fn tick_executable_expression(
         ))
     };
     Ok(match expression {
+        CanonicalTickExpressionV1::SquareRoot(value) => {
+            CanonicalExecutableExpressionV1::SquareRoot(Box::new(
+                tick_executable_expression(cst, plan, parts, value)?,
+            ))
+        }
         CanonicalTickExpressionV1::Value(value) => tick_state_ref(cst, plan, parts, *value)?,
         CanonicalTickExpressionV1::Number(bits) => {
             constant_expression(CanonicalScalarValueV1::Number(*bits))
@@ -4756,6 +4777,9 @@ fn relational_scalar_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::SquareRoot(value) => {
+            CanonicalExecutableExpressionV1::SquareRoot(Box::new(lower_expression(value, Some(b"F64"))?))
+        }
         CanonicalScalarExpressionV1::Current => {
             return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
         }
@@ -9175,6 +9199,12 @@ impl ScalarExpressionParser<'_> {
 
     fn primary(&mut self) -> Option<CanonicalScalarExpressionV1> {
         self.skip_spaces();
+        if self.take_exact(b"sqrt(") {
+            let value = self.additive()?;
+            self.skip_spaces();
+            (self.source.get(self.cursor) == Some(&b')')).then(|| self.cursor += 1)?;
+            return Some(CanonicalScalarExpressionV1::SquareRoot(Box::new(value)));
+        }
         if self.source.get(self.cursor) == Some(&b'"') {
             let start = self.cursor;
             self.cursor += 1;
@@ -9292,6 +9322,9 @@ fn collect_scalar_expression_parameters(
     parameters: &mut BTreeSet<Vec<u8>>,
 ) {
     match expression {
+        CanonicalScalarExpressionV1::SquareRoot(value) => {
+            collect_scalar_expression_parameters(value, parameters);
+        }
         CanonicalScalarExpressionV1::Parameter(parameter) => {
             parameters.insert(parameter.clone());
         }
@@ -9885,7 +9918,8 @@ fn tick_guard_literal(expression: CanonicalScalarExpressionV1) -> Option<Canonic
         CanonicalScalarExpressionV1::Boolean(value) => Some(CanonicalScalarValueV1::Boolean(value)),
         CanonicalScalarExpressionV1::Symbol(value) => Some(CanonicalScalarValueV1::Symbol(value)),
         CanonicalScalarExpressionV1::Text(value) => Some(CanonicalScalarValueV1::Text(value)),
-        CanonicalScalarExpressionV1::Current
+        CanonicalScalarExpressionV1::SquareRoot(_)
+        | CanonicalScalarExpressionV1::Current
         | CanonicalScalarExpressionV1::Parameter(_)
         | CanonicalScalarExpressionV1::Concatenate(_, _)
         | CanonicalScalarExpressionV1::Add(_, _)
@@ -9930,6 +9964,7 @@ fn scalar_tick_expression(
         S::Subtract(a, b) => T::Subtract(recurse(a)?, recurse(b)?),
         S::Multiply(a, b) => T::Multiply(recurse(a)?, recurse(b)?),
         S::Divide(a, b) => T::Divide(recurse(a)?, recurse(b)?),
+        S::SquareRoot(value) => T::SquareRoot(recurse(value)?),
         _ => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
     })
 }
@@ -9989,6 +10024,13 @@ impl TickExpressionParser<'_> {
 
     fn primary(&mut self) -> Option<CanonicalTickExpressionV1> {
         self.skip_spaces();
+        if self.source[self.cursor..].starts_with(b"sqrt(") {
+            self.cursor += 5;
+            let value = self.additive()?;
+            self.skip_spaces();
+            (self.source.get(self.cursor) == Some(&b')')).then(|| self.cursor += 1)?;
+            return Some(CanonicalTickExpressionV1::SquareRoot(Box::new(value)));
+        }
         if self.source.get(self.cursor) == Some(&b'(') {
             self.cursor += 1;
             let value = self.additive()?;
@@ -11275,6 +11317,10 @@ fn scalar_expression_matches_value(
     initial: &CanonicalScalarValueV1,
 ) -> bool {
     match expression {
+        CanonicalScalarExpressionV1::SquareRoot(value) => {
+            matches!(initial, CanonicalScalarValueV1::Number(_))
+                && scalar_expression_matches_value(value, initial)
+        }
         CanonicalScalarExpressionV1::Current => true,
         CanonicalScalarExpressionV1::Parameter(_) => true,
         CanonicalScalarExpressionV1::Number(_) => {
