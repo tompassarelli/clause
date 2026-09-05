@@ -46,3 +46,19 @@ fn individual_event_rule_edits_retain_live_state_and_diagnostic_identity() {
     assert_eq!(number(&next, b"charge"), 0.0);
     assert_eq!(number(&next, b"attempts"), 3.0);
 }
+
+#[test]
+fn argument_event_dispatches_all_rules_with_the_same_input() {
+    let source = SOURCE.replace("bind keyboard Use down to use\n", "")
+        .replace("on use ?device", "on use ?device ?amount")
+        .replace("?charge - 1.0", "?charge - ?amount")
+        .replace("?attempts + 1.0", "?attempts + ?amount");
+    let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    for expected in [0.5, 1.0, 1.5] {
+        let occurrence = workbench.handler_occurrence(b"use", &[clause_runtime::ExecutableValueV1::number(0.5).unwrap()]).unwrap();
+        workbench.run_occurrences_to_candidate(&[occurrence]).unwrap();
+        let frame = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes).unwrap();
+        assert_eq!(number(&frame, b"attempts"), expected);
+        assert_eq!(number(&frame, b"charge"), (1.0 - expected).max(0.0));
+    }
+}

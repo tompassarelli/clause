@@ -956,10 +956,15 @@ pub fn lower_canonical_executable_program_v1(
     let mut event_entries = BTreeMap::new();
     for (ordinal, handler) in ordered_handlers.iter().enumerate() {
         let mut entry = u16::try_from(ordinal).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
-        // A named zero-input event selects all its rules in one Step, while
+        // A named event selects all its rules with the same input in one Step, while
         // each source handler retains its own identity for edits and diagnostics.
-        if handler.trigger == CanonicalHandlerTriggerV1::External && handler.argument_count == 0 {
-            entry = *event_entries.entry(handler.designation.clone()).or_insert(entry);
+        if handler.trigger == CanonicalHandlerTriggerV1::External {
+            let (shared_entry, count) = event_entries.entry(handler.designation.clone())
+                .or_insert((entry, handler.argument_count));
+            if *count != handler.argument_count {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            entry = *shared_entry;
         }
         handler_bindings.push(ExecutableCanonicalHandlerBindingV1 {
             handler: handler.id,
