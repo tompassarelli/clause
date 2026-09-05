@@ -250,7 +250,11 @@ fn checked_conditions_with_inputs(
         ));
     }
     drop(operand);
-    for sum in &source.sums {
+    let mut pending_sums = source.sums.iter().collect::<Vec<_>>();
+    while !pending_sums.is_empty() {
+        let index = pending_sums.iter().position(|sum|
+            sum.inputs.iter().all(|name| variables.contains_key(name))).ok_or_else(error)?;
+        let sum = pending_sums.remove(index);
         // Only explicitly supplied inputs cross the query's lexical boundary.
         let inputs = sum.inputs.iter().map(|name| variables.get(name).cloned().ok_or_else(error))
             .collect::<Result<Vec<_>, _>>()?;

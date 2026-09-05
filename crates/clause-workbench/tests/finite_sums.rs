@@ -129,3 +129,21 @@ fn query_inputs_reject_unknown_duplicate_and_mistyped_values() {
         assert!(ResidentSourceWorkbenchV1::open(source.as_bytes()).is_err());
     }
 }
+
+#[test]
+fn dependent_query_results_follow_bindings_not_binder_spelling() {
+    let source = std::str::from_utf8(SOURCE).unwrap()
+        .replace("sum ?value where", "sum ?value * ?count given ?count where");
+    for source in [source.clone(), source.replace("?total", "?aggregate")] {
+        let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+        assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), -2.0);
+        run(&mut w, b"create-item", &[V::number(5.0).unwrap()]);
+        let frame = run(&mut w, b"measure", &[]);
+        assert_eq!(result(&frame, b"count"), 2.0);
+        assert_eq!(result(&frame, b"total"), 6.0);
+    }
+    let cycle = std::str::from_utf8(SOURCE).unwrap()
+        .replace("sum 1.0 where", "sum ?total given ?total where")
+        .replace("sum ?value where", "sum ?value * ?count given ?count where");
+    assert!(ResidentSourceWorkbenchV1::open(cycle.as_bytes()).is_err());
+}
