@@ -47,6 +47,53 @@ on measure ?meter
     ?meter positive (?value > 0.0)
 ```
 
+## Atomic structured value copies
+
+Copy a whole typed record between relations while changing other state in the same rule. All fields read one pre-transition state; runtime-created rows use the same rule and incompatible record types are rejected.
+
+Catalog ID: `structured-value-copy`
+
+```clause
+F64
+Bool
+Item
+
+shape Point
+  x: F64
+  y: F64
+
+relation position
+  reads {item: Item} position {value: Point}
+  subject item
+  mode given item yields value: one
+relation destination
+  reads {item: Item} destination {value: Point}
+  subject item
+  mode given item yields value: one
+relation moving
+  reads {item: Item} moving {value: Bool}
+  subject item
+  mode given item yields value: one
+
+item
+  shape: Item
+item position Point { x: 2.0, y: 3.0 }
+item destination Point { x: 8.0, y: 9.0 }
+item moving true
+
+on stop ?item
+  when
+    ?item position ?position
+    ?item destination ?destination
+    ?item moving ?prior
+  withdraw
+    ?item destination ?destination
+    ?item moving ?prior
+  include
+    ?item destination ?position
+    ?item moving false
+```
+
 ## Checked scalar square root
 
 sqrt(expression) computes the finite F64 square root, including zero. It composes with arithmetic and source-law bindings; nonnumeric values are rejected, and negative inputs fail without admitting a changed world.

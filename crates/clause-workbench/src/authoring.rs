@@ -22,6 +22,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/scalar-comparison.clause"),
     },
     AuthoringExampleV1 {
+        slug: "structured-value-copy",
+        title: "Atomic structured value copies",
+        summary: "Copy a whole typed record between relations while changing other state in the same rule. All fields read one pre-transition state; runtime-created rows use the same rule and incompatible record types are rejected.",
+        source: include_str!("../../../test-vectors/authoring/structured-value-copy.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "scalar-square-root",
         title: "Checked scalar square root",
         summary: "sqrt(expression) computes the finite F64 square root, including zero. It composes with arithmetic and source-law bindings; nonnumeric values are rejected, and negative inputs fail without admitting a changed world.",

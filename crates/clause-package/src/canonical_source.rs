@@ -23,6 +23,7 @@ mod scalar_laws;
 use scalar_laws::*;
 mod live_edit;
 mod relational;
+mod structured_bindings;
 pub use live_edit::*;
 
 const SOURCE_ARTIFACT_DOMAIN: &str = "clause/source-artifact/v1";
@@ -6149,6 +6150,8 @@ pub fn elaborate_canonical_source_package_v1(
     if plan.artifact != cst.artifact {
         return Err(CanonicalSourceErrorV1::AllocationArtifactMismatch);
     }
+    let expanded = structured_bindings::expand(cst, plan)?;
+    let cst = expanded.as_ref();
     let scope = TermScope {
         universe: context.universe,
         semantics: context.semantics,
@@ -8646,7 +8649,7 @@ fn parse_general_handler(
             return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
         }
         if let Some(binding) = &replacement.aggregate_binding {
-            let Some(source) = parameter_sources.remove(binding) else {
+            let Some(source) = parameter_sources.get(binding) else {
                 return Ok(None);
             };
             if source.field.is_some()
