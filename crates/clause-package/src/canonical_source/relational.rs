@@ -112,14 +112,6 @@ fn sum_query(source: &GeneralHandlerCst, sum: &GeneralSumCst) -> Result<GeneralH
     })
 }
 
-fn checked_conditions(
-    cst: &CanonicalSourceCstV1,
-    plan: &CanonicalSourceAllocationPlanV1,
-    source: &GeneralHandlerCst,
-) -> Result<CheckedConditions, CanonicalSourceErrorV1> {
-    checked_conditions_with_inputs(cst, plan, source, BTreeMap::new())
-}
-
 fn checked_conditions_with_inputs(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
@@ -446,6 +438,15 @@ pub(super) fn checked_handler(
     plan: &CanonicalSourceAllocationPlanV1,
     source: &GeneralHandlerCst,
 ) -> Result<CanonicalExecutableHandlerV1, CanonicalSourceErrorV1> {
+    checked_handler_with_domains(cst, plan, source, BTreeMap::new())
+}
+
+pub(super) fn checked_handler_with_domains(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    source: &GeneralHandlerCst,
+    input_domains: BTreeMap<Vec<u8>, Vec<u8>>,
+) -> Result<CanonicalExecutableHandlerV1, CanonicalSourceErrorV1> {
     use CanonicalExecutableExpressionV1 as E;
     use CanonicalExecutablePredicateV1 as P;
     use CanonicalRelationEffectV1 as R;
@@ -455,7 +456,7 @@ pub(super) fn checked_handler(
         || !source.removals.is_empty() || !source.arguments.is_empty()) {
         return Err(error());
     }
-    let CheckedConditions { mut predicates, variables, domains } = checked_conditions(cst, plan, source)?;
+    let CheckedConditions { mut predicates, variables, domains } = checked_conditions_with_inputs(cst, plan, source, input_domains)?;
     let mut effects = BTreeMap::<CanonicalStateRefV1, Vec<R>>::new();
     for (assignments, mode) in [
         (&source.assignments, 0),
