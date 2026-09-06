@@ -15,4 +15,5 @@ all = "warn"
 pedantic = "warn"
 
 [dev-dependencies]
+clause-package = { path = "../clause-package" }
 serde_json = "1"

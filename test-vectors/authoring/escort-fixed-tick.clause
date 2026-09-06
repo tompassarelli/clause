@@ -1,0 +1,71 @@
+F64
+Actor
+Encounter
+Scenario
+
+Vec3:
+  ?example:
+    x: F64
+    y: F64
+    z: F64
+
+actor-position:
+  ?example:
+    actor: Actor
+    position: Vec3
+    ?actor:
+      actor position: ?position
+
+mode actor-position given actor yields position: one
+
+journey-destination:
+  ?example:
+    actor: Actor
+    destination: Vec3
+    ?actor:
+      journey destination: ?destination
+
+mode journey-destination given actor yields destination: one
+
+journey-speed:
+  ?example:
+    actor: Actor
+    speed: F64
+    ?actor:
+      journey speed: ?speed
+
+mode journey-speed given actor yields speed: one
+
+encounter-scenario:
+  ?example:
+    encounter: Encounter
+    scenario: Scenario
+    ?encounter:
+      encounter scenario: ?scenario
+
+mode encounter-scenario given encounter yields scenario: one
+
+encounter
+  member of: Encounter
+dawnroad-crossing
+  member of: Scenario
+ilyra
+  member of: Actor
+
+encounter encounter scenario dawnroad-crossing
+ilyra actor position Vec3 { x: 0.0, y: 0.0, z: -5.0 }
+ilyra journey destination Vec3 { x: 0.0, y: 0.0, z: 27.0 }
+ilyra journey speed 1.75
+
+on tick ?actor ?dt
+  when
+    encounter encounter scenario dawnroad-crossing
+    ?actor = ilyra
+    ?actor actor position Vec3 { x: ?x, y: ?y, z: ?z }
+    ?actor journey destination Vec3 { x: ?destination-x, y: ?destination-y, z: ?destination-z }
+    ?actor journey speed ?speed
+    ?z < ?destination-z
+  withdraw
+    ?actor actor position Vec3 { x: ?x, y: ?y, z: ?z }
+  include
+    ?actor actor position Vec3 { x: ?destination-x, y: ?destination-y, z: ?z + ?speed * ?dt }

@@ -119,6 +119,14 @@ fn declared_focus_changes_contracts_patterns_and_printing_together() {
     assert_eq!(print_canonical_source_v1(&reparsed).unwrap(), canonical);
     let mut w = ResidentSourceWorkbenchV1::open_with_declared_frontend(&canonical, declared.as_bytes()).unwrap();
     assert_eq!(number(field(field(&settle(&mut w), b"first"), b"charge")), 10.0);
+    let effect = w.scalar_effects().unwrap().into_iter()
+        .find(|effect| effect.expression == b"?limited").unwrap();
+    w.edit_scalar_effect(w.generation().handle, &effect, b"?limited / 2.0").unwrap();
+    let encoded = w.last_source_edit().unwrap();
+    let witness = clause_runtime::decode_executable_source_edit_v1(encoded).unwrap();
+    assert_eq!(witness.declared_frontend, declared.as_bytes());
+    assert_eq!(clause_runtime::encode_executable_source_edit_v1(&witness).unwrap(), encoded);
+    assert_eq!(number(field(field(&settle(&mut w), b"first"), b"charge")), 5.0);
 }
 
 #[test]

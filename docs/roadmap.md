@@ -38,10 +38,9 @@ printing. A four-binding scalar law and structured state journey exercises
 checking, execution, independent re-reading, and checked scalar-effect edits.
 Declaration discovery, scalar expressions, laws, handlers, and their lowering
 still contain host bootstrap cases; this does not complete the frontend below.
-Custom focused grammars can read, print, execute, and reload source, but scalar
-edit witnesses still re-read through the default grammar. Extending that edit
-boundary requires carrying the selected frontend into package and runtime
-witness checking.
+Custom focused grammars read, print, execute, reload, and perform checked scalar
+edits. Edit witnesses carry the exact selected frontend through package and
+runtime checking.
 
 Authorized positive laws compute a bounded least fixed point. The runtime
 tracks independent support, preserves conclusions with surviving support, and

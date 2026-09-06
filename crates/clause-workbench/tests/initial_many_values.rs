@@ -31,7 +31,8 @@ fn initial_many_values_share_storage_and_retain_distinct_members() {
 
 #[test]
 fn conflicting_initial_single_values_remain_invalid() {
-    let source = SOURCE.replace("yields value: many", "yields value: one");
+    let source = SOURCE.replace("yields known: many", "yields known: one");
+    assert_ne!(source, SOURCE);
     assert!(ResidentSourceWorkbenchV1::open(source.as_bytes()).is_err());
 }
 

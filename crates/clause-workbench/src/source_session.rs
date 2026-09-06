@@ -340,6 +340,7 @@ impl ResidentSourceWorkbenchV1 {
             .map_err(|error| debug_error("structured edit", error))?;
         let witness = clause_runtime::ExecutableSourceEditV1 {
             old_source: self.exact_source.clone(), old_root, new_root, handler: selected.handler,
+            declared_frontend: self.declared_frontend.exact_source().to_vec(),
             effect: selected.effect, expression: replacement.to_vec(), old_cpp1: self.generation.cpp1.clone(), new_cpp1: vec![],
         };
         self.install_source_with_edit(edit.source().exact_source(), Some(witness))?;

@@ -102,9 +102,12 @@ fn declared_types_survive_law_specialization() {
 fn readiness_accepts_equality_of_typed_state_referents() {
     let source = SOURCE
         .replace("readiness:\n", "Mode\n\nmode:\n  ?example:\n    device: Device\n    state: Mode\n    ?device:\n      mode: ?state\n\nmode mode given device yields state: one\n\nrunning\n  member of: Mode\n\nreadiness:\n")
-        .replace("device enabled true", "device enabled true\ndevice mode running")
+        .replace("device enabled true", "device enabled true\ndevice mode running");
+    let (declarations, handlers) = source.split_once("on inspect").unwrap();
+    let handlers = handlers
         .replace("    ?device enabled ?enabled\n", "    ?device mode ?mode\n")
-        .replace("    ?enabled enabled with charge ?charge reports ?message\n  withdraw", "    (?mode = running) enabled with charge ?charge reports ?message\n  withdraw");
+        .replace("    ?enabled enabled with charge ?charge reports ?message", "    (?mode = running) enabled with charge ?charge reports ?message");
+    let source = format!("{declarations}on inspect{handlers}");
     for expression in ["?mode = running", "running = ?mode", "(?mode = running) = true"] {
         let source = source.replace("?mode = running", expression);
         let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
