@@ -24,8 +24,10 @@ pub enum SourceProfilePhaseV1 {
     ClearIo,
     InstallEvent,
     EventExport,
+    SumEvaluation,
+    SumQuery,
 }
-const NAMES: [&str; 19] = [
+const NAMES: [&str; 21] = [
     "transfer",
     "witness-check",
     "source-read",
@@ -45,6 +47,8 @@ const NAMES: [&str; 19] = [
     "clear-io",
     "install-event",
     "event-export",
+    "sum-evaluation",
+    "sum-query",
 ];
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -57,7 +61,7 @@ pub struct SourceProfileMeasurementV1 {
 pub struct ExecutableSourceProfileV1 {
     pub wall_milliseconds: f64,
     pub truncated: bool,
-    pub phases: [SourceProfileMeasurementV1; 19],
+    pub phases: [SourceProfileMeasurementV1; 21],
 }
 impl ExecutableSourceProfileV1 {
     /// Fixed field names and finite numeric measurements; no source or secrets.
@@ -125,7 +129,7 @@ pub fn begin_executable_source_profile_v1() -> bool {
             report: ExecutableSourceProfileV1 {
                 wall_milliseconds: 0.0,
                 truncated: false,
-                phases: [SourceProfileMeasurementV1::default(); 19],
+                phases: [SourceProfileMeasurementV1::default(); 21],
             },
         });
         true

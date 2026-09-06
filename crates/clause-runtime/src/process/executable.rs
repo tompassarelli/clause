@@ -6140,7 +6140,7 @@ fn materialize_initial_configuration(
 ) -> Result<Vec<ExecutableSlotV1>, ExecutableErrorV1> {
     let base = materialize_base_configuration(program)?;
     let closed = closure::close(program, &base, EvaluationContextV1 {
-        allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None,
+        allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None, sum_queries: None,
         bindings: None, relational_occurrence: None,
     }, None)?;
     relational::validate_contracts(&closed)?;
@@ -6605,6 +6605,7 @@ struct EvaluationContextV1<'a> {
     allocation_root: [u8; IDENTITY_BYTES],
     step_ordinal: u64,
     reads: Option<&'a std::cell::RefCell<Vec<ExecutableReadV1>>>,
+    sum_queries: Option<&'a std::cell::RefCell<relational::SumQueries>>,
     bindings: Option<&'a BTreeMap<u16, ExecutableValueV1>>,
     relational_occurrence: Option<&'a relational::LazyOccurrenceIdentity<'a>>,
 }
@@ -6618,7 +6619,10 @@ fn evaluate(
     use ExecutableExpressionV1 as E;
     match expression {
         E::Constant(value) => Ok(value.clone()),
-        E::Sum { inputs, predicates, value } => relational::sum(inputs, predicates, value, slots, arguments, context),
+        E::Sum { inputs, predicates, value } => {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumEvaluation);
+            relational::sum(inputs, predicates, value, slots, arguments, context)
+        },
         E::Slot(slot) => {
             let value = slots
                 .get(usize::from(*slot))
@@ -7712,7 +7716,7 @@ impl StepEvaluator<'_> {
         let evaluation = EvaluationContextV1 {
             allocation_root: self.allocation_root,
             step_ordinal,
-            reads: None,
+            reads: None, sum_queries: None,
             bindings: None,
             relational_occurrence: None,
         };
@@ -7854,10 +7858,14 @@ impl StepEvaluator<'_> {
         let mut next = configuration.to_vec();
         let mut contributions = BTreeMap::<u16, Vec<f64>>::new();
         let mut row_effects = relational::RowEffects::default();
+        // All effects read this preparation's immutable, closed pre-state.
+        // The context below never reaches closure of the staged next state.
+        let sum_queries = std::cell::RefCell::new(relational::SumQueries::default());
         for (rule_index, rule, bindings, trace_index) in &selected {
             let identity = relational::LazyOccurrenceIdentity::new(evaluation, *rule_index, bindings);
             let evaluation = EvaluationContextV1 {
                 bindings: Some(bindings),
+                sum_queries: Some(&sum_queries),
                 relational_occurrence: (!bindings.is_empty()).then_some(&identity),
                 ..evaluation
             };

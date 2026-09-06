@@ -531,12 +531,14 @@ pub(super) fn evaluate_with_reads(
     context: EvaluationContextV1,
 ) -> Result<EvaluatedValue, ExecutableErrorV1> {
     let reads = std::cell::RefCell::new(Vec::new());
+    let sum_queries = std::cell::RefCell::new(relational::SumQueries::default());
     let value = evaluate(
         expression,
         configuration,
         arguments,
         EvaluationContextV1 {
             reads: Some(&reads),
+            sum_queries: context.sum_queries.or(Some(&sum_queries)),
             ..context
         },
     )?;
@@ -969,6 +971,7 @@ impl ExecutableProcessRuntimeV1 {
             allocation_root: self.allocation.root,
             step_ordinal: recorded.step_ordinal,
             reads: None,
+            sum_queries: None,
             bindings: None,
             relational_occurrence: None,
         };
