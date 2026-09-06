@@ -274,7 +274,7 @@ impl WorkbenchService {
                 return Err(error.into());
             }
         };
-        let Term::Triple(_, next_state, transition) = result else {
+        let Ok((_, next_state, transition)) = result.into_triple() else {
             let state = arguments
                 .pop()
                 .ok_or(WorkbenchError::MalformedPackageResult)?;
@@ -301,7 +301,7 @@ impl WorkbenchService {
             self.state = Some(old_state);
             return Err(error.into());
         }
-        self.state = Some(next_state.into_inner());
+        self.state = Some(next_state);
         self.requests = self
             .requests
             .checked_add(1)
@@ -366,21 +366,21 @@ pub fn encode_request(
 
 pub fn response_payload(exact_response: &[u8]) -> Result<Vec<u8>, WorkbenchError> {
     let response = decode_canonical_term(exact_response)?;
-    let Term::Triple(response, _, _) = response else {
+    let Ok((mut response, _, _)) = response.into_triple() else {
         return Err(WorkbenchError::MalformedPackageResult);
     };
     let Term::Atom {
         kind,
         canonical_payload,
         equality_contract,
-    } = response.into_inner()
+    } = &mut response
     else {
         return Err(WorkbenchError::MalformedPackageResult);
     };
     if kind != RESPONSE_KIND || equality_contract != EXACT_EQ {
         return Err(WorkbenchError::MalformedPackageResult);
     }
-    Ok(canonical_payload)
+    Ok(std::mem::take(canonical_payload))
 }
 
 pub fn framed(exact_terms: &[Vec<u8>]) -> Result<Vec<u8>, WorkbenchError> {

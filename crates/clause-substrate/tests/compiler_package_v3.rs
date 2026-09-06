@@ -251,7 +251,7 @@ fn counted_sequence_exhaustion_uses_the_next_depth_first_read_verdict() {
 }
 
 #[test]
-fn independent_term_and_expression_depth_limits_match_the_wire_contract() {
+fn expression_depth_is_bounded_independently_of_term_resources() {
     let mut too_deep = sample_package();
     too_deep.subject.program[0].body = nested_concat(512);
     assert_eq!(encode(&too_deep), Err(EncodeError::ResourceExhausted));
@@ -279,14 +279,49 @@ fn independent_term_and_expression_depth_limits_match_the_wire_contract() {
 
     assert_eq!(decode(&bytes), Err(DecodeFailure::ResourceExhausted));
 
-    let mut term_at_limit = sample_package();
-    term_at_limit.subject.build_request = nested_term(128);
-    let bytes = encode(&term_at_limit).expect("128-level Term encodes");
-    assert!(decode(&bytes).is_ok(), "128-level Term decodes");
+    for depth in [128, 129, 161, 1024] {
+        let mut package = sample_package();
+        package.subject.build_request = nested_term(depth);
+        let bytes = encode(&package).expect("node-bounded Term encodes");
+        let decoded = decode(&bytes).expect("node-bounded Term decodes");
+        assert_eq!(encode(decoded.package()).unwrap(), bytes);
+    }
+}
 
-    let mut term_too_deep = sample_package();
-    term_too_deep.subject.build_request = nested_term(129);
-    assert_eq!(encode(&term_too_deep), Err(EncodeError::ResourceExhausted));
+#[test]
+fn exact_compiler1_source_term_survives_transport_and_evaluation() {
+    use clause_substrate::compiler_package_v3::{
+        KValue, decode_canonical_term, encode_canonical_term,
+    };
+    use clause_substrate::evaluator::Evaluator;
+
+    let wire = include_bytes!("fixtures/term-depth/compiler1-source.term");
+    let term = decode_canonical_term(wire).expect("exact Compiler1 source Term decodes");
+    let mut pending = vec![(&term, 1)];
+    let mut depth = 0;
+    let mut nodes = 0;
+    while let Some((term, level)) = pending.pop() {
+        depth = depth.max(level);
+        nodes += 1;
+        if let Term::Triple(first, second, third) = term {
+            pending.extend([
+                (&**first, level + 1),
+                (&**second, level + 1),
+                (&**third, level + 1),
+            ]);
+        }
+    }
+    assert_eq!((depth, nodes), (161, 27_517));
+    assert_eq!(encode_canonical_term(&term).unwrap(), wire);
+    let literal = KExpr::TermLiteral(term);
+    let result = Evaluator::new(&[])
+        .unwrap()
+        .evaluate(&literal, &[], 1)
+        .unwrap();
+    let KValue::Term(result) = result.value else {
+        panic!("Term literal result")
+    };
+    assert_eq!(encode_canonical_term(&result).unwrap(), wire);
 }
 
 #[test]
