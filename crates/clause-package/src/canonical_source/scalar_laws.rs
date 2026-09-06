@@ -41,6 +41,7 @@ impl ScalarLawEnvironment {
     pub fn read(
         artifact: CanonicalSourceArtifactIdV1,
         lines: &[SourceLine<'_>],
+        frontend: &CanonicalDeclaredFrontendV1,
     ) -> Result<Self, CanonicalSourceErrorV1> {
         let starts = lines
             .iter()
@@ -54,7 +55,7 @@ impl ScalarLawEnvironment {
             .map(|pair| &lines[pair[0]..pair[1]])
             .collect::<Vec<_>>();
         let mut environment = Self::default();
-        environment.relations.extend(contracts::read(artifact, &blocks)?);
+        environment.relations.extend(contracts::read(artifact, &blocks, frontend)?);
         for block in &blocks {
             if let Some(name) = block[0].text.strip_prefix("relation ") {
                 let origin = line_origin(artifact, block[0]);
@@ -78,7 +79,10 @@ impl ScalarLawEnvironment {
                     .unwrap()
                     .end as u64,
             };
-            let logical = patterns::handler_lines(logical_source_lines(artifact, block)?)?;
+            let logical = patterns::handler_lines(
+                logical_source_lines(artifact, block)?,
+                frontend,
+            )?;
             let mut section = "";
             let mut predicates = Vec::new();
             let mut result = None;

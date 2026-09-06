@@ -3,12 +3,15 @@ use std::error::Error;
 use std::fmt;
 
 use clause_package::{
-    CandidateDeltaId, CanonicalHandlerTriggerV1, CanonicalKeyPhaseV1, CanonicalKeyboardBindingV1,
-    CanonicalReferentInputBindingV1, CanonicalScalarInputBindingV1, CanonicalSourceContextV1,
-    CanonicalUnsupportedProductionV1, LocalRoleRefV2, ProcessPackageId, ProgramChangeOccurrenceId,
-    StateRevisionId, TermScope, check_process_package, decode_process_package,
+    CandidateDeltaId, CanonicalDeclaredFrontendV1, CanonicalHandlerTriggerV1,
+    CanonicalKeyPhaseV1, CanonicalKeyboardBindingV1, CanonicalReferentInputBindingV1,
+    CanonicalScalarInputBindingV1, CanonicalSourceContextV1, CanonicalSourceCstV1,
+    CanonicalSourceErrorV1, CanonicalUnsupportedProductionV1,
+    DECLARED_FOCUSED_FRONTEND_SOURCE_V1, LocalRoleRefV2, ProcessPackageId,
+    ProgramChangeOccurrenceId, StateRevisionId, TermScope, check_process_package,
+    decode_process_package,
     elaborate_canonical_source_package_v1, plan_independent_canonical_source_allocations_v1,
-    read_canonical_source_v1,
+    read_canonical_source_with_declared_frontend_v1,
 };
 use clause_runtime::{
     ExecutableCanonicalHandlerBindingV1, ExecutableInputBindingV1, ExecutableInputPlanV1,
@@ -97,10 +100,20 @@ pub struct ResidentSourceWorkbenchV1 {
     default_occurrences: Vec<Vec<u8>>,
     handlers: BTreeMap<Vec<u8>, Vec<ExecutableCanonicalHandlerBindingV1>>,
     last_source_edit: Option<Vec<u8>>,
+    declared_frontend: CanonicalDeclaredFrontendV1,
 }
 
 impl ResidentSourceWorkbenchV1 {
     pub fn open(exact_source: &[u8]) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
+        Self::open_with_declared_frontend(exact_source, DECLARED_FOCUSED_FRONTEND_SOURCE_V1)
+    }
+
+    pub fn open_with_declared_frontend(
+        exact_source: &[u8],
+        declared_frontend_source: &[u8],
+    ) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
+        let declared_frontend = CanonicalDeclaredFrontendV1::read(declared_frontend_source)
+            .map_err(|error| debug_error("declared frontend", error))?;
         let coherent_template =
             decode_wasm_process_request_v1(&decode_hex(COHERENT_TEMPLATE_CWR1_HEX)?)?;
         let template = coherent_template.clone();
@@ -154,6 +167,7 @@ impl ResidentSourceWorkbenchV1 {
             default_occurrences: Vec::new(),
             handlers: BTreeMap::new(),
             last_source_edit: None,
+            declared_frontend,
         };
         workbench.install_source(exact_source)?;
         Ok(workbench)
@@ -273,7 +287,8 @@ impl ResidentSourceWorkbenchV1 {
     }
 
     pub fn scalar_effects(&self) -> Result<Vec<clause_package::CanonicalScalarEffectV1>, ResidentSourceWorkbenchErrorV1> {
-        let cst = read_canonical_source_v1(&self.exact_source).map_err(|error| debug_error("source read", error))?;
+        let cst = self.read_source(&self.exact_source)
+            .map_err(|error| debug_error("source read", error))?;
         let plan = plan_independent_canonical_source_allocations_v1(&cst, ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change)))
             .map_err(|error| debug_error("source allocations", error))?;
         clause_package::canonical_scalar_effects_v1(&cst, &plan).map_err(|error| debug_error("editable effects", error))
@@ -299,7 +314,8 @@ impl ResidentSourceWorkbenchV1 {
         let old_root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change));
         let new_root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change.checked_add(1)
             .ok_or_else(|| ResidentSourceWorkbenchErrorV1("source sequence exhausted".into()))?));
-        let cst = read_canonical_source_v1(&self.exact_source).map_err(|error| debug_error("source read", error))?;
+        let cst = self.read_source(&self.exact_source)
+            .map_err(|error| debug_error("source read", error))?;
         let plan = plan_independent_canonical_source_allocations_v1(&cst, old_root).map_err(|error| debug_error("source allocation", error))?;
         let edit = clause_package::replace_canonical_scalar_effect_v1(&cst, &plan, selected, replacement, new_root)
             .map_err(|error| debug_error("structured edit", error))?;
@@ -367,7 +383,8 @@ impl ResidentSourceWorkbenchV1 {
     }
 
     pub fn state_bindings(&self) -> Result<Vec<clause_runtime::ExecutableCanonicalStateBindingV1>, ResidentSourceWorkbenchErrorV1> {
-        let cst = read_canonical_source_v1(&self.exact_source).map_err(|error| debug_error("state source", error))?;
+        let cst = self.read_source(&self.exact_source)
+            .map_err(|error| debug_error("state source", error))?;
         let allocations = plan_independent_canonical_source_allocations_v1(&cst, ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change)))
             .map_err(|error| debug_error("state allocation", error))?;
         let compiled = elaborate_canonical_source_package_v1(&cst, CanonicalSourceContextV1 {
@@ -568,6 +585,13 @@ impl ResidentSourceWorkbenchV1 {
         self.install_source_with_edit(exact_source, None)
     }
 
+    fn read_source(
+        &self,
+        exact_source: &[u8],
+    ) -> Result<CanonicalSourceCstV1, CanonicalSourceErrorV1> {
+        read_canonical_source_with_declared_frontend_v1(exact_source, &self.declared_frontend)
+    }
+
     fn install_source_with_edit(
         &mut self,
         exact_source: &[u8],
@@ -576,7 +600,7 @@ impl ResidentSourceWorkbenchV1 {
         let next_change = self.next_change.checked_add(1).ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("source change sequence exhausted".into())
         })?;
-        let cst = read_canonical_source_v1(exact_source)
+        let cst = self.read_source(exact_source)
             .map_err(|error| debug_error("canonical source read", error))?;
         let allocation_plan = plan_independent_canonical_source_allocations_v1(
             &cst,

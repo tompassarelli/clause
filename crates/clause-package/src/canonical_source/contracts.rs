@@ -5,15 +5,14 @@ use super::*;
 pub(super) fn read(
     artifact: CanonicalSourceArtifactIdV1,
     blocks: &[&[SourceLine<'_>]],
+    frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<Vec<RelationCst>, CanonicalSourceErrorV1> {
     let mut subjects = BTreeMap::<Vec<u8>, Vec<ApplicationCst>>::new();
     for block in blocks {
         let origin = line_origin(artifact, block[0]);
-        let Some(focus) = parse_subject_focus(artifact, block, origin)? else { continue };
+        let Some(focus) = parse_subject_focus(artifact, block, origin, frontend)? else { continue };
         for edge in focus.edges {
-            let source = std::str::from_utf8(&edge.source)
-                .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
-            let Some(application) = parse_application_edge(&edge.subject, source, edge.origin)? else { continue };
+            let application = declared_application(&edge)?;
             if !matches!(application.role.as_slice(), b"domain" | b"range" | b"cardinality") { continue; }
             subjects.entry(application.subject.clone()).or_default().push(application);
         }

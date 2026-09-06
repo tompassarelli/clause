@@ -1,4 +1,8 @@
-use clause_package::{Term, decode_canonical_term_bytes};
+use clause_package::{
+    CanonicalDeclaredFrontendV1, DECLARED_FOCUSED_FRONTEND_SOURCE_V1, Term,
+    decode_canonical_term_bytes, print_canonical_source_v1,
+    read_canonical_source_with_declared_frontend_v1,
+};
 use clause_runtime::{ExecutableValueV1 as V, projected_referent_value_v1, projected_relation_table_v1};
 use clause_workbench::ResidentSourceWorkbenchV1;
 
@@ -79,6 +83,47 @@ fn scheduling_rejects_wrong_input_domains_and_cannot_complete_a_cycle() {
     assert!(rows(&after, b"blocker").rows().is_empty());
     assert!(!rows(&after, b"waiting").rows().is_empty());
     assert_eq!(completed(&after), 0);
+}
+
+#[test]
+fn scheduling_uses_a_changed_declared_reading_without_a_host_reader_change() {
+    let declared_frontend = std::str::from_utf8(DECLARED_FOCUSED_FRONTEND_SOURCE_V1)
+        .unwrap()
+        .replace(
+            "reads {relation: Role}: {object: Term}",
+            "reads {relation: Role} means {object: Term}",
+        );
+    let source = SOURCE.replace(": ", " means ");
+
+    assert!(ResidentSourceWorkbenchV1::open(source.as_bytes()).is_err());
+    let frontend = CanonicalDeclaredFrontendV1::read(declared_frontend.as_bytes()).unwrap();
+    let cst = read_canonical_source_with_declared_frontend_v1(source.as_bytes(), &frontend)
+        .expect("the changed Reading owns the new focused syntax");
+    let canonical = print_canonical_source_v1(&cst).expect("the same Reading prints its syntax");
+    let reparsed = read_canonical_source_with_declared_frontend_v1(&canonical, &frontend)
+        .expect("canonical output re-elaborates under the same Reading");
+    assert_eq!(print_canonical_source_v1(&reparsed).unwrap(), canonical);
+
+    let mut workbench = ResidentSourceWorkbenchV1::open_with_declared_frontend(
+        &canonical,
+        declared_frontend.as_bytes(),
+    )
+    .expect("the changed Reading reaches the resident scheduling consumer");
+    let reloaded = String::from_utf8(canonical)
+        .unwrap()
+        .replace("Design approval", "Design approved");
+    workbench.hot_reload(reloaded.as_bytes())
+        .expect("reload retains the selected declared frontend");
+    let initial = run(&mut workbench, None);
+    let design = referent(&initial, b"design");
+    let approval = referent(&initial, b"approval");
+    run(&mut workbench, Some((b"resolve", approval)));
+    let designed = run(&mut workbench, Some((b"complete", design)));
+    assert_eq!(completed(&designed), 1);
+    let prototype = referent(&initial, b"prototype");
+    let extended = run(&mut workbench, Some((b"extend", prototype)));
+    assert!(rows(&extended, b"duration").rows().values().flatten()
+        .any(|value| value.as_number() == Some(5.0)));
 }
 
 #[test]

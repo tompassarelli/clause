@@ -1,0 +1,7 @@
+Role
+Term
+
+relation focused-edge
+  reads {relation: Role}: {object: Term}
+  subject relation
+  mode given relation yields object: one

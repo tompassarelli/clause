@@ -1621,6 +1621,35 @@ fn repeated_application_is_not_deduplicated() {
 }
 
 #[test]
+fn duplicate_declared_readings_are_an_explicit_ambiguity() {
+    let declared_frontend = br#"Role
+Term
+
+relation first-edge
+  reads {relation: Role}: {object: Term}
+  subject relation
+  mode given relation yields object: one
+
+relation second-edge
+  reads {relation: Role}: {object: Term}
+  subject relation
+  mode given relation yields object: one
+"#;
+    let frontend = CanonicalDeclaredFrontendV1::read(declared_frontend)
+        .expect("both Readings are individually valid");
+    let source = b"Door\niron-door\n  member of: Door\n";
+    assert!(matches!(
+        read_canonical_source_with_declared_frontend_v1(source, &frontend),
+        Err(CanonicalSourceErrorV1::AmbiguousDeclaredProduction { .. })
+    ));
+    let grouped = b"Door\niron-door\n  member of\n    Door\n";
+    assert!(matches!(
+        read_canonical_source_with_declared_frontend_v1(grouped, &frontend),
+        Err(CanonicalSourceErrorV1::AmbiguousDeclaredProduction { .. })
+    ));
+}
+
+#[test]
 fn noncanonical_denotation_forms_reject() {
     for source in [
         "iron-door: Door,\n",

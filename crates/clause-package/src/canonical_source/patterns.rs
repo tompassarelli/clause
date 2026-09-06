@@ -17,6 +17,7 @@ fn subject(
 fn clauses(
     lines: &[LogicalSourceLine],
     indent: usize,
+    frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<Vec<LogicalSourceLine>, CanonicalSourceErrorV1> {
     let mut result = Vec::new();
     let mut cursor = 0;
@@ -41,24 +42,21 @@ fn clauses(
         } else {
             let designation = head.text.strip_suffix(':').unwrap_or(&head.text);
             let focus = subject(designation, head.origin)?;
-            for edge in parse_focused_edges(&lines[cursor + 1..end], indent, &focus, subject)? {
-                let source = std::str::from_utf8(&edge.source)
+            for edge in parse_focused_edges(
+                &lines[cursor + 1..end],
+                indent,
+                &focus,
+                subject,
+                frontend,
+            )? {
+                let relation = std::str::from_utf8(&edge.relation)
                     .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
-                let focused = if let Some((role, object)) = source.split_once(": ") {
-                    application_role_bytes(role, edge.origin)?;
-                    if object.is_empty() {
-                        return Err(CanonicalSourceErrorV1::InvalidApplication {
-                            origin: edge.origin,
-                        });
-                    }
-                    format!("{role} {object}")
-                } else {
-                    source.to_owned()
-                };
+                let object = std::str::from_utf8(&edge.object)
+                    .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
                 let subject = std::str::from_utf8(&edge.subject)
                     .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
                 result.push(LogicalSourceLine {
-                    text: format!("{subject} {focused}"),
+                    text: format!("{subject} {relation} {object}"),
                     origin: edge.origin,
                     indent,
                 });
@@ -71,6 +69,7 @@ fn clauses(
 
 pub(super) fn handler_lines(
     lines: Vec<LogicalSourceLine>,
+    frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<Vec<LogicalSourceLine>, CanonicalSourceErrorV1> {
     let lines = lines
         .into_iter()
@@ -98,7 +97,7 @@ pub(super) fn handler_lines(
             section.text.as_str(),
             "if" | "then" | "when" | "withdraw" | "include" | "accumulate"
         ) {
-            result.extend(clauses(body, 4)?);
+            result.extend(clauses(body, 4, frontend)?);
         } else {
             result.extend_from_slice(body);
         }

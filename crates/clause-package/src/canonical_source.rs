@@ -27,7 +27,9 @@ mod contracts;
 mod conformance;
 mod patterns;
 mod structured_bindings;
+mod declared_frontend;
 pub use live_edit::*;
+pub use declared_frontend::{CanonicalDeclaredFrontendV1, DECLARED_FOCUSED_FRONTEND_SOURCE_V1};
 
 const SOURCE_ARTIFACT_DOMAIN: &str = "clause/source-artifact/v1";
 const SOURCE_LOCAL_ALLOCATION_DOMAIN: &str = "clause/source-local-allocation/v1";
@@ -672,6 +674,7 @@ pub struct CanonicalSourceCstV1 {
     applications: Vec<CanonicalSourceApplicationV1>,
     vocabularies: Vec<CanonicalSourceVocabularyV1>,
     subject_focuses: Vec<CanonicalSubjectFocusV1>,
+    declared_frontend: CanonicalDeclaredFrontendV1,
     conformance: std::sync::OnceLock<conformance::Domains>,
 }
 
@@ -684,6 +687,8 @@ pub struct CanonicalSourceVocabularyV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalFocusedEdgeV1 {
     pub subject: Vec<u8>,
+    pub relation: Vec<u8>,
+    pub object: Vec<u8>,
     pub source: Vec<u8>,
     pub origin: CanonicalSourceOriginV1,
 }
@@ -838,6 +843,15 @@ pub enum CanonicalSourceErrorV1 {
     UnknownSubjectRole {
         designation: Vec<u8>,
         role: Vec<u8>,
+    },
+    InvalidDeclaredFrontend {
+        origin: CanonicalSourceOriginV1,
+    },
+    MissingDeclaredProduction {
+        origin: CanonicalSourceOriginV1,
+    },
+    AmbiguousDeclaredProduction {
+        origin: CanonicalSourceOriginV1,
     },
     InvalidMode {
         origin: CanonicalSourceOriginV1,
@@ -1522,12 +1536,20 @@ fn encode_emission_slot(slot: &CanonicalEmissionSlotV1) -> Vec<u8> {
 pub fn read_canonical_source_v1(
     exact_source: &[u8],
 ) -> Result<CanonicalSourceCstV1, CanonicalSourceErrorV1> {
+    let frontend = declared_frontend::default_declared_frontend()?;
+    read_canonical_source_with_declared_frontend_v1(exact_source, &frontend)
+}
+
+pub fn read_canonical_source_with_declared_frontend_v1(
+    exact_source: &[u8],
+    frontend: &CanonicalDeclaredFrontendV1,
+) -> Result<CanonicalSourceCstV1, CanonicalSourceErrorV1> {
     let source =
         std::str::from_utf8(exact_source).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
     let artifact =
         CanonicalSourceArtifactIdV1(domain_hash(SOURCE_ARTIFACT_DOMAIN, &[exact_source]));
     let lines = source_lines(source)?;
-    let scalar_laws = ScalarLawEnvironment::read(artifact, &lines)?;
+    let scalar_laws = ScalarLawEnvironment::read(artifact, &lines, frontend)?;
     let mut items = Vec::new();
     let mut vocabularies = Vec::new();
     let mut subject_focuses = Vec::new();
@@ -1576,10 +1598,10 @@ pub fn read_canonical_source_v1(
             });
             continue;
         }
-        if let Some(focus) = parse_subject_focus(artifact, block, origin)? {
+        if let Some(focus) = parse_subject_focus(artifact, block, origin, frontend)? {
             subject_focuses.push(focus);
         }
-        items.extend(parse_items(artifact, block, origin, &scalar_laws)?);
+        items.extend(parse_items(artifact, block, origin, &scalar_laws, frontend)?);
     }
     items.extend(scalar_laws.relations.iter().filter_map(|relation|
         relation.contract_origin.map(|origin| CstItem { origin, kind: CstKind::Relation(relation.clone()) })));
@@ -1594,7 +1616,7 @@ pub fn read_canonical_source_v1(
         for (index, item) in items.iter().enumerate() {
             if !matches!(item.kind, CstKind::ScalarHandler(_)) { continue; }
             let block = lines.iter().filter(|line| line.start >= item.origin.start as usize && line.start < item.origin.end as usize).copied().collect::<Vec<_>>();
-            if let Some(handler) = parse_general_handler(artifact, &block, item.origin, &scalar_laws)? { alternatives.insert(index, handler); }
+            if let Some(handler) = parse_general_handler(artifact, &block, item.origin, &scalar_laws, frontend)? { alternatives.insert(index, handler); }
         }
         let mut connected = items.iter().filter_map(|item| match &item.kind {
             CstKind::GeneralHandler(handler) if handler.derivation || !handler.creations.is_empty() => Some(general_handler_relation_designations(handler, &items)), _ => None,
@@ -1646,8 +1668,15 @@ pub fn read_canonical_source_v1(
         applications,
         vocabularies,
         subject_focuses,
+        declared_frontend: frontend.clone(),
         conformance: std::sync::OnceLock::new(),
     })
+}
+
+pub fn print_canonical_source_v1(
+    cst: &CanonicalSourceCstV1,
+) -> Result<Vec<u8>, CanonicalSourceErrorV1> {
+    declared_frontend::canonical_print(cst)
 }
 
 /// Project an explicit independent allocation plan. Every product is recorded
@@ -7393,9 +7422,10 @@ fn parse_item(
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
     scalar_laws: &ScalarLawEnvironment,
+    frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<CstItem, CanonicalSourceErrorV1> {
     if block[0].text.starts_with("on ") || block[0].text.starts_with("law ") {
-        let logical = patterns::handler_lines(logical_source_lines(artifact, block)?)?;
+        let logical = patterns::handler_lines(logical_source_lines(artifact, block)?, frontend)?;
         let text = logical.iter().map(|line|
             format!("{}{}", " ".repeat(line.indent), line.text)
         ).collect::<Vec<_>>();
@@ -7405,9 +7435,9 @@ fn parse_item(
             end: line.origin.end as usize,
             indent: line.indent,
         }).collect::<Vec<_>>();
-        return parse_expanded_item(artifact, &expanded, origin, scalar_laws);
+        return parse_expanded_item(artifact, &expanded, origin, scalar_laws, frontend);
     }
-    parse_expanded_item(artifact, block, origin, scalar_laws)
+    parse_expanded_item(artifact, block, origin, scalar_laws, frontend)
 }
 
 fn parse_expanded_item(
@@ -7415,6 +7445,7 @@ fn parse_expanded_item(
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
     scalar_laws: &ScalarLawEnvironment,
+    frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<CstItem, CanonicalSourceErrorV1> {
     let head = block[0].text;
     if let Some(designation) = head.strip_prefix("capability ") {
@@ -7546,7 +7577,7 @@ fn parse_expanded_item(
                 kind: CstKind::BooleanLaw(law),
             });
         }
-        if let Some(law) = parse_general_handler(artifact, block, origin, scalar_laws)? {
+        if let Some(law) = parse_general_handler(artifact, block, origin, scalar_laws, frontend)? {
             return Ok(CstItem { origin, kind: CstKind::GeneralHandler(law) });
         }
         return Ok(unsupported_item(
@@ -7612,7 +7643,7 @@ fn parse_expanded_item(
                 kind: CstKind::ScalarHandler(handler),
             });
         }
-        if let Some(handler) = parse_general_handler(artifact, block, origin, scalar_laws)? {
+        if let Some(handler) = parse_general_handler(artifact, block, origin, scalar_laws, frontend)? {
             return Ok(CstItem {
                 origin,
                 kind: CstKind::GeneralHandler(handler),
@@ -7715,9 +7746,10 @@ fn parse_items(
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
     scalar_laws: &ScalarLawEnvironment,
+    frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<Vec<CstItem>, CanonicalSourceErrorV1> {
-    let Some(focus) = parse_subject_focus(artifact, block, origin)? else {
-        return parse_item(artifact, block, origin, scalar_laws).map(|item| vec![item]);
+    let Some(focus) = parse_subject_focus(artifact, block, origin, frontend)? else {
+        return parse_item(artifact, block, origin, scalar_laws, frontend).map(|item| vec![item]);
     };
 
     let head = block[0];
@@ -7730,9 +7762,10 @@ fn parse_items(
         },
     }];
     for edge in focus.edges {
-        let source = std::str::from_utf8(&edge.source)
-            .expect("canonical source focus edges are always valid UTF-8");
-        items.push(parse_focused_edge(&edge.subject, source, edge.origin)?);
+        items.push(CstItem {
+            origin: edge.origin,
+            kind: CstKind::Application(declared_application(&edge)?),
+        });
     }
     Ok(items)
 }
@@ -7910,6 +7943,7 @@ fn parse_subject_focus(
     artifact: CanonicalSourceArtifactIdV1,
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
+    frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<Option<CanonicalSubjectFocusV1>, CanonicalSourceErrorV1> {
     let children = logical_source_lines(artifact, &block[1..])?
         .into_iter().filter(|line| !line.text.is_empty()).collect::<Vec<_>>();
@@ -7927,7 +7961,13 @@ fn parse_subject_focus(
         });
     }
     let subject = designation_bytes(head.text, head_origin)?;
-    let edges = parse_focused_edges(&children, 0, &subject, application_designation_bytes)?;
+    let edges = parse_focused_edges(
+        &children,
+        0,
+        &subject,
+        application_designation_bytes,
+        frontend,
+    )?;
     Ok(Some(CanonicalSubjectFocusV1 {
         subject,
         origin,
@@ -7940,6 +7980,7 @@ fn parse_focused_edges(
     parent_indent: usize,
     subject: &[u8],
     nested_subject: fn(&str, CanonicalSourceOriginV1) -> Result<Vec<u8>, CanonicalSourceErrorV1>,
+    frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<Vec<CanonicalFocusedEdgeV1>, CanonicalSourceErrorV1> {
     let expected_indent =
         parent_indent
@@ -7965,13 +8006,9 @@ fn parse_focused_edges(
             descendants_end += 1;
         }
         if descendants_start == descendants_end {
-            edges.push(CanonicalFocusedEdgeV1 {
-                subject: subject.to_vec(),
-                source: source.as_bytes().to_vec(),
-                origin,
-            });
+            edges.push(frontend.edge(subject, source, origin)?);
         } else {
-            let role = application_role_bytes(source, origin)?;
+            let (reading, role, _) = frontend.prefix(source, origin)?;
             let object_indent = line
                 .indent
                 .checked_add(2)
@@ -7987,15 +8024,15 @@ fn parse_focused_edges(
                     });
                 }
                 let object_source = object_line.text.as_str();
-                let mut application_source =
-                    String::from_utf8(role.clone()).expect("application roles are valid UTF-8");
-                application_source.push_str(": ");
-                application_source.push_str(object_source);
-                edges.push(CanonicalFocusedEdgeV1 {
-                    subject: subject.to_vec(),
-                    source: application_source.into_bytes(),
-                    origin: object_origin,
-                });
+                let role_source = std::str::from_utf8(&role)
+                    .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
+                edges.push(frontend.edge_from_values(
+                    reading,
+                    subject,
+                    role_source,
+                    object_source,
+                    object_origin,
+                )?);
 
                 let object_descendants_start = object_cursor + 1;
                 let mut object_descendants_end = object_descendants_start;
@@ -8011,6 +8048,7 @@ fn parse_focused_edges(
                         object_line.indent,
                         &focus,
                         nested_subject,
+                        frontend,
                     )?);
                 }
                 object_cursor = object_descendants_end;
@@ -8021,67 +8059,25 @@ fn parse_focused_edges(
     Ok(edges)
 }
 
-fn parse_focused_edge(
-    subject: &[u8],
-    edge: &str,
-    origin: CanonicalSourceOriginV1,
-) -> Result<CstItem, CanonicalSourceErrorV1> {
-    if let Some(application) = parse_application_edge(subject, edge, origin)? {
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::Application(application),
-        });
-    }
-    if edge.contains(':') || edge.contains('∈') || ordered_product_members(edge, origin)?.is_some()
-    {
-        return Err(CanonicalSourceErrorV1::InvalidApplication { origin });
-    }
-    let subject =
-        std::str::from_utf8(subject).expect("canonical source designations are always valid UTF-8");
-    let expanded = format!("{subject} {edge}");
-    if let Some(assertion) = parse_vector_assertion(&expanded, origin)? {
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::VectorAssertion(assertion),
-        });
-    }
-    if let Some(assertion) = parse_shape_assertion(&expanded, origin)? {
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::ShapeAssertion(assertion),
-        });
-    }
-    if let Some(assertion) = parse_boolean_assertion(&expanded, origin) {
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::BooleanAssertion(assertion),
-        });
-    }
-    if let Some(assertion) = parse_number_assertion(&expanded, origin) {
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::NumberAssertion(assertion),
-        });
-    }
-    if let Some(assertion) = parse_text_assertion(&expanded, origin) {
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::TextAssertion(assertion),
-        });
-    }
-    if let Some(assertion) = parse_symbol_assertion(&expanded, origin) {
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::SymbolAssertion(assertion),
-        });
-    }
-    Ok(CstItem {
-        origin,
-        kind: CstKind::Unsupported(CanonicalUnsupportedProductionV1 {
-            production: CanonicalSourceProductionV1::Assertion,
-            origin,
-            emissions: vec![],
-        }),
+fn declared_application(
+    edge: &CanonicalFocusedEdgeV1,
+) -> Result<ApplicationCst, CanonicalSourceErrorV1> {
+    let object = std::str::from_utf8(&edge.object)
+        .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
+    let object = parse_application_object(object, edge.origin)?;
+    Ok(ApplicationCst {
+        subject: edge.subject.clone(),
+        role: edge.relation.clone(),
+        emission: CanonicalSourceEmissionV1 {
+            producer: assertion_producer(&edge.subject, &edge.relation),
+            slot: child_slot(
+                CanonicalSourceProductionV1::Assertion,
+                &application_semantic_bytes(&edge.relation, &object),
+            ),
+            origin: edge.origin,
+            allocations: vec![],
+        },
+        object,
     })
 }
 
@@ -8650,6 +8646,7 @@ fn parse_general_handler(
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
     scalar_laws: &ScalarLawEnvironment,
+    frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<Option<GeneralHandlerCst>, CanonicalSourceErrorV1> {
     let derivation = block[0].text.starts_with("law ");
     let Some(header) = block[0].text.strip_prefix(if derivation { "law " } else { "on " }) else {
@@ -8688,7 +8685,7 @@ fn parse_general_handler(
         return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
     }
 
-    let logical = patterns::handler_lines(logical_source_lines(artifact, block)?)?;
+    let logical = patterns::handler_lines(logical_source_lines(artifact, block)?, frontend)?;
     let mut section = String::new();
     let mut when = Vec::new();
     let mut create = Vec::<(Vec<u8>, Option<Vec<u8>>)>::new();
@@ -8744,13 +8741,15 @@ fn parse_general_handler(
                 let Some((parameter, _)) = pending_creation.take() else {
                     return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
                 };
-                let Some((role, object)) = parse_application_parts(trimmed, line.origin)? else {
+                let edge = frontend.edge(&parameter, trimmed, line.origin)?;
+                let CanonicalScalarValueV1::Symbol(domain) = parse_application_object(
+                    std::str::from_utf8(&edge.object)
+                        .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
+                    line.origin,
+                )? else {
                     return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
                 };
-                let CanonicalScalarValueV1::Symbol(domain) = object else {
-                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
-                };
-                if role != MEMBERSHIP_ROLE || domain.starts_with(b"?") {
+                if edge.relation != MEMBERSHIP_ROLE || domain.starts_with(b"?") {
                     return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
                 }
                 create.push((parameter, Some(domain)));
@@ -11107,46 +11106,6 @@ fn handler_include_emissions(
         }
     }
     Ok(emissions)
-}
-
-fn parse_application_edge(
-    subject: &[u8],
-    source: &str,
-    origin: CanonicalSourceOriginV1,
-) -> Result<Option<ApplicationCst>, CanonicalSourceErrorV1> {
-    let Some((role, object)) = parse_application_parts(source, origin)? else {
-        return Ok(None);
-    };
-    let emission = CanonicalSourceEmissionV1 {
-        producer: assertion_producer(subject, &role),
-        slot: child_slot(
-            CanonicalSourceProductionV1::Assertion,
-            &application_semantic_bytes(&role, &object),
-        ),
-        origin,
-        allocations: vec![],
-    };
-    Ok(Some(ApplicationCst {
-        subject: subject.to_vec(),
-        role,
-        object,
-        emission,
-    }))
-}
-
-fn parse_application_parts(
-    source: &str,
-    origin: CanonicalSourceOriginV1,
-) -> Result<Option<(Vec<u8>, CanonicalScalarValueV1)>, CanonicalSourceErrorV1> {
-    let Some((role, object)) = source.split_once(": ") else {
-        return Ok(None);
-    };
-    if object.is_empty() {
-        return Err(CanonicalSourceErrorV1::InvalidApplication { origin });
-    }
-    let role = application_role_bytes(role, origin)?;
-    let object = parse_application_object(object, origin)?;
-    Ok(Some((role, object)))
 }
 
 fn application_role_bytes(
