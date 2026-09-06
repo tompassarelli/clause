@@ -478,10 +478,9 @@ fn execute_effect(effect: &kernel::Term) {
         812,
         100,
         b"checked exact intent",
-        vec![
-            StepCause::ActivationStart(ActivationId::from_bytes(nominal(812))),
-            StepCause::PriorStep(emitted_by),
-        ],
+        vec![StepCause::ActivationStart(ActivationId::from_bytes(
+            nominal(812),
+        ))],
     );
     check.observation_outcomes = vec![world.formation_observation(
         831,
@@ -501,6 +500,12 @@ fn execute_effect(effect: &kernel::Term) {
         .step(StepId::from_bytes(nominal(821)))
         .unwrap()
         .reference();
+    assert!(
+        carrier
+            .causal_predecessors(CausalRef::Step(checked_by))
+            .unwrap()
+            .contains(&CausalRef::Step(emitted_by))
+    );
     let mut propose = world.step(
         &carrier,
         822,
@@ -914,10 +919,9 @@ fn compiler0_successor_crosses_governed_admission_with_frozen_hosts() {
         732,
         100,
         &one,
-        vec![
-            StepCause::ActivationStart(ActivationId::from_bytes(nominal(732))),
-            StepCause::PriorStep(proposal_ref),
-        ],
+        vec![StepCause::ActivationStart(ActivationId::from_bytes(
+            nominal(732),
+        ))],
     );
     checker_step.observation_outcomes = vec![world.formation_observation(
         755,
@@ -938,6 +942,12 @@ fn compiler0_successor_crosses_governed_admission_with_frozen_hosts() {
         .step(StepId::from_bytes(nominal(742)))
         .unwrap()
         .reference();
+    assert!(
+        carrier
+            .causal_predecessors(CausalRef::Step(checker_ref))
+            .unwrap()
+            .contains(&CausalRef::Step(proposal_ref))
+    );
     let mut candidate_step = world.step(
         &carrier,
         743,

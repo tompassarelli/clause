@@ -1060,12 +1060,15 @@ fn main() {
         let parsed = e
             .invoke_entrypoint(ident(READTERM), &[KValue::Bytes(text)], 1_000_000)
             .unwrap();
-        let KValue::Term(Term::Triple(actual, remainder, status)) = parsed.value else {
+        let KValue::Term(parsed) = parsed.value else {
             panic!("reader shape")
         };
-        assert_eq!(*actual, sample, "source reader preserves the complete Term");
-        assert_eq!(*remainder, bytes(b""));
-        assert_eq!(*status, bytes(b"ok"));
+        let Ok((actual, remainder, status)) = parsed.into_triple() else {
+            panic!("reader shape")
+        };
+        assert_eq!(actual, sample, "source reader preserves the complete Term");
+        assert_eq!(remainder, bytes(b""));
+        assert_eq!(status, bytes(b"ok"));
         let encoded = e
             .invoke_entrypoint(ident(ENCTERM), &[KValue::Term(sample)], 1_000_000)
             .unwrap();

@@ -1,11 +1,11 @@
 schema	source_sha256	mir_sha256	cargo_lock_sha256	cargo_manifest_sha256	rustc_sha256	cfg_sha256	features	binding_sha256	root_count	context_count	site_count	fixed_handlers
-clause-host-mechanics-mir-v2	cc82adbd07d7d9c02d5d8b375d4fc7db5d82d374c296b9c04de28aa3cba6dae8	fcea8a7fbb924a2a1445751ea3b984f4aa67c0bd7c93a1de757dacb32d1bc073	fb67294f56a8ae37cbed817cfb358d14b958fc678718325e20a2483fb572ca52	4a9f1bd414b4217d3fff55558686f76114af8c11a2d6c71d222c01f1ba5286b7	2af3376cb254e69564e00978cada767f05432a299af78300c47d14c103366c1e	0ba2024cc3e469eee8723fd79fb933e48905e93862852310d993a30ccadce81e	-	8ece7fe81ad9bed2c36177838a0c7457d4e45732cc22778ca500abba1f945e91	10	485	6842	<CoreWrapper<CtVariableCoreWrapper<Sha256VarCore, UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>, sha2::OidSha256>> as Digest>::digest::<&Vec<u8>>
+clause-host-mechanics-mir-v2	b71dad809a9c236476210ce66d0dec01a57af3ba9d7cbde602072021e6c237f4	d051d77dd1b221e89acc7d3d446ff9445a226846a8d2878d6a0d99f6688cc3b3	c7aa15f1db8036b8a7d4eefc5a3fe514e1ffeb41ca25e3e90b697ea78bdd8016	e94b6959020a8f3cf4df666c555706311f191ad5961304eb247fb0f596a23ec5	2af3376cb254e69564e00978cada767f05432a299af78300c47d14c103366c1e	0ba2024cc3e469eee8723fd79fb933e48905e93862852310d993a30ccadce81e	-	e80b1fe6238ee636769802445c2b4a8132c722fdc5eb0d3634f9a3a08343468a	10	488	6855	<CoreWrapper<CtVariableCoreWrapper<Sha256VarCore, UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>, sha2::OidSha256>> as Digest>::digest::<&Vec<u8>>
 class	reachable_sites	package_influenced_sites	resolved_target_count
-wire-codec	2254	1493	534
-core-abi	1287	348	429
-byte-machine	72	70	55
+wire-codec	2271	1386	551
+core-abi	1278	350	418
+byte-machine	72	70	53
 definition-table	23	23	28
-kernel-step	2029	1639	592
+kernel-step	2034	1645	593
 receipt-step	29	29	25
 authorization-step	1104	813	367
 physical-dispatch	44	31	44
