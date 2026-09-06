@@ -24,7 +24,59 @@ fn number(frame: &Term, relation: &[u8]) -> f64 {
 
 #[test]
 fn event_rules_share_the_prestate_and_report_rejected_actions() {
-    let mut w = ResidentSourceWorkbenchV1::open(SOURCE.as_bytes()).unwrap();
+    assert_event_rules_share_the_prestate(SOURCE);
+}
+
+#[test]
+fn unwired_zero_input_event_rules_share_the_prestate() {
+    let source = SOURCE.replace("bind keyboard Use down to use\n", "");
+    assert_ne!(source, SOURCE);
+    assert_event_rules_share_the_prestate(&source);
+}
+
+#[test]
+fn unwired_zero_input_conditional_event_rules_share_the_prestate() {
+    let source = SOURCE.replace("bind keyboard Use down to use\n", "")
+        .replace("    ?charge > 0.0\n", "    if(?charge > 0.0, true, false) = true\n");
+    assert!(source.contains("if(?charge > 0.0, true, false) = true"));
+    assert_event_rules_share_the_prestate(&source);
+}
+
+#[test]
+fn unwired_zero_input_event_rules_share_the_prestate_with_created_rows() {
+    let source = SOURCE.replace("bind keyboard Use down to use\n", "");
+    let source = format!("{source}\n{}", r#"on spawn ?device
+  when
+    ?device charge ?charge
+  create
+    ?new
+      member of: Device
+  include
+    ?new charge ?charge
+    ?new accepted false
+    ?new attempts 0.0
+"#);
+    let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    for (attempts, accepted) in [(1.0, true), (2.0, false)] {
+        let frame = run(&mut w);
+        let value = |name: &[u8]| {
+            let table = clause_runtime::projected_relation_table_v1(field(field(&frame, b"relations"), name)).unwrap().unwrap();
+            table.rows().values().flatten().next().unwrap().clone()
+        };
+        assert_eq!(value(b"charge").as_number(), Some(0.0));
+        assert_eq!(value(b"attempts").as_number(), Some(attempts));
+        assert_eq!(value(b"accepted"), clause_runtime::ExecutableValueV1::Boolean(accepted));
+    }
+    let effect = w.scalar_effects().unwrap().into_iter().find(|effect| effect.expression == b"?attempts + 1.0").unwrap();
+    assert!(w.recorded_handler_event(effect.handler).unwrap().is_some());
+    w.edit_scalar_effect(w.generation().handle, &effect, b"?attempts + 2.0").unwrap();
+    let frame = run(&mut w);
+    let attempts = clause_runtime::projected_relation_table_v1(field(field(&frame, b"relations"), b"attempts")).unwrap().unwrap();
+    assert_eq!(attempts.rows().values().flatten().next().unwrap().as_number(), Some(4.0));
+}
+
+fn assert_event_rules_share_the_prestate(source: &str) {
+    let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
     let accepted = run(&mut w);
     assert_eq!(number(&accepted, b"charge"), 0.0);
     assert_eq!(number(&accepted, b"attempts"), 1.0);
