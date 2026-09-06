@@ -281,13 +281,39 @@ pub fn replace_canonical_scalar_effect_v1(
     let plan = build_independent_plan(&source, new_root)?;
     let old_requests = allocation_requests(cst)?;
     let new_requests = allocation_requests(&source)?;
+    let handler_producer = |tree: &CanonicalSourceCstV1| {
+        tree.items.iter().find_map(|item| {
+            if item.origin.start != selected.handler_origin.start {
+                return None;
+            }
+            match &item.kind {
+                CstKind::InputHandler(handler) => Some(handler.producer.clone()),
+                CstKind::JumpHandler(handler) => Some(handler.producer.clone()),
+                CstKind::ScalarHandler(handler) => Some(handler.producer.clone()),
+                CstKind::GeneralHandler(handler) => Some(handler.producer.clone()),
+                CstKind::TickHandler(handler) => Some(handler.producer.clone()),
+                _ => None,
+            }
+        }).ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)
+    };
+    // Replaying this exact leaf edit explicitly continues its enclosing handler;
+    // independent reads use the complete clause, including effects, as its key.
+    let old_producer = handler_producer(cst)?;
+    let new_producer = handler_producer(&source)?;
+    let continued_requests = old_requests.iter().map(|request| {
+        let mut continued = request.clone();
+        if continued.producer == old_producer {
+            continued.producer = new_producer.clone();
+        }
+        continued
+    }).collect::<Vec<_>>();
     // The operation cannot add/delete a declaration, membership, state cell,
     // handler, or facet. Verify the parser's emission graph respects that.
     if old_requests.len() != new_requests.len() {
         return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
     }
     let mut retained = BTreeMap::new();
-    for request in &old_requests {
+    for (request, continued) in old_requests.iter().zip(&continued_requests) {
         let old = old_plan
             .identity(&request.producer, &request.slot, request.domain)
             .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
@@ -298,12 +324,12 @@ pub fn replace_canonical_scalar_effect_v1(
                 // is operation replay, not matching an imported tree by text.
                 let continuing = new_requests
                     .iter()
-                    .filter(|candidate| *candidate == request || !old_requests.contains(candidate))
+                    .filter(|candidate| *candidate == continued || !continued_requests.contains(candidate))
                     .collect::<Vec<_>>();
                 let [new] = continuing.as_slice() else {
                     return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
                 };
-                if new.producer != request.producer
+                if new.producer != continued.producer
                     || new.domain != request.domain
                     || new.slot.production != CanonicalSourceProductionV1::HandlerInclude
                 {
@@ -317,11 +343,11 @@ pub fn replace_canonical_scalar_effect_v1(
             }
             continue;
         }
-        if !new_requests.contains(request) {
+        if !new_requests.contains(continued) {
             return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
         }
         let new = plan
-            .identity(&request.producer, &request.slot, request.domain)
+            .identity(&continued.producer, &continued.slot, continued.domain)
             .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
         retained.insert(old, new);
     }
