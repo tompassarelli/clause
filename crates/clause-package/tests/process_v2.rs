@@ -3912,6 +3912,71 @@ fn formation_evidence_must_be_prior_declared_distinct_and_causal() {
 }
 
 #[test]
+fn first_child_step_consumes_formation_evidence_from_its_parent_step() {
+    let (mut candidate, context) = finalized_core_package();
+    let parent = StepRef {
+        run: id!(RunId, 32),
+        activation: id!(ActivationId, 22),
+        step: id!(StepId, 53),
+    };
+    let checker_index = candidate
+        .records
+        .iter()
+        .position(|record| {
+            matches!(record, ProcessRecordV2::Steps(steps)
+                if steps.iter().any(|step| step.id == parent.step))
+        })
+        .expect("core has checker Step 53");
+    let mut child = root_activation(
+        context,
+        27,
+        32,
+        47,
+        1,
+        RootTrigger::External(id!(ExternalTriggerOccurrenceId, 12)),
+    );
+    child.causes.origin = ActivationOrigin::ChildOf {
+        run: parent.run,
+        parent_activation: parent.activation,
+        parent_step: parent.step,
+    };
+    child.membership = RunMembership::ChildIn(parent.run);
+    let first = step(
+        59,
+        32,
+        27,
+        47,
+        69,
+        budget(100, 10, 90),
+        vec![StepCause::ActivationStart(child.id)],
+        StepOutcomeProposalV2::Return(domain_bound("value/resumed", 88)),
+    );
+    candidate.records.splice(
+        checker_index + 1..checker_index + 1,
+        [
+            ProcessRecordV2::Activation(child),
+            ProcessRecordV2::Steps(vec![first]),
+        ],
+    );
+    let carrier = replay_core_candidate(&candidate, context)
+        .expect("ActivationStart carries the exact parent checker Step");
+    assert_eq!(
+        carrier.activation(id!(ActivationId, 27)).unwrap().status(),
+        ActivationStatus::Terminal(ActivationTerminal::Returned)
+    );
+    assert!(
+        carrier
+            .causal_predecessors(CausalRef::Step(StepRef {
+                run: parent.run,
+                activation: id!(ActivationId, 27),
+                step: id!(StepId, 59),
+            }))
+            .unwrap()
+            .contains(&CausalRef::Step(parent))
+    );
+}
+
+#[test]
 fn budget_exhaustion_is_typed_and_requires_exactly_zero_remaining_budget() {
     let (exhausted, context) = bounded_exhaustion_candidate(0);
     let carrier = replay_core_candidate(&exhausted, context)

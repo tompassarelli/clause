@@ -3328,7 +3328,9 @@ impl ProcessCarrier {
             .prerequisite_bindings
             .iter()
             .any(|binding| binding.value == ActivationPrerequisite::Observation(value.evidence));
-        let step_has_evidence = proposal.causes.contains(&StepCause::PriorStep(producer));
+        let step_has_evidence = self
+            .step_causal_refs(&proposal.causes)?
+            .contains(&CausalRef::Step(producer));
         if !activation_has_evidence && !step_has_evidence {
             return Err(ProcessError::FormationEvidenceNotCausal(value.evidence));
         }
