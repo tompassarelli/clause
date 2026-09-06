@@ -8,8 +8,8 @@ use clause_package::{
     CanonicalScalarInputBindingV1, CanonicalSourceContextV1, CanonicalSourceCstV1,
     CanonicalSourceErrorV1, CanonicalUnsupportedProductionV1,
     DECLARED_FOCUSED_FRONTEND_SOURCE_V1, LocalRoleRefV2, ProcessPackageId,
-    ProgramChangeOccurrenceId, StateRevisionId, TermScope, check_process_package,
-    decode_process_package,
+    ProgramChangeOccurrenceId, RoleLocalId, StateRevisionId, TermScope, check_process_package,
+    decode_process_package, derive_program_snapshot_id, encode_process_package,
     elaborate_canonical_source_package_v1, plan_independent_canonical_source_allocations_v1,
     read_canonical_source_with_declared_frontend_v1,
 };
@@ -34,6 +34,7 @@ const COHERENT_TEMPLATE_CWR1_HEX: &str = include_str!(concat!(
 ));
 const MAX_COMMANDS: u64 = 4_096;
 const SOURCE_AUTHORITY_BUDGET_UNITS: u64 = 1_000_000;
+const MAX_SOURCE_STATE_CELLS: usize = 1 << u16::BITS;
 
 #[derive(Debug)]
 pub struct ResidentSourceWorkbenchErrorV1(String);
@@ -644,16 +645,11 @@ impl ResidentSourceWorkbenchV1 {
         .map_err(|error| debug_error("canonical source elaboration", error))?;
         let mut template = self.coherent_template.clone();
         template.authority.budget_units = SOURCE_AUTHORITY_BUDGET_UNITS;
-        let mut physical_plan = self.template_physical_plan.clone();
-        let projection_roles = &self.template_projection_roles;
-        let projected_state_count = compiled.state_cells.len();
-        if projection_roles.len() < projected_state_count {
-            return Err(ResidentSourceWorkbenchErrorV1(format!(
-                "selected package has {} projection Roles for {} source state cells",
-                projection_roles.len(),
-                projected_state_count
-            )));
-        }
+        let (template, projection_roles, physical_plan) = projection_template_for_state_count(
+            &template, &self.template_physical_plan, compiled.state_cells.len(),
+        )?;
+        let mut physical_plan = physical_plan;
+        let projection_roles = &projection_roles;
         let mut handler_designations = BTreeMap::new();
         for handler in &compiled.executable_handlers {
             if let Some(previous) = handler_designations.insert(
@@ -918,7 +914,111 @@ impl ResidentSourceWorkbenchV1 {
     }
 }
 
-fn ordered_tick_bindings(
+fn projection_template_for_state_count(
+    template: &WasmProcessRequestV1,
+    template_physical_plan: &ExecutablePhysicalPlanV1,
+    required_state_cells: usize,
+) -> Result<
+    (
+        WasmProcessRequestV1,
+        Vec<LocalRoleRefV2>,
+        ExecutablePhysicalPlanV1,
+    ),
+    ResidentSourceWorkbenchErrorV1,
+> {
+    if required_state_cells > MAX_SOURCE_STATE_CELLS {
+        return Err(ResidentSourceWorkbenchErrorV1(format!(
+            "canonical source has {required_state_cells} state cells beyond the {MAX_SOURCE_STATE_CELLS} executable slot bound"
+        )));
+    }
+    let decoded = decode_process_package(&template.package_bytes)
+        .map_err(|error| boxed_error("template package decode", error))?;
+    let current_role_count = decoded
+        .candidate()
+        .snapshot
+        .constitution
+        .schemas
+        .iter()
+        .map(|schema| schema.roles.len())
+        .sum::<usize>();
+    let checked = if current_role_count < required_state_cells {
+        let mut candidate = decoded.candidate().clone();
+        let projection_schema = candidate
+            .snapshot
+            .constitution
+            .schemas
+            .iter_mut()
+            .max_by_key(|schema| schema.roles.len())
+            .ok_or_else(|| {
+                ResidentSourceWorkbenchErrorV1(
+                    "template package has no projection Role schema".into(),
+                )
+            })?;
+        let mut projection_role = projection_schema.roles.last().cloned().ok_or_else(|| {
+            ResidentSourceWorkbenchErrorV1(
+                "template projection Role schema has no reusable declaration".into(),
+            )
+        })?;
+        let mut next_role = projection_schema
+            .roles
+            .iter()
+            .map(|role| role.id.get())
+            .max()
+            .ok_or_else(|| {
+                ResidentSourceWorkbenchErrorV1(
+                    "template projection Role schema has no local identity".into(),
+                )
+            })?;
+        for _ in current_role_count..required_state_cells {
+            next_role = next_role.checked_add(1).ok_or_else(|| {
+                ResidentSourceWorkbenchErrorV1(
+                    "template projection Role identity space exhausted".into(),
+                )
+            })?;
+            projection_role.id = RoleLocalId::new(next_role);
+            projection_schema.roles.push(projection_role.clone());
+        }
+        projection_schema.roles.sort_by_key(|role| role.id);
+        candidate.claimed_snapshot = derive_program_snapshot_id(&candidate.snapshot)
+            .map_err(|error| boxed_error("expanded template snapshot identity", error))?;
+        let exact = encode_process_package(&candidate)
+            .map_err(|error| boxed_error("expanded template package encode", error))?;
+        check_process_package(
+            decode_process_package(&exact)
+                .map_err(|error| boxed_error("expanded template package decode", error))?,
+        )
+        .map_err(|error| boxed_error("expanded template package check", error))?
+    } else {
+        check_process_package(decoded)
+            .map_err(|error| boxed_error("template package check", error))?
+    };
+    let mut projection_roles = checked
+        .constitution()
+        .preimage()
+        .schemas
+        .iter()
+        .flat_map(|schema| {
+            schema.roles.iter().map(|role| LocalRoleRefV2 {
+                schema: schema.id,
+                role: role.id,
+            })
+        })
+        .collect::<Vec<_>>();
+    projection_roles.sort();
+    let mut resized_template = template.clone();
+    resized_template.package_bytes = checked.exact_bytes().to_vec();
+    let mut physical_plan = template_physical_plan.clone();
+    physical_plan.application_shape = checked
+        .constitution()
+        .application_shape(template.application)
+        .ok_or_else(|| {
+            ResidentSourceWorkbenchErrorV1(
+                "expanded template package has no selected Application shape".into(),
+            )
+        })?;
+    physical_plan.mode.operator.snapshot = checked.constitution().snapshot();
+    Ok((resized_template, projection_roles, physical_plan))
+}fn ordered_tick_bindings(
     handlers: &[ExecutableCanonicalHandlerBindingV1],
 ) -> Vec<ExecutableCanonicalHandlerBindingV1> {
     let mut tick = handlers
@@ -1287,5 +1387,59 @@ mod command_window_tests {
             let error = w.run_occurrences_to_candidate(&vec![input; MAX_COMMANDS as usize + 1]).unwrap_err();
             assert!(error.to_string().contains("SessionLimitReached"), "{error}");
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn coherent_template() -> (WasmProcessRequestV1, ExecutablePhysicalPlanV1) {
+        let template = decode_wasm_process_request_v1(
+            &decode_hex(COHERENT_TEMPLATE_CWR1_HEX).expect("coherent template hex decodes"),
+        )
+        .expect("coherent template request decodes");
+        let physical_plan = decode_executable_physical_plan_v1(&template.physical_plan_bytes)
+            .expect("coherent template physical plan decodes");
+        (template, physical_plan)
+    }
+
+    #[test]
+    fn projection_template_grows_to_exact_source_state_demand() {
+        let (template, physical_plan) = coherent_template();
+        let (resized, roles, resized_plan) =
+            projection_template_for_state_count(&template, &physical_plan, 439)
+                .expect("439 source state cells receive checked projection Roles");
+        assert_eq!(roles.len(), 439);
+        let checked = check_process_package(
+            decode_process_package(&resized.package_bytes).expect("resized package decodes"),
+        )
+        .expect("resized package checks");
+        assert_eq!(
+            resized_plan.mode.operator.snapshot,
+            checked.constitution().snapshot()
+        );
+        assert_eq!(
+            resized_plan.application_shape,
+            checked
+                .constitution()
+                .application_shape(resized.application)
+                .expect("resized package retains the selected Application")
+        );
+    }
+
+    #[test]
+    fn projection_template_rejects_state_beyond_executable_slot_space() {
+        let (template, physical_plan) = coherent_template();
+        let error = projection_template_for_state_count(
+            &template,
+            &physical_plan,
+            MAX_SOURCE_STATE_CELLS + 1,
+        )
+        .expect_err("state beyond the u16 slot space is rejected");
+        assert!(
+            error
+                .to_string()
+                .contains("beyond the 65536 executable slot bound")
+        );
     }
 }
