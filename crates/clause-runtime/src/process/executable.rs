@@ -5997,6 +5997,7 @@ pub enum ExecutableErrorV1 {
     AllocationBindingMismatch,
     MalformedAllocationEpoch,
     MalformedProgram,
+    UnstratifiedDerivation,
     CanonicalLoweringCapacity,
     CanonicalLoweringDuplicateState,
     CanonicalLoweringDuplicateHandler,

@@ -1,4 +1,4 @@
-//! Positive set-valued relation closure. Derived rows never become roots.
+//! Stratified finite relation closure. Derived rows never become roots.
 use super::*;
 
 const MAX_RULE_CHECKS: usize = 65_536;
@@ -9,29 +9,97 @@ pub(super) fn is_derivation(rule: &ExecutableRuleV1) -> bool {
         ExecutableExpressionV1::DerivedRelation(_)))
 }
 
-// Only row matches introduce relational dependencies. All remaining values
-// are pure expressions over their bound values, so adding rows cannot revoke
-// a conclusion. Absence, aggregates, occurrence arguments and allocation need
-// separate semantics and are not admitted by this positive closure.
-fn pure(value: &ExecutableExpressionV1, depth: usize) -> Result<(), ExecutableErrorV1> {
+// Query row reads require a completed predecessor relation. Ordinary row
+// matches may participate in the same positive fixed point.
+fn dependencies(
+    value: &ExecutableExpressionV1,
+    depth: usize,
+    query: bool,
+    reads: &mut BTreeMap<u16, bool>,
+) -> Result<(), ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
     if depth > MAX_EXPRESSION_DEPTH { return Err(ExecutableErrorV1::ResourceLimit); }
     match value {
         E::Constant(_) | E::Binding(_) => Ok(()),
-        E::ReferentFacet { value, .. } | E::Not(value) | E::SquareRoot(value) => pure(value, depth + 1),
+        E::Argument(_) if query => Ok(()),
+        E::ReferentFacet { value, .. } | E::Not(value) | E::SquareRoot(value) =>
+            dependencies(value, depth + 1, query, reads),
         E::Add(a, b) | E::Subtract(a, b) | E::Multiply(a, b) | E::Divide(a, b)
         | E::Equal(a, b) | E::GreaterThan(a, b) | E::LessThanOrEqual(a, b)
         | E::And(a, b) | E::Concatenate(a, b) => {
-            pure(a, depth + 1)?;
-            pure(b, depth + 1)
+            dependencies(a, depth + 1, query, reads)?;
+            dependencies(b, depth + 1, query, reads)
         }
         E::Conditional(a, b, c) | E::Clamp(a, b, c) => {
-            pure(a, depth + 1)?;
-            pure(b, depth + 1)?;
-            pure(c, depth + 1)
+            dependencies(a, depth + 1, query, reads)?;
+            dependencies(b, depth + 1, query, reads)?;
+            dependencies(c, depth + 1, query, reads)
+        }
+        E::Sum { inputs, predicates, value } if !query => {
+            for input in inputs { dependencies(input, depth + 1, false, reads)?; }
+            for predicate in predicates { predicate_dependencies(predicate, depth + 1, true, reads)?; }
+            dependencies(value, depth + 1, true, reads)
         }
         _ => Err(ExecutableErrorV1::MalformedProgram),
     }
+}
+
+fn predicate_dependencies(
+    predicate: &ExecutableExpressionV1,
+    depth: usize,
+    query: bool,
+    reads: &mut BTreeMap<u16, bool>,
+) -> Result<(), ExecutableErrorV1> {
+    if let ExecutableExpressionV1::RelationMatch(slot, subject, value) = predicate {
+        reads.entry(*slot).and_modify(|strict| *strict |= query).or_insert(query);
+        dependencies(subject, depth + 1, query, reads)?;
+        dependencies(value, depth + 1, query, reads)
+    } else { dependencies(predicate, depth, query, reads) }
+}
+
+fn strata(rules: &[(usize, &ExecutableRuleV1)]) -> Result<Vec<usize>, ExecutableErrorV1> {
+    let mut producers = BTreeMap::<u16, Vec<usize>>::new();
+    for (index, (_, rule)) in rules.iter().enumerate() {
+        for (slot, _) in &rule.assignments { producers.entry(*slot).or_default().push(index); }
+    }
+    let mut edges = Vec::new();
+    for (consumer, (_, rule)) in rules.iter().enumerate() {
+        let mut reads = BTreeMap::new();
+        for predicate in &rule.predicates { predicate_dependencies(predicate, 0, false, &mut reads)?; }
+        for (_, expression) in &rule.assignments {
+            let ExecutableExpressionV1::DerivedRelation(effects) = expression else {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            };
+            for effect in effects {
+                let ExecutableRelationEffectV1::Insert(subject, value) = effect else {
+                    return Err(ExecutableErrorV1::MalformedProgram);
+                };
+                dependencies(subject, 0, false, &mut reads)?;
+                dependencies(value, 0, false, &mut reads)?;
+            }
+        }
+        for (slot, strict) in reads {
+            for producer in producers.get(&slot).into_iter().flatten() {
+                edges.push((*producer, consumer, usize::from(strict)));
+            }
+        }
+    }
+    let mut levels = vec![0; rules.len()];
+    for _ in 0..rules.len() {
+        let mut changed = false;
+        for &(producer, consumer, strict) in &edges {
+            let required = levels[producer] + strict;
+            if required > levels[consumer] {
+                levels[consumer] = required;
+                changed = true;
+            }
+        }
+        if !changed { return Ok(levels); }
+    }
+    if rules.is_empty() { return Ok(levels); }
+    // An increasing level after every finite relaxation proves a cycle
+    // containing an aggregate dependency, which has no admitted stratum.
+    Err(ExecutableErrorV1::UnstratifiedDerivation)
 }
 
 pub(super) fn validate(
@@ -45,14 +113,8 @@ pub(super) fn validate(
             || !rule.removals.is_empty() {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
-        for predicate in &rule.predicates {
-            if let E::RelationMatch(_, subject, value) = predicate {
-                pure(subject, 0)?;
-                pure(value, 0)?;
-            } else { pure(predicate, 0)?; }
-        }
         for (slot, expression) in &rule.assignments {
-            let E::DerivedRelation(effects) = expression else {
+            let E::DerivedRelation(_) = expression else {
                 return Err(ExecutableErrorV1::MalformedProgram);
             };
             let Some(ExecutableValueV1::RelationTable(table)) = initial
@@ -64,13 +126,6 @@ pub(super) fn validate(
                 return Err(ExecutableErrorV1::MalformedProgram);
             }
             targets.insert(*slot);
-            for effect in effects {
-                let ExecutableRelationEffectV1::Insert(subject, value) = effect else {
-                    return Err(ExecutableErrorV1::MalformedProgram);
-                };
-                pure(subject, 0)?;
-                pure(value, 0)?;
-            }
         }
     }
     for rule in program.rules.iter().filter(|rule| !is_derivation(rule)) {
@@ -79,6 +134,7 @@ pub(super) fn validate(
             return Err(ExecutableErrorV1::MalformedProgram);
         }
     }
+    strata(&program.rules.iter().enumerate().filter(|(_, rule)| is_derivation(rule)).collect::<Vec<_>>())?;
     Ok(())
 }
 
@@ -95,6 +151,7 @@ pub(super) fn close(
     use ExecutableExpressionV1 as E;
     let rules = program.rules.iter().enumerate()
         .filter(|(_, rule)| is_derivation(rule)).collect::<Vec<_>>();
+    let levels = strata(&rules)?;
     let mut next = configuration.to_vec();
     for (_, rule) in &rules {
         for (slot, _) in &rule.assignments {
@@ -108,9 +165,11 @@ pub(super) fn close(
     let mut checks = 0;
     let mut visits = 0;
     let mut count = 0;
+    let mut level = 0;
+    let last_level = levels.iter().copied().max().unwrap_or(0);
     loop {
         let prior_count = count;
-        for (rule_index, rule) in &rules {
+        for ((rule_index, rule), _) in rules.iter().zip(&levels).filter(|(_, stratum)| **stratum == level) {
             checks += 1;
             if checks > MAX_RULE_CHECKS { return Err(ExecutableErrorV1::ResourceLimit); }
             for (matched, accepted) in relational::match_rule(
@@ -169,6 +228,9 @@ pub(super) fn close(
                 }
             }
         }
-        if count == prior_count { return Ok(next); }
+        if count == prior_count {
+            if level == last_level { return Ok(next); }
+            level += 1;
+        }
     }
 }

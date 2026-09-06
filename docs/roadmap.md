@@ -56,9 +56,12 @@ Authorized positive laws compute a bounded least fixed point. The runtime
 tracks independent support, preserves conclusions with surviving support, and
 removes consequences—including unsupported cycles—after the last root is
 withdrawn. Exhaustion rejects without admitting a prefix. Derived relations
-are currently separate many-valued tables; recursive negation, aggregation,
-allocation, general multi-input conclusions, and a source-soundness proof are
-not implemented.
+use optional or many-valued tables, including structured values. Finite sums
+in derived laws read completed prerequisite relations. The runtime infers
+strata from checked row dependencies, completes positive recursion within
+each stratum, and rejects cycles through aggregates. Root changes recompute
+all strata atomically. Recursive negation, recursive aggregation, allocation,
+general multi-input conclusions, and a source-soundness proof are not implemented.
 
 Finite F64 scalar laws support declared symbolic Readings, simultaneous
 binder substitution, composed expressions, guarded alternatives, exact source

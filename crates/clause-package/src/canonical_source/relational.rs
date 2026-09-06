@@ -440,7 +440,7 @@ pub(super) fn checked_handler_with_domains(
     use CanonicalExecutablePredicateV1 as P;
     use CanonicalRelationEffectV1 as R;
     let error = || CanonicalSourceErrorV1::MissingExecutableBinding { origin: source.origin };
-    if source.derivation && (!source.sums.is_empty() || !source.creations.is_empty()
+    if source.derivation && (!source.creations.is_empty()
         || !source.assignments.is_empty() || !source.accumulations.is_empty()
         || !source.removals.is_empty() || !source.arguments.is_empty()) {
         return Err(error());

@@ -185,6 +185,54 @@ on settle ?item
       charge: ?limited
 ```
 
+## Derived structured totals
+
+A law can bind finite sums and derive one optional structured value shared by its consumers. Aggregate queries read completed prerequisite relations, including positive recursive closure. Source changes recompute totals atomically; cycles through aggregate dependencies reject without publishing partial values.
+
+Catalog ID: `derived-capacity`
+
+```clause
+F64
+Text
+Component
+Workshop
+Capacity:
+  mass: F64
+mass
+  domain: Component
+  range: F64
+  cardinality: one
+phase
+  domain: Workshop
+  range: Text
+  cardinality: one
+capacity
+  domain: Workshop
+  range: Capacity
+  cardinality: maybe
+core
+  mass: 8.0
+drive
+  mass: 7.0
+workshop
+  phase: "Workshop"
+law component-capacity
+  if
+    ?workshop phase ?phase
+    sum ?mass where { ?component mass ?mass } as ?total
+  then
+    ?workshop capacity Capacity { mass: ?total }
+derive component-capacity
+on inspect ?workshop
+  when
+    ?workshop phase ?phase
+    ?workshop capacity Capacity { mass: ?mass }
+  withdraw
+    ?workshop phase ?phase
+  include
+    ?workshop phase ?phase
+```
+
 ## Reusable optional structured relations
 
 Positive laws may derive a cardinality-maybe value, including a structured value. Queries consume the same current selection, liveness and health definition. Equal proofs share one value; conflicting conclusions reject, and withdrawn premises remove their consequences.

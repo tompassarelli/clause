@@ -28,6 +28,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/coherent-declarations.clause"),
     },
     AuthoringExampleV1 {
+        slug: "derived-capacity",
+        title: "Derived structured totals",
+        summary: "A law can bind finite sums and derive one optional structured value shared by its consumers. Aggregate queries read completed prerequisite relations, including positive recursive closure. Source changes recompute totals atomically; cycles through aggregate dependencies reject without publishing partial values.",
+        source: include_str!("../../../test-vectors/authoring/derived-capacity.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "optional-derived-formation",
         title: "Reusable optional structured relations",
         summary: "Positive laws may derive a cardinality-maybe value, including a structured value. Queries consume the same current selection, liveness and health definition. Equal proofs share one value; conflicting conclusions reject, and withdrawn premises remove their consequences.",
