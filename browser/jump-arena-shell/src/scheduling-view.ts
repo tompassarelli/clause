@@ -66,6 +66,33 @@ export function projectedReferentKey(referent: ProjectedReferent): string {
   return `${checked.domain}-${identity}`;
 }
 
+export function continuedReferentKey(
+  referent: ProjectedReferent,
+  continuity: ProjectedValue,
+): string {
+  const checked = checkedProjectedReferent(referent);
+  if (checked.identity.kind !== "declared") {
+    throw new Error("the scheduling workbench only carries declared task identities");
+  }
+  const document = projectedObject(continuity, "schedule continuity");
+  const pages = projectedObject(document.formations, "schedule formation continuity");
+  const mappings = Object.values(pages)
+    .flatMap(page => Object.values(projectedObject(page, "schedule formation page")))
+    .map(mapping => projectedObject(mapping, "schedule formation mapping"));
+  const mapped = (old: number): number => {
+    const mapping = mappings.find(candidate => candidate.old === old);
+    if (mapping === undefined || typeof mapping.new !== "number" || !Number.isSafeInteger(mapping.new)) {
+      throw new Error("the checked source edit did not retain a selected task identity");
+    }
+    return mapping.new;
+  };
+  return projectedReferentKey(Object.freeze({
+    kind: "referent",
+    domain: mapped(checked.domain),
+    identity: Object.freeze({ kind: "declared", value: mapped(checked.identity.value) }),
+  }));
+}
+
 function oneValue(row: ProjectedRelationRow, relation: string): ProjectedValue {
   if (row.values.length !== 1) {
     throw new Error(`${relation} must project exactly one value per subject`);

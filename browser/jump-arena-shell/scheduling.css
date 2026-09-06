@@ -112,6 +112,25 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .schedule-notice { min-height: 22px; margin: 18px 0 0; color: #717d74; font-size: .84rem; }
 .schedule-notice.is-success { color: #21613f; }
 .schedule-notice.is-rejected { color: #a14d2d; }
+.workbench-stack { display: grid; gap: 14px; margin-top: 34px; }
+.workbench-card { padding: 20px; border: 1px solid #d9ddd4; border-radius: 16px; background: #f8f8f3; }
+.workbench-title { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
+.workbench-title h3 { margin: 0; color: #26372d; font-size: .92rem; letter-spacing: 0; text-transform: none; }
+.workbench-title .eyebrow { margin-bottom: 4px; }
+.workbench-title .secondary-action { min-height: 36px; padding: 0 12px; font-size: .76rem; white-space: nowrap; }
+.diagnostic-result { margin-top: 15px; padding: 14px; border-left: 3px solid #b86943; border-radius: 6px; background: #fff; }
+.diagnostic-result.is-found { border-left-color: #347150; }
+.diagnostic-result p { margin-bottom: 7px; font-size: .86rem; }
+.diagnostic-result p:last-of-type { margin-bottom: 8px; }
+.diagnostic-result small, .source-edit-form small { color: #718077; font-size: .7rem; }
+.source-card { border-color: #c8d3ca; background: #eef4ed; }
+.source-generation { padding: 5px 8px; border-radius: 99px; color: #315b43; background: #dceadd; font-size: .68rem; font-weight: 750; }
+.source-help { margin: 14px 0; color: #617069; font-size: .82rem; line-height: 1.45; }
+.source-edit-form label { display: block; margin-bottom: 7px; color: #4e5f55; font-size: .72rem; font-weight: 750; }
+.source-edit-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 9px; }
+.source-edit-row input { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid #aebcb1; border-radius: 10px; color: #203128; background: #fff; font: .82rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+.source-edit-form small { display: block; margin-top: 7px; }
+.source-card .schedule-notice { margin-bottom: 0; }
 .schedule-unavailable { margin: 12vh auto; max-width: 620px; padding: 42px; border: 1px solid #d5d8ce; border-radius: 24px; background: #fbfaf6; box-shadow: 0 26px 70px #39453b20; }
 .schedule-unavailable p:last-child { margin: 20px 0 0; color: #667368; }
 
@@ -121,6 +140,8 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .schedule-layout { grid-template-columns: 1fr; }
   .task-graph { border-right: 0; border-bottom: 1px solid #dedfd7; }
   .relation-grid { grid-template-columns: 1fr; }
+  .workbench-title { display: grid; }
+  .source-edit-row { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 500px) {
