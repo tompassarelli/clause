@@ -93,9 +93,10 @@ enum Game
   Chess
   Soccer
 
-shape Vec2
-  x: F32
-  y: F32
+Vec2:
+  ?example:
+    x: F32
+    y: F32
 ```
 
 A bare designation introduces or resolves a Referent. An `enum` child emits
@@ -172,10 +173,15 @@ Relations that need non-field phrase structure declare one exact Reading and
 any executable directions:
 
 ```clause
-relation connects
-  reads {door: Door} connects {origin: Space} to {destination: Space}
-  subject door
-  mode given door origin yields destination: many
+connects:
+  ?example:
+    door: Door
+    origin: Space
+    destination: Space
+    ?door:
+      connects ?origin to: ?destination
+
+mode connects given door origin yields destination: many
 ```
 
 Braces mark role binders; other words are literal phrase tokens. `subject`

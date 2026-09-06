@@ -1,15 +1,23 @@
 Root
 Item
 
-relation active
-  reads {root: Root} active {value: Item}
-  subject root
-  mode given root yields value: one
+active:
+  ?example:
+    root: Root
+    active: Item
+    ?root:
+      active: ?active
 
-relation known
-  reads {root: Root} known {value: Item}
-  subject root
-  mode given root yields value: many
+mode active given root yields active: one
+
+known:
+  ?example:
+    root: Root
+    known: Item
+    ?root:
+      known: ?known
+
+mode known given root yields known: many
 
 root active none
 

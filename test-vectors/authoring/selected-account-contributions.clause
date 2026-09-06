@@ -4,30 +4,54 @@ Controller
 Contributor
 Account
 
-relation chosen-account
-  reads {controller: Controller} chosen account {value: Account}
-  subject controller
-  mode given controller yields value: one
-relation balance
-  reads {account: Account} balance {value: F64}
-  subject account
-  mode given account yields value: one
-relation enabled
-  reads {account: Account} enabled {value: Bool}
-  subject account
-  mode given account yields value: one
-relation selected
-  reads {contributor: Contributor} selected {value: Bool}
-  subject contributor
-  mode given contributor yields value: one
-relation contribution
-  reads {contributor: Contributor} contribution {value: F64}
-  subject contributor
-  mode given contributor yields value: one
-relation cooldown
-  reads {contributor: Contributor} cooldown {value: F64}
-  subject contributor
-  mode given contributor yields value: one
+chosen-account:
+  ?example:
+    controller: Controller
+    chosen-account: Account
+    ?controller:
+      chosen account: ?chosen-account
+
+mode chosen-account given controller yields chosen-account: one
+balance:
+  ?example:
+    account: Account
+    balance: F64
+    ?account:
+      balance: ?balance
+
+mode balance given account yields balance: one
+enabled:
+  ?example:
+    account: Account
+    enabled: Bool
+    ?account:
+      enabled: ?enabled
+
+mode enabled given account yields enabled: one
+selected:
+  ?example:
+    contributor: Contributor
+    selected: Bool
+    ?contributor:
+      selected: ?selected
+
+mode selected given contributor yields selected: one
+contribution:
+  ?example:
+    contributor: Contributor
+    contribution: F64
+    ?contributor:
+      contribution: ?contribution
+
+mode contribution given contributor yields contribution: one
+cooldown:
+  ?example:
+    contributor: Contributor
+    cooldown: F64
+    ?contributor:
+      cooldown: ?cooldown
+
+mode cooldown given contributor yields cooldown: one
 
 controller
   member of: Controller

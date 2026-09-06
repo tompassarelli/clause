@@ -274,8 +274,8 @@ fn created_subjects_remain_exact_and_invalid_coordinates_reject() {
 #[test]
 fn row_changes_do_not_reinterpret_many_valued_rows_as_scalars() {
     let source = std::str::from_utf8(SOURCE).unwrap().replace(
-        "mode given actor yields value: one\nrelation burn-target",
-        "mode given actor yields value: many\nrelation burn-target",
+        "mode selected given actor yields selected: one\nburn-target:",
+        "mode selected given actor yields selected: many\nburn-target:",
     );
     let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
     run(&mut w, b"attack", &[]);

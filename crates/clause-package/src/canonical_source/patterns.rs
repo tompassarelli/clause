@@ -14,7 +14,7 @@ fn subject(
     }
 }
 
-fn clauses(
+pub(super) fn clauses(
     lines: &[LogicalSourceLine],
     indent: usize,
     frontend: &CanonicalDeclaredFrontendV1,

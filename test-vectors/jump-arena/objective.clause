@@ -5,10 +5,14 @@ completed
 failed
 resetting
 
-relation objective-state
-  reads {objective: Objective} objective state {value: ObjectiveState}
-  subject objective
-  mode given objective yields value: one
+objective-state:
+  ?example:
+    objective: Objective
+    objective-state: ObjectiveState
+    ?objective:
+      objective state: ?objective-state
+
+mode objective-state given objective yields objective-state: one
 
 game-objective
   member of: Objective

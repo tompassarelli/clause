@@ -17,6 +17,7 @@ pub(super) struct ScalarDeriveCst {
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct ScalarLawEnvironment {
+    pub declarations: Vec<CstItem>,
     pub relations: Vec<RelationCst>,
     pub laws: Vec<ScalarLawCst>,
     pub derives: Vec<ScalarDeriveCst>,
@@ -55,17 +56,12 @@ impl ScalarLawEnvironment {
             .map(|pair| &lines[pair[0]..pair[1]])
             .collect::<Vec<_>>();
         let mut environment = Self::default();
+        environment.declarations = parse_declarations(artifact, &blocks, frontend)?;
         environment.relations.extend(contracts::read(artifact, &blocks, frontend)?);
-        for block in &blocks {
-            if let Some(name) = block[0].text.strip_prefix("relation ") {
-                let origin = line_origin(artifact, block[0]);
-                environment.relations.push(parse_relation(
-                    artifact,
-                    block,
-                    designation_bytes(name, origin)?,
-                )?);
-            }
-        }
+        environment.relations.extend(environment.declarations.iter().filter_map(|item| {
+            let CstKind::Relation(relation) = &item.kind else { return None };
+            Some(relation.clone())
+        }));
         for block in &blocks {
             let Some(name) = block[0].text.strip_prefix("law ") else {
                 continue;

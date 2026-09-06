@@ -9,6 +9,11 @@ pub(super) fn read(
 ) -> Result<Vec<RelationCst>, CanonicalSourceErrorV1> {
     let mut subjects = BTreeMap::<Vec<u8>, Vec<ApplicationCst>>::new();
     for block in blocks {
+        if declaration_designation(block, artifact)?.is_some()
+            || block[0].text.starts_with("mode ")
+        {
+            continue;
+        }
         let origin = line_origin(artifact, block[0]);
         let Some(focus) = parse_subject_focus(artifact, block, origin, frontend)? else { continue };
         for edge in focus.edges {

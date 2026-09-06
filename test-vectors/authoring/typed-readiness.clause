@@ -3,21 +3,38 @@ Bool
 Text
 Device
 
-relation readiness
-  reads {enabled: Bool} enabled with charge {charge: F64} reports {message: Text}
-  mode given enabled charge yields message: maybe
-relation enabled
-  reads {device: Device} enabled {value: Bool}
-  subject device
-  mode given device yields value: one
-relation charge
-  reads {device: Device} charge {value: F64}
-  subject device
-  mode given device yields value: one
-relation message
-  reads {device: Device} message {value: Text}
-  subject device
-  mode given device yields value: one
+readiness:
+  ?example:
+    enabled: Bool
+    charge: F64
+    message: Text
+    ?enabled enabled with charge ?charge reports ?message
+
+mode readiness given enabled charge yields message: maybe
+enabled:
+  ?example:
+    device: Device
+    enabled: Bool
+    ?device:
+      enabled: ?enabled
+
+mode enabled given device yields enabled: one
+charge:
+  ?example:
+    device: Device
+    charge: F64
+    ?device:
+      charge: ?charge
+
+mode charge given device yields charge: one
+message:
+  ?example:
+    device: Device
+    message: Text
+    ?device:
+      message: ?message
+
+mode message given device yields message: one
 
 law disabled
   if

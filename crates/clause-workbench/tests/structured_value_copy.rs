@@ -115,12 +115,12 @@ fn whole_structure_copy_includes_runtime_created_rows() {
 fn whole_structure_copy_preserves_nominal_types() {
     let wrong_shape = SOURCE
         .replace(
-            "relation position",
-            "shape OtherPoint\n  x: F64\n  y: F64\n\nrelation position",
+            "position:\n",
+            "OtherPoint:\n  ?example:\n    x: F64\n    y: F64\n\nposition:\n",
         )
         .replace(
-            "destination {value: Point}",
-            "destination {value: OtherPoint}",
+            "    destination: Point",
+            "    destination: OtherPoint",
         )
         .replace("item destination Point", "item destination OtherPoint");
     assert!(ResidentSourceWorkbenchV1::open(wrong_shape.as_bytes()).is_err());

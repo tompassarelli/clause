@@ -2,25 +2,41 @@ Text
 Bool
 Document
 
-relation cleaned
-  reads {document: Document} cleaned {value: Text}
-  subject document
-  mode given document yields value: one
+cleaned:
+  ?example:
+    document: Document
+    cleaned: Text
+    ?document:
+      cleaned: ?cleaned
 
-relation first-word
-  reads {document: Document} first word {value: Text}
-  subject document
-  mode given document yields value: one
+mode cleaned given document yields cleaned: one
 
-relation remaining-words
-  reads {document: Document} remaining words {value: Text}
-  subject document
-  mode given document yields value: one
+first-word:
+  ?example:
+    document: Document
+    first-word: Text
+    ?document:
+      first word: ?first-word
 
-relation prefixed
-  reads {document: Document} prefixed {value: Bool}
-  subject document
-  mode given document yields value: one
+mode first-word given document yields first-word: one
+
+remaining-words:
+  ?example:
+    document: Document
+    remaining-words: Text
+    ?document:
+      remaining words: ?remaining-words
+
+mode remaining-words given document yields remaining-words: one
+
+prefixed:
+  ?example:
+    document: Document
+    prefixed: Bool
+    ?document:
+      prefixed: ?prefixed
+
+mode prefixed given document yields prefixed: one
 
 document-main prefixed false
 document-main cleaned ""

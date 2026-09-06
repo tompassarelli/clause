@@ -3,15 +3,20 @@ Bool
 Text
 Item
 
-shape Reading
-  amount: F64
-  enabled: Bool
-  label: Text
+Reading:
+  ?example:
+    amount: F64
+    enabled: Bool
+    label: Text
 
-relation reading
-  reads {item: Item} reading {value: Reading}
-  subject item
-  mode given item yields value: one
+reading:
+  ?example:
+    item: Item
+    reading: Reading
+    ?item:
+      reading: ?reading
+
+mode reading given item yields reading: one
 
 item
   member of: Item

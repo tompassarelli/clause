@@ -4,29 +4,50 @@ Space
 metric-SignedQ16
 metric-NonnegativeQ16
 
-shape metric-Point2Q16
-  x: metric-SignedQ16
-  y: metric-SignedQ16
+metric-Point2Q16:
+  ?example:
+    x: metric-SignedQ16
+    y: metric-SignedQ16
 
-relation world-observer-position-v1
-  reads {observer: Observer} has observer-position {point: metric-Point2Q16} in {space: Space}
-  subject observer
-  mode given observer space yields point: one
+world-observer-position-v1:
+  ?example:
+    observer: Observer
+    point: metric-Point2Q16
+    space: Space
+    ?observer:
+      has observer-position ?point in: ?space
 
-relation world-target-position-v1
-  reads {target: Target} has target-position {point: metric-Point2Q16} in {space: Space}
-  subject target
-  mode given target space yields point: one
+mode world-observer-position-v1 given observer space yields point: one
 
-relation world-proximity-radius-v1
-  reads {observer: Observer} has proximity-radius {radius: metric-NonnegativeQ16} in {space: Space}
-  subject observer
-  mode given observer space yields radius: one
+world-target-position-v1:
+  ?example:
+    target: Target
+    point: metric-Point2Q16
+    space: Space
+    ?target:
+      has target-position ?point in: ?space
 
-relation world-in-proximity-v1
-  reads {observer: Observer} has in-proximity {target: Target} in {space: Space}
-  subject observer
-  mode given observer space yields target: many
+mode world-target-position-v1 given target space yields point: one
+
+world-proximity-radius-v1:
+  ?example:
+    observer: Observer
+    radius: metric-NonnegativeQ16
+    space: Space
+    ?observer:
+      has proximity-radius ?radius in: ?space
+
+mode world-proximity-radius-v1 given observer space yields radius: one
+
+world-in-proximity-v1:
+  ?example:
+    observer: Observer
+    target: Target
+    space: Space
+    ?observer:
+      has in-proximity ?target in: ?space
+
+mode world-in-proximity-v1 given observer space yields target: many
 
 law world-radius-proximity-law-v1
   if

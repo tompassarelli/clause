@@ -2,15 +2,23 @@ Root
 Item
 F64
 
-relation known
-  reads {root: Root} known {value: Item}
-  subject root
-  mode given root yields value: many
+known:
+  ?example:
+    root: Root
+    known: Item
+    ?root:
+      known: ?known
 
-relation count
-  reads {root: Root} count {value: F64}
-  subject root
-  mode given root yields value: one
+mode known given root yields known: many
+
+count:
+  ?example:
+    root: Root
+    count: F64
+    ?root:
+      count: ?count
+
+mode count given root yields count: one
 
 root
   member of: Root

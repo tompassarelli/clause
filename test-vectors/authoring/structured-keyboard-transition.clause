@@ -2,20 +2,29 @@ F64
 Bool
 Player
 
-shape Vec3
-  x: F64
-  y: F64
-  z: F64
+Vec3:
+  ?example:
+    x: F64
+    y: F64
+    z: F64
 
-relation velocity
-  reads {player: Player} velocity {value: Vec3}
-  subject player
-  mode given player yields value: one
+velocity:
+  ?example:
+    player: Player
+    velocity: Vec3
+    ?player:
+      velocity: ?velocity
 
-relation empowered
-  reads {player: Player} empowered {value: Bool}
-  subject player
-  mode given player yields value: one
+mode velocity given player yields velocity: one
+
+empowered:
+  ?example:
+    player: Player
+    empowered: Bool
+    ?player:
+      empowered: ?empowered
+
+mode empowered given player yields empowered: one
 
 player-1
   member of: Player

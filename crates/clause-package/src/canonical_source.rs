@@ -1437,6 +1437,13 @@ struct RelationCst {
     modes: Vec<RelationModeCst>,
 }
 
+// Declaration rationale: authors retain one role-to-domain constraint per
+// named binding, one ordinary flat or focused example when a Reading is
+// needed, explicit Modes, and the ordered fields that determine record
+// representation. The `relation`/brace template and `shape` classification
+// carried no further fact. The forcing case is a four-role Reading plus a
+// structured value copied through focused and flat state clauses.
+
 #[derive(Clone, Debug)]
 enum RelationReadingPartCst {
     Literal(Vec<u8>),
@@ -1582,6 +1589,19 @@ pub fn read_canonical_source_with_declared_frontend_v1(
             start: block[0].start as u64,
             end: last.end as u64,
         };
+        if declaration_designation(block, artifact)?.is_some() {
+            let declaration = scalar_laws
+                .declarations
+                .iter()
+                .find(|declaration| declaration.origin == origin)
+                .expect("the declaration pass owns this exact block")
+                .clone();
+            items.push(declaration);
+            continue;
+        }
+        if block[0].text.starts_with("mode ") {
+            continue;
+        }
         if block.iter().skip(1).all(|line| line.text.trim().is_empty())
             && let Some(designation) = block[0].text.strip_prefix("using ")
         {
@@ -7457,58 +7477,6 @@ fn parse_expanded_item(
             },
         });
     }
-    if let Some(designation) = head.strip_prefix("shape ") {
-        let designation = designation_bytes(designation, origin)?;
-        let mut fields = Vec::new();
-        for line in block
-            .iter()
-            .skip(1)
-            .filter(|line| !line.text.trim().is_empty())
-        {
-            if line.indent != 2 {
-                return Err(CanonicalSourceErrorV1::InvalidShapeField {
-                    origin: line_origin(artifact, *line),
-                });
-            }
-            let value = &line.text[2..];
-            let Some((name, domain)) = value.split_once(": ") else {
-                return Err(CanonicalSourceErrorV1::InvalidShapeField {
-                    origin: line_origin(artifact, *line),
-                });
-            };
-            if name.is_empty() || domain.is_empty() || name.contains('=') || domain.contains('=') {
-                return Err(CanonicalSourceErrorV1::InvalidShapeField {
-                    origin: line_origin(artifact, *line),
-                });
-            }
-            fields.push(ShapeField {
-                name: name.as_bytes().to_vec(),
-                domain: domain.as_bytes().to_vec(),
-                origin: line_origin(artifact, *line),
-            });
-        }
-        if fields.is_empty() {
-            return Err(CanonicalSourceErrorV1::InvalidShapeField { origin });
-        }
-        ensure_unique_children(
-            &designation,
-            fields.iter().map(|field| field.name.as_slice()),
-        )?;
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::Shape {
-                designation,
-                fields,
-            },
-        });
-    }
-    if let Some(designation) = head.strip_prefix("relation ") {
-        let designation = designation_bytes(designation, origin)?;
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::Relation(parse_relation(artifact, block, designation)?),
-        });
-    }
     if head.starts_with("bind keyboard ") {
         require_leaf(block, artifact)?;
         let binding = parse_keyboard_binding(head, origin)?;
@@ -8062,6 +8030,10 @@ fn parse_focused_edges(
 fn declared_application(
     edge: &CanonicalFocusedEdgeV1,
 ) -> Result<ApplicationCst, CanonicalSourceErrorV1> {
+    application_role_bytes(
+        std::str::from_utf8(&edge.relation).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
+        edge.origin,
+    )?;
     let object = std::str::from_utf8(&edge.object)
         .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
     let object = parse_application_object(object, edge.origin)?;
@@ -10764,76 +10736,236 @@ fn parse_input_scalar(source: &str, parameters: [&str; 2]) -> Option<CanonicalIn
         .or_else(|| parse_source_number(source).map(CanonicalInputScalarV1::Number))
 }
 
-fn parse_relation(
+fn block_origin(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+) -> CanonicalSourceOriginV1 {
+    let last = block
+        .iter()
+        .rfind(|line| !line.text.trim().is_empty())
+        .copied()
+        .expect("a source block starts with a nonblank line");
+    CanonicalSourceOriginV1 {
+        artifact,
+        start: block[0].start as u64,
+        end: last.end as u64,
+    }
+}
+
+fn declaration_designation(
+    block: &[SourceLine<'_>],
+    artifact: CanonicalSourceArtifactIdV1,
+) -> Result<Option<Vec<u8>>, CanonicalSourceErrorV1> {
+    let Some(source) = block[0].text.strip_suffix(':') else {
+        return Ok(None);
+    };
+    let Some(first) = block
+        .iter()
+        .skip(1)
+        .find(|line| !line.text.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    if first.indent != 2 || first.text[2..].trim_end() != "?example:" {
+        return Ok(None);
+    }
+    designation_bytes(source, line_origin(artifact, block[0])).map(Some)
+}
+
+fn parse_declarations(
+    artifact: CanonicalSourceArtifactIdV1,
+    blocks: &[&[SourceLine<'_>]],
+    frontend: &CanonicalDeclaredFrontendV1,
+) -> Result<Vec<CstItem>, CanonicalSourceErrorV1> {
+    let mut declarations = Vec::new();
+    for block in blocks {
+        let Some(designation) = declaration_designation(block, artifact)? else {
+            continue;
+        };
+        declarations.push(parse_declaration(artifact, block, designation, frontend)?);
+    }
+    for block in blocks {
+        let Some(source) = block[0].text.strip_prefix("mode ") else {
+            continue;
+        };
+        let origin = line_origin(artifact, block[0]);
+        let Some((designation, contract)) = source.split_once(" given ") else {
+            return Err(CanonicalSourceErrorV1::InvalidMode { origin });
+        };
+        let designation = designation_bytes(designation, origin)?;
+        let mut mode = parse_mode(&format!("given {contract}"), origin)?;
+        for child in block
+            .iter()
+            .skip(1)
+            .filter(|line| !line.text.trim().is_empty())
+        {
+            let child_origin = line_origin(artifact, *child);
+            if child.indent != 2 {
+                return Err(CanonicalSourceErrorV1::InvalidMode {
+                    origin: child_origin,
+                });
+            }
+            parse_mode_contract_child(&child.text[2..], child_origin, &mut mode)?;
+        }
+        let matching = declarations
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| matches!(&item.kind,
+                CstKind::Relation(relation) if relation.designation == designation).then_some(index))
+            .collect::<Vec<_>>();
+        let [index] = matching.as_slice() else {
+            return Err(CanonicalSourceErrorV1::InvalidMode { origin });
+        };
+        let item = &mut declarations[*index];
+        let CstKind::Relation(relation) = &mut item.kind else {
+            unreachable!("the matching declaration is a relation")
+        };
+        relation.modes.push(mode);
+    }
+    for item in &declarations {
+        if let CstKind::Relation(relation) = &item.kind {
+            validate_relation(relation)?;
+        }
+    }
+    Ok(declarations)
+}
+
+fn parse_declaration(
     artifact: CanonicalSourceArtifactIdV1,
     block: &[SourceLine<'_>],
     designation: Vec<u8>,
-) -> Result<RelationCst, CanonicalSourceErrorV1> {
-    let mut roles = None;
-    let mut surface = None;
-    let mut reading_pattern = None;
-    let mut modes: Vec<RelationModeCst> = Vec::new();
-    let mut subject = None;
-    for line in block
+    frontend: &CanonicalDeclaredFrontendV1,
+) -> Result<CstItem, CanonicalSourceErrorV1> {
+    let lines = block
         .iter()
         .skip(1)
         .filter(|line| !line.text.trim().is_empty())
-    {
-        let origin = line_origin(artifact, *line);
-        if line.indent == 4 {
-            let mode = modes
-                .last_mut()
-                .ok_or(CanonicalSourceErrorV1::InvalidRelationChild { origin })?;
-            parse_mode_contract_child(&line.text[4..], origin, mode)?;
+        .copied()
+        .collect::<Vec<_>>();
+    let Some(example) = lines.first() else {
+        return Err(CanonicalSourceErrorV1::InvalidRelationChild {
+            origin: block_origin(artifact, block),
+        });
+    };
+    if example.indent != 2 || example.text[2..].trim_end() != "?example:" {
+        return Err(CanonicalSourceErrorV1::InvalidRelationChild {
+            origin: line_origin(artifact, *example),
+        });
+    }
+    let mut roles = Vec::new();
+    let mut reading = None;
+    let mut subject = None;
+    let mut cursor = 1;
+    while cursor < lines.len() {
+        let line = lines[cursor];
+        let origin = line_origin(artifact, line);
+        if line.indent != 4 {
+            return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
+        }
+        let source = &line.text[4..];
+        if !source.starts_with('?') && !source.contains('?') {
+            let edge = frontend.edge(b"?example", source, origin)?;
+            let name = denotation_designation_bytes(
+                std::str::from_utf8(&edge.relation).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?, origin)?;
+            let domain = application_designation_bytes(
+                std::str::from_utf8(&edge.object).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?, origin)?;
+            roles.push(RelationRoleCst {
+                name,
+                domain,
+                origin,
+            });
+            cursor += 1;
             continue;
         }
-        if line.indent != 2 {
+        if let Some(focus) = source.strip_prefix('?').and_then(|value| value.strip_suffix(':')) {
+            if reading.is_some() {
+                return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
+            }
+            let focus = denotation_designation_bytes(focus, origin)?;
+            let mut end = cursor + 1;
+            while end < lines.len() && lines[end].indent > 4 { end += 1; }
+            let logical = logical_source_lines(artifact, &lines[cursor..end])?;
+            let clauses = patterns::clauses(&logical, 4, frontend)?;
+            let [clause] = clauses.as_slice() else {
+                return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
+            };
+            reading = Some(parse_relation_reading(&clause.text, clause.origin)?);
+            subject = Some(focus);
+            cursor = end;
+            continue;
+        }
+        if reading.is_some() {
             return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
         }
-        let child = &line.text[2..];
-        if let Some(reading) = child.strip_prefix("reads ") {
-            if roles.is_some() {
-                return Err(CanonicalSourceErrorV1::DuplicateChild {
-                    producer: designation.clone(),
-                    child: b"reads".to_vec(),
-                });
+        reading = Some(parse_relation_reading(source, origin)?);
+        cursor += 1;
+    }
+    ensure_unique_children(&designation, roles.iter().map(|role| role.name.as_slice()))?;
+    let origin = block_origin(artifact, block);
+    let kind = match reading {
+        None if !roles.is_empty() => CstKind::Shape {
+            designation,
+            fields: roles
+                .into_iter()
+                .map(|role| ShapeField {
+                    name: role.name,
+                    domain: role.domain,
+                    origin: role.origin,
+                })
+                .collect(),
+        },
+        Some(reading) => {
+            let declared = roles
+                .iter()
+                .map(|role| role.name.as_slice())
+                .collect::<BTreeSet<_>>();
+            let bound = reading
+                .iter()
+                .filter_map(|part| match part {
+                    RelationReadingPartCst::Role(role) => Some(role.as_slice()),
+                    RelationReadingPartCst::Literal(_) => None,
+                })
+                .collect::<Vec<_>>();
+            if bound.len() != declared.len()
+                || bound.iter().copied().collect::<BTreeSet<_>>() != declared
+            {
+                return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
             }
-            roles = Some(parse_reads_roles(reading, origin)?);
-            surface = Some(parse_reading_surface(reading, origin)?);
-            reading_pattern = Some(parse_relation_reading(reading, origin)?);
-        } else if let Some(role) = child.strip_prefix("subject ") {
-            if subject.replace(role.as_bytes().to_vec()).is_some() {
-                return Err(CanonicalSourceErrorV1::DuplicateChild {
-                    producer: designation.clone(),
-                    child: b"subject".to_vec(),
-                });
-            }
-        } else if let Some(mode) = child.strip_prefix("mode ") {
-            modes.push(parse_mode(mode, origin)?);
-        } else {
-            return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
+            let surface = reading_surface(&reading, origin)?;
+            CstKind::Relation(RelationCst {
+                contract_origin: None,
+                designation,
+                surface,
+                reading,
+                subject,
+                roles,
+                modes: Vec::new(),
+            })
         }
-    }
-    let roles = roles.ok_or_else(|| CanonicalSourceErrorV1::MissingRelationReads {
-        designation: designation.clone(),
-    })?;
-    if modes.is_empty() {
-        return Err(CanonicalSourceErrorV1::MissingRelationMode { designation });
-    }
+        None => return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin }),
+    };
+    Ok(CstItem { origin, kind })
+}
+
+fn validate_relation(relation: &RelationCst) -> Result<(), CanonicalSourceErrorV1> {
+    let designation = &relation.designation;
+    let roles = &relation.roles;
+    let subject = &relation.subject;
+    let modes = &relation.modes;
     ensure_unique_children(&designation, roles.iter().map(|role| role.name.as_slice()))?;
     let declared = roles
         .iter()
         .map(|role| role.name.as_slice())
         .collect::<BTreeSet<_>>();
-    if let Some(ref subject) = subject
+    if let Some(subject) = subject
         && !declared.contains(subject.as_slice())
     {
         return Err(CanonicalSourceErrorV1::UnknownSubjectRole {
-            designation,
+            designation: designation.clone(),
             role: subject.clone(),
         });
     }
-    for mode in &modes {
+    for mode in modes {
         for role in mode.known.iter().chain(&mode.produced) {
             if !declared.contains(role.as_slice()) {
                 return Err(CanonicalSourceErrorV1::UnknownModeRole {
@@ -10881,48 +11013,25 @@ fn parse_relation(
         }
     }
     ensure_unique_children(
-        &designation,
+        designation,
         modes.iter().map(|mode| mode.canonical.as_slice()),
     )?;
-    Ok(RelationCst {
-        contract_origin: None,
-        designation,
-        surface: surface.expect("a parsed Reading has one surface phrase"),
-        reading: reading_pattern.expect("a parsed Reading has one role pattern"),
-        subject,
-        roles,
-        modes,
-    })
+    Ok(())
 }
 
 fn parse_relation_reading(
     source: &str,
     origin: CanonicalSourceOriginV1,
 ) -> Result<Vec<RelationReadingPartCst>, CanonicalSourceErrorV1> {
-    let mut rest = source;
+    let tokens = declared_frontend::input_tokens(source)?;
     let mut parts = Vec::new();
-    loop {
-        let Some(open) = rest.find('{') else {
-            parts.extend(
-                rest.split_whitespace()
-                    .map(|literal| RelationReadingPartCst::Literal(literal.as_bytes().to_vec())),
-            );
-            break;
-        };
-        parts.extend(
-            rest[..open]
-                .split_whitespace()
-                .map(|literal| RelationReadingPartCst::Literal(literal.as_bytes().to_vec())),
-        );
-        let after = &rest[open + 1..];
-        let Some(close) = after.find('}') else {
-            return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
-        };
-        let Some((role, _)) = after[..close].split_once(": ") else {
-            return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
-        };
-        parts.push(RelationReadingPartCst::Role(role.as_bytes().to_vec()));
-        rest = &after[close + 1..];
+    for token in tokens {
+        let value = &source[token.start..token.end];
+        if let Some(role) = value.strip_prefix('?') {
+            parts.push(RelationReadingPartCst::Role(designation_bytes(role, origin)?));
+        } else {
+            parts.push(RelationReadingPartCst::Literal(value.as_bytes().to_vec()));
+        }
     }
     if parts.is_empty() {
         return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
@@ -10930,56 +11039,26 @@ fn parse_relation_reading(
     Ok(parts)
 }
 
-fn parse_reading_surface(
-    source: &str,
+fn reading_surface(
+    reading: &[RelationReadingPartCst],
     origin: CanonicalSourceOriginV1,
 ) -> Result<Vec<u8>, CanonicalSourceErrorV1> {
-    let mut rest = source;
-    let mut literal = String::new();
-    while let Some(open) = rest.find('{') {
-        literal.push_str(&rest[..open]);
-        let after = &rest[open + 1..];
-        let Some(close) = after.find('}') else {
-            return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
+    let mut surface = String::new();
+    for part in reading {
+        let RelationReadingPartCst::Literal(literal) = part else {
+            continue;
         };
-        rest = &after[close + 1..];
-    }
-    literal.push_str(rest);
-    let normalized = literal.split_whitespace().collect::<Vec<_>>().join(" ");
-    if normalized.is_empty() {
-        return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
-    }
-    Ok(normalized.into_bytes())
-}
-
-fn parse_reads_roles(
-    source: &str,
-    origin: CanonicalSourceOriginV1,
-) -> Result<Vec<RelationRoleCst>, CanonicalSourceErrorV1> {
-    let mut rest = source;
-    let mut roles = Vec::new();
-    while let Some(open) = rest.find('{') {
-        let after = &rest[open + 1..];
-        let Some(close) = after.find('}') else {
-            return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
-        };
-        let Some((name, domain)) = after[..close].split_once(": ") else {
-            return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
-        };
-        if name.is_empty() || domain.is_empty() || name.contains('=') || domain.contains('=') {
-            return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
+        let literal = std::str::from_utf8(literal)
+            .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
+        if declared_frontend::needs_space(&surface, literal) {
+            surface.push(' ');
         }
-        roles.push(RelationRoleCst {
-            name: name.as_bytes().to_vec(),
-            domain: domain.as_bytes().to_vec(),
-            origin,
-        });
-        rest = &after[close + 1..];
+        surface.push_str(literal);
     }
-    if roles.is_empty() || rest.contains('}') {
+    if surface.is_empty() {
         return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
     }
-    Ok(roles)
+    Ok(surface.into_bytes())
 }
 
 fn parse_mode(

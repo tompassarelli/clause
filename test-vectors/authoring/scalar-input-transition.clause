@@ -1,10 +1,14 @@
 F64
 Player
 
-relation camera-heading
-  reads {player: Player} camera heading {value: F64}
-  subject player
-  mode given player yields value: one
+camera-heading:
+  ?example:
+    player: Player
+    camera-heading: F64
+    ?player:
+      camera heading: ?camera-heading
+
+mode camera-heading given player yields camera-heading: one
 
 player-1
   member of: Player

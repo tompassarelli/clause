@@ -2,14 +2,22 @@ Bool
 Controller
 Target
 
-relation chosen-target
-  reads {controller: Controller} chosen target {value: Target}
-  subject controller
-  mode given controller yields value: one
-relation hostile
-  reads {target: Target} hostile {value: Bool}
-  subject target
-  mode given target yields value: one
+chosen-target:
+  ?example:
+    controller: Controller
+    chosen-target: Target
+    ?controller:
+      chosen target: ?chosen-target
+
+mode chosen-target given controller yields chosen-target: one
+hostile:
+  ?example:
+    target: Target
+    hostile: Bool
+    ?target:
+      hostile: ?hostile
+
+mode hostile given target yields hostile: one
 
 player
   member of: Controller

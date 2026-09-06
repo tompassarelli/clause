@@ -11,153 +11,301 @@ Encounter
 EncounterState
 CombatRules
 
-shape Vec3
-  x: F64
-  y: F64
-  z: F64
+Vec3:
+  ?example:
+    x: F64
+    y: F64
+    z: F64
 
-relation clamped-between
-  reads {value: F64} clamped between {lower: F64} and {upper: F64} as {result: F64}
-  mode given value lower upper yields result: maybe
-relation damage-after-ward
-  reads {incoming: F64} damage after ward {remaining: F64} as {result: F64}
-  mode given incoming remaining yields result: maybe
-relation order-target
-  reads {controller: Controller} order target {value: Vec3}
-  subject controller
-  mode given controller yields value: one
-relation chosen-target
-  reads {controller: Controller} chosen target {value: Actor}
-  subject controller
-  mode given controller yields value: one
-relation unit-class
-  reads {unit: Unit} unit class {value: UnitClass}
-  subject unit
-  mode given unit yields value: one
-relation class-name
-  reads {class: UnitClass} class name {value: Text}
-  subject class
-  mode given class yields value: one
-relation class-role
-  reads {class: UnitClass} class role {value: Text}
-  subject class
-  mode given class yields value: one
-relation actor-name
-  reads {actor: Actor} actor name {value: Text}
-  subject actor
-  mode given actor yields value: one
-relation presentation-kind
-  reads {actor: Actor} presentation kind {value: Text}
-  subject actor
-  mode given actor yields value: one
-relation actor-position
-  reads {actor: Actor} actor position {value: Vec3}
-  subject actor
-  mode given actor yields value: one
-relation unit-destination
-  reads {unit: Unit} unit destination {value: Vec3}
-  subject unit
-  mode given unit yields value: one
-relation formation-offset
-  reads {unit: Unit} formation offset {value: Vec3}
-  subject unit
-  mode given unit yields value: one
-relation movement-speed
-  reads {unit: Unit} movement speed {value: F64}
-  subject unit
-  mode given unit yields value: one
-relation selected
-  reads {unit: Unit} selected {value: Bool}
-  subject unit
-  mode given unit yields value: one
-relation moving
-  reads {unit: Unit} moving {value: Bool}
-  subject unit
-  mode given unit yields value: one
-relation hostile
-  reads {actor: Actor} hostile {value: Bool}
-  subject actor
-  mode given actor yields value: one
-relation vitality
-  reads {actor: Actor} vitality {value: F64}
-  subject actor
-  mode given actor yields value: one
-relation alive
-  reads {actor: Actor} alive {value: Bool}
-  subject actor
-  mode given actor yields value: one
-relation maximum-vitality
-  reads {actor: Actor} maximum vitality {value: F64}
-  subject actor
-  mode given actor yields value: one
-relation ward-remaining
-  reads {actor: Actor} ward remaining {value: F64}
-  subject actor
-  mode given actor yields value: one
-relation burn-remaining
-  reads {actor: Actor} burn remaining {value: F64}
-  subject actor
-  mode given actor yields value: one
-relation attack-damage
-  reads {unit: Unit} attack damage {value: F64}
-  subject unit
-  mode given unit yields value: one
-relation attack-range
-  reads {unit: Unit} attack range {value: F64}
-  subject unit
-  mode given unit yields value: one
-relation healing-power
-  reads {unit: Unit} healing power {value: F64}
-  subject unit
-  mode given unit yields value: one
-relation ward-duration
-  reads {unit: Unit} ward duration {value: F64}
-  subject unit
-  mode given unit yields value: one
-relation action-cooldown
-  reads {unit: Unit} action cooldown {value: F64}
-  subject unit
-  mode given unit yields value: one
-relation action-period
-  reads {unit: Unit} action period {value: F64}
-  subject unit
-  mode given unit yields value: one
-relation enemy-target
-  reads {enemy: Enemy} enemy target {value: Actor}
-  subject enemy
-  mode given enemy yields value: one
-relation enemy-damage
-  reads {enemy: Enemy} enemy damage {value: F64}
-  subject enemy
-  mode given enemy yields value: one
-relation enemy-range
-  reads {enemy: Enemy} enemy range {value: F64}
-  subject enemy
-  mode given enemy yields value: one
-relation enemy-cooldown
-  reads {enemy: Enemy} enemy cooldown {value: F64}
-  subject enemy
-  mode given enemy yields value: one
-relation enemy-period
-  reads {enemy: Enemy} enemy period {value: F64}
-  subject enemy
-  mode given enemy yields value: one
-relation enemy-burn-duration
-  reads {enemy: Enemy} enemy burn duration {value: F64}
-  subject enemy
-  mode given enemy yields value: one
-relation encounter-state
-  reads {encounter: Encounter} encounter state {value: EncounterState}
-  subject encounter
-  mode given encounter yields value: one
-relation state-name
-  reads {state: EncounterState} state name {value: Text}
-  subject state
-  mode given state yields value: one
-relation burn-damage
-  reads {rules: CombatRules} burn damage {value: F64}
-  subject rules
-  mode given rules yields value: one
+clamped-between:
+  ?example:
+    value: F64
+    lower: F64
+    upper: F64
+    result: F64
+    ?value clamped between ?lower and ?upper as ?result
+
+mode clamped-between given value lower upper yields result: maybe
+damage-after-ward:
+  ?example:
+    incoming: F64
+    remaining: F64
+    result: F64
+    ?incoming damage after ward ?remaining as ?result
+
+mode damage-after-ward given incoming remaining yields result: maybe
+order-target:
+  ?example:
+    controller: Controller
+    order-target: Vec3
+    ?controller:
+      order target: ?order-target
+
+mode order-target given controller yields order-target: one
+chosen-target:
+  ?example:
+    controller: Controller
+    chosen-target: Actor
+    ?controller:
+      chosen target: ?chosen-target
+
+mode chosen-target given controller yields chosen-target: one
+unit-class:
+  ?example:
+    unit: Unit
+    unit-class: UnitClass
+    ?unit:
+      unit class: ?unit-class
+
+mode unit-class given unit yields unit-class: one
+class-name:
+  ?example:
+    class: UnitClass
+    class-name: Text
+    ?class:
+      class name: ?class-name
+
+mode class-name given class yields class-name: one
+class-role:
+  ?example:
+    class: UnitClass
+    class-role: Text
+    ?class:
+      class role: ?class-role
+
+mode class-role given class yields class-role: one
+actor-name:
+  ?example:
+    actor: Actor
+    actor-name: Text
+    ?actor:
+      actor name: ?actor-name
+
+mode actor-name given actor yields actor-name: one
+presentation-kind:
+  ?example:
+    actor: Actor
+    presentation-kind: Text
+    ?actor:
+      presentation kind: ?presentation-kind
+
+mode presentation-kind given actor yields presentation-kind: one
+actor-position:
+  ?example:
+    actor: Actor
+    actor-position: Vec3
+    ?actor:
+      actor position: ?actor-position
+
+mode actor-position given actor yields actor-position: one
+unit-destination:
+  ?example:
+    unit: Unit
+    unit-destination: Vec3
+    ?unit:
+      unit destination: ?unit-destination
+
+mode unit-destination given unit yields unit-destination: one
+formation-offset:
+  ?example:
+    unit: Unit
+    formation-offset: Vec3
+    ?unit:
+      formation offset: ?formation-offset
+
+mode formation-offset given unit yields formation-offset: one
+movement-speed:
+  ?example:
+    unit: Unit
+    movement-speed: F64
+    ?unit:
+      movement speed: ?movement-speed
+
+mode movement-speed given unit yields movement-speed: one
+selected:
+  ?example:
+    unit: Unit
+    selected: Bool
+    ?unit:
+      selected: ?selected
+
+mode selected given unit yields selected: one
+moving:
+  ?example:
+    unit: Unit
+    moving: Bool
+    ?unit:
+      moving: ?moving
+
+mode moving given unit yields moving: one
+hostile:
+  ?example:
+    actor: Actor
+    hostile: Bool
+    ?actor:
+      hostile: ?hostile
+
+mode hostile given actor yields hostile: one
+vitality:
+  ?example:
+    actor: Actor
+    vitality: F64
+    ?actor:
+      vitality: ?vitality
+
+mode vitality given actor yields vitality: one
+alive:
+  ?example:
+    actor: Actor
+    alive: Bool
+    ?actor:
+      alive: ?alive
+
+mode alive given actor yields alive: one
+maximum-vitality:
+  ?example:
+    actor: Actor
+    maximum-vitality: F64
+    ?actor:
+      maximum vitality: ?maximum-vitality
+
+mode maximum-vitality given actor yields maximum-vitality: one
+ward-remaining:
+  ?example:
+    actor: Actor
+    ward-remaining: F64
+    ?actor:
+      ward remaining: ?ward-remaining
+
+mode ward-remaining given actor yields ward-remaining: one
+burn-remaining:
+  ?example:
+    actor: Actor
+    burn-remaining: F64
+    ?actor:
+      burn remaining: ?burn-remaining
+
+mode burn-remaining given actor yields burn-remaining: one
+attack-damage:
+  ?example:
+    unit: Unit
+    attack-damage: F64
+    ?unit:
+      attack damage: ?attack-damage
+
+mode attack-damage given unit yields attack-damage: one
+attack-range:
+  ?example:
+    unit: Unit
+    attack-range: F64
+    ?unit:
+      attack range: ?attack-range
+
+mode attack-range given unit yields attack-range: one
+healing-power:
+  ?example:
+    unit: Unit
+    healing-power: F64
+    ?unit:
+      healing power: ?healing-power
+
+mode healing-power given unit yields healing-power: one
+ward-duration:
+  ?example:
+    unit: Unit
+    ward-duration: F64
+    ?unit:
+      ward duration: ?ward-duration
+
+mode ward-duration given unit yields ward-duration: one
+action-cooldown:
+  ?example:
+    unit: Unit
+    action-cooldown: F64
+    ?unit:
+      action cooldown: ?action-cooldown
+
+mode action-cooldown given unit yields action-cooldown: one
+action-period:
+  ?example:
+    unit: Unit
+    action-period: F64
+    ?unit:
+      action period: ?action-period
+
+mode action-period given unit yields action-period: one
+enemy-target:
+  ?example:
+    enemy: Enemy
+    enemy-target: Actor
+    ?enemy:
+      enemy target: ?enemy-target
+
+mode enemy-target given enemy yields enemy-target: one
+enemy-damage:
+  ?example:
+    enemy: Enemy
+    enemy-damage: F64
+    ?enemy:
+      enemy damage: ?enemy-damage
+
+mode enemy-damage given enemy yields enemy-damage: one
+enemy-range:
+  ?example:
+    enemy: Enemy
+    enemy-range: F64
+    ?enemy:
+      enemy range: ?enemy-range
+
+mode enemy-range given enemy yields enemy-range: one
+enemy-cooldown:
+  ?example:
+    enemy: Enemy
+    enemy-cooldown: F64
+    ?enemy:
+      enemy cooldown: ?enemy-cooldown
+
+mode enemy-cooldown given enemy yields enemy-cooldown: one
+enemy-period:
+  ?example:
+    enemy: Enemy
+    enemy-period: F64
+    ?enemy:
+      enemy period: ?enemy-period
+
+mode enemy-period given enemy yields enemy-period: one
+enemy-burn-duration:
+  ?example:
+    enemy: Enemy
+    enemy-burn-duration: F64
+    ?enemy:
+      enemy burn duration: ?enemy-burn-duration
+
+mode enemy-burn-duration given enemy yields enemy-burn-duration: one
+encounter-state:
+  ?example:
+    encounter: Encounter
+    encounter-state: EncounterState
+    ?encounter:
+      encounter state: ?encounter-state
+
+mode encounter-state given encounter yields encounter-state: one
+state-name:
+  ?example:
+    state: EncounterState
+    state-name: Text
+    ?state:
+      state name: ?state-name
+
+mode state-name given state yields state-name: one
+burn-damage:
+  ?example:
+    rules: CombatRules
+    burn-damage: F64
+    ?rules:
+      burn damage: ?burn-damage
+
+mode burn-damage given rules yields burn-damage: one
 
 law clamp-lower
   if

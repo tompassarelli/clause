@@ -2,18 +2,30 @@ F64
 Bool
 Device
 
-relation charge
-  reads {device: Device} charge {value: F64}
-  subject device
-  mode given device yields value: one
-relation accepted
-  reads {device: Device} accepted {value: Bool}
-  subject device
-  mode given device yields value: one
-relation attempts
-  reads {device: Device} attempts {value: F64}
-  subject device
-  mode given device yields value: one
+charge:
+  ?example:
+    device: Device
+    charge: F64
+    ?device:
+      charge: ?charge
+
+mode charge given device yields charge: one
+accepted:
+  ?example:
+    device: Device
+    accepted: Bool
+    ?device:
+      accepted: ?accepted
+
+mode accepted given device yields accepted: one
+attempts:
+  ?example:
+    device: Device
+    attempts: F64
+    ?device:
+      attempts: ?attempts
+
+mode attempts given device yields attempts: one
 
 device
   member of: Device

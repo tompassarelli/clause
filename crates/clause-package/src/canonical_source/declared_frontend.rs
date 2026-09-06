@@ -27,17 +27,19 @@ struct DeclaredReading {
 struct DeclaredMatch {
     reading: usize,
     bindings: BTreeMap<Vec<u8>, String>,
+    focused: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
-struct InputToken {
-    start: usize,
-    end: usize,
+pub(super) struct InputToken {
+    pub(super) start: usize,
+    pub(super) end: usize,
 }
 
 #[derive(Clone, Copy)]
 enum DeclaredSurface {
     Edge,
+    Focused,
     Prefix,
 }
 
@@ -55,15 +57,16 @@ impl CanonicalDeclaredFrontendV1 {
             .map(|(index, _)| index)
             .chain(std::iter::once(lines.len()))
             .collect::<Vec<_>>();
+        let blocks = starts
+            .windows(2)
+            .map(|pair| &lines[pair[0]..pair[1]])
+            .collect::<Vec<_>>();
         let mut readings = Vec::new();
-        for pair in starts.windows(2) {
-            let block = &lines[pair[0]..pair[1]];
-            let Some(designation) = block[0].text.strip_prefix("relation ") else {
+        for item in parse_declarations(artifact, &blocks, &Self::bootstrap())? {
+            let CstKind::Relation(relation) = item.kind else {
                 continue;
             };
-            let origin = line_origin(artifact, block[0]);
-            let relation =
-                parse_relation(artifact, block, designation_bytes(designation, origin)?)?;
+            let origin = item.origin;
             let Some(relation_role) = relation.subject.clone() else {
                 return Err(CanonicalSourceErrorV1::InvalidDeclaredFrontend { origin });
             };
@@ -109,24 +112,49 @@ impl CanonicalDeclaredFrontendV1 {
         &self.exact_source
     }
 
+    // The irreducible seed reads the declaration of the focused edge itself.
+    // All consumer declarations use their selected frontend, not this seed.
+    fn bootstrap() -> Self {
+        let relation = b"relation".to_vec();
+        let object = b"object".to_vec();
+        Self {
+            exact_source: Box::new([]),
+            readings: vec![DeclaredReading {
+                pattern: vec![
+                    RelationReadingPartCst::Role(relation.clone()),
+                    RelationReadingPartCst::Literal(b":".to_vec()),
+                    RelationReadingPartCst::Role(object.clone()),
+                ],
+                relation,
+                object,
+            }],
+        }
+    }
+
     pub(super) fn edge(
         &self,
         subject: &[u8],
         source: &str,
         origin: CanonicalSourceOriginV1,
     ) -> Result<CanonicalFocusedEdgeV1, CanonicalSourceErrorV1> {
-        let matches = self.matches(source, DeclaredSurface::Edge)?;
+        let mut matches = self.matches(source, DeclaredSurface::Edge)?;
+        matches.extend(self.matches(source, DeclaredSurface::Focused)?);
         let matched = unique_match(matches, origin)?;
         let declared = &self.readings[matched.reading];
-        let relation = matched
-            .bindings
-            .get(&declared.relation)
-            .ok_or(CanonicalSourceErrorV1::InvalidDeclaredFrontend { origin })?;
+        let focused_relation;
+        let relation = if matched.focused {
+            focused_relation = String::from_utf8(reading_surface(&declared.pattern, origin)?)
+                .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
+            &focused_relation
+        } else {
+            matched.bindings.get(&declared.relation)
+                .ok_or(CanonicalSourceErrorV1::InvalidDeclaredFrontend { origin })?
+        };
         let object = matched
             .bindings
             .get(&declared.object)
             .ok_or(CanonicalSourceErrorV1::InvalidDeclaredFrontend { origin })?;
-        let relation = application_role_bytes(relation, origin)?;
+        let relation = relation.as_bytes().to_vec();
         let canonical = self.render(&matched);
         Ok(CanonicalFocusedEdgeV1 {
             subject: subject.to_vec(),
@@ -151,6 +179,7 @@ impl CanonicalDeclaredFrontendV1 {
             .ok_or(CanonicalSourceErrorV1::InvalidDeclaredFrontend { origin })?;
         let matched = DeclaredMatch {
             reading,
+            focused: false,
             bindings: [
                 (declared.relation.clone(), relation_value.to_owned()),
                 (declared.object.clone(), object_value.to_owned()),
@@ -212,6 +241,13 @@ impl CanonicalDeclaredFrontendV1 {
         for (reading, declared) in self.readings.iter().enumerate() {
             let pattern = match surface {
                 DeclaredSurface::Edge => declared.pattern.as_slice(),
+                DeclaredSurface::Focused => {
+                    if !matches!(declared.pattern.first(), Some(RelationReadingPartCst::Role(role))
+                        if role == &declared.relation) {
+                        continue;
+                    }
+                    &declared.pattern[1..]
+                }
                 DeclaredSurface::Prefix => declared.prefix_pattern(),
             };
             let mut candidates = Vec::new();
@@ -227,7 +263,8 @@ impl CanonicalDeclaredFrontendV1 {
             matches.extend(
                 candidates
                     .into_iter()
-                    .map(|bindings| DeclaredMatch { reading, bindings }),
+                    .map(|bindings| DeclaredMatch { reading, bindings,
+                        focused: matches!(surface, DeclaredSurface::Focused) }),
             );
         }
         Ok(matches)
@@ -235,7 +272,8 @@ impl CanonicalDeclaredFrontendV1 {
 
     fn render(&self, matched: &DeclaredMatch) -> String {
         let reading = &self.readings[matched.reading];
-        render_parts(&reading.pattern, &matched.bindings)
+        let pattern = if matched.focused { &reading.pattern[1..] } else { &reading.pattern };
+        render_parts(pattern, &matched.bindings)
     }
 
     fn render_prefix(&self, matched: &DeclaredMatch) -> String {
@@ -338,7 +376,7 @@ fn match_parts(
     }
 }
 
-fn input_tokens(source: &str) -> Result<Vec<InputToken>, CanonicalSourceErrorV1> {
+pub(super) fn input_tokens(source: &str) -> Result<Vec<InputToken>, CanonicalSourceErrorV1> {
     let bytes = source.as_bytes();
     let mut tokens = Vec::new();
     let mut cursor = 0;
@@ -373,13 +411,24 @@ fn input_tokens(source: &str) -> Result<Vec<InputToken>, CanonicalSourceErrorV1>
                 cursor += 1;
             }
         } else {
-            while cursor < bytes.len() && bytes[cursor] != b' ' && !is_punctuation(bytes[cursor]) {
+            while cursor < bytes.len()
+                && bytes[cursor] != b' '
+                && (!is_punctuation(bytes[cursor])
+                    || is_designation_hyphen(bytes, start, cursor))
+            {
                 cursor += 1;
             }
         }
         tokens.push(InputToken { start, end: cursor });
     }
     Ok(tokens)
+}
+
+fn is_designation_hyphen(bytes: &[u8], start: usize, cursor: usize) -> bool {
+    bytes[cursor] == b'-'
+        && cursor > start
+        && bytes.get(cursor - 1).is_some_and(u8::is_ascii_alphanumeric)
+        && bytes.get(cursor + 1).is_some_and(u8::is_ascii_alphanumeric)
 }
 
 const fn is_punctuation(byte: u8) -> bool {
@@ -403,7 +452,7 @@ const fn is_punctuation(byte: u8) -> bool {
     )
 }
 
-fn needs_space(output: &str, next: &str) -> bool {
+pub(super) fn needs_space(output: &str, next: &str) -> bool {
     let Some(previous) = output.as_bytes().last().copied() else {
         return false;
     };

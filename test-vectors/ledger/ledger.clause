@@ -1,10 +1,14 @@
 F64
 Account
 
-relation balance
-  reads {account: Account} balance {value: F64}
-  subject account
-  mode given account yields value: one
+balance:
+  ?example:
+    account: Account
+    balance: F64
+    ?account:
+      balance: ?balance
+
+mode balance given account yields balance: one
 
 operating-account balance 100.0
 

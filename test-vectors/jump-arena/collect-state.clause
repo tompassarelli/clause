@@ -4,10 +4,14 @@ active
 collected
 spent
 
-relation state
-  reads {collectible: Collectible} state {value: State}
-  subject collectible
-  mode given collectible yields value: one
+state:
+  ?example:
+    collectible: Collectible
+    state: State
+    ?collectible:
+      state: ?state
+
+mode state given collectible yields state: one
 
 coin-1 state active
 

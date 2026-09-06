@@ -1,7 +1,11 @@
 Role
 Term
 
-relation focused-edge
-  reads {relation: Role}: {object: Term}
-  subject relation
-  mode given relation yields object: one
+focused-edge:
+  ?example:
+    relation: Role
+    object: Term
+    ?relation:
+      : ?object
+
+mode focused-edge given relation yields object: one

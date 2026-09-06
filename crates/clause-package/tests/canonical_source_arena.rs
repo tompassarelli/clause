@@ -145,35 +145,56 @@ CombatState
 alive
 telegraph
 
-shape Vec3
-  x: F64
-  y: F64
-  z: F64
+Vec3:
+  ?example:
+    x: F64
+    y: F64
+    z: F64
 
-relation score
-  reads {player: Player} score {value: F64}
-  subject player
-  mode given player yields value: one
+score:
+  ?example:
+    player: Player
+    score: F64
+    ?player:
+      score: ?score
 
-relation pressure-clock
-  reads {enemy: Enemy} pressure clock {value: F64}
-  subject enemy
-  mode given enemy yields value: one
+mode score given player yields score: one
 
-relation pressure-state
-  reads {enemy: Enemy} pressure state {value: CombatState}
-  subject enemy
-  mode given enemy yields value: one
+pressure-clock:
+  ?example:
+    enemy: Enemy
+    pressure-clock: F64
+    ?enemy:
+      pressure clock: ?pressure-clock
 
-relation grounded
-  reads {player: Player} grounded {value: Bool}
-  subject player
-  mode given player yields value: one
+mode pressure-clock given enemy yields pressure-clock: one
 
-relation spawn-position
-  reads {enemy: Enemy} spawn position {value: Vec3}
-  subject enemy
-  mode given enemy yields value: one
+pressure-state:
+  ?example:
+    enemy: Enemy
+    pressure-state: CombatState
+    ?enemy:
+      pressure state: ?pressure-state
+
+mode pressure-state given enemy yields pressure-state: one
+
+grounded:
+  ?example:
+    player: Player
+    grounded: Bool
+    ?player:
+      grounded: ?grounded
+
+mode grounded given player yields grounded: one
+
+spawn-position:
+  ?example:
+    enemy: Enemy
+    spawn-position: Vec3
+    ?enemy:
+      spawn position: ?spawn-position
+
+mode spawn-position given enemy yields spawn-position: one
 
 player-1
   member of: Player
@@ -202,15 +223,23 @@ on advance ?player
 const GENERAL_HANDLER_ARGUMENT_WORLD: &str = r#"F64
 Player
 
-relation score
-  reads {player: Player} score {value: F64}
-  subject player
-  mode given player yields value: one
+score:
+  ?example:
+    player: Player
+    score: F64
+    ?player:
+      score: ?score
 
-relation reserve
-  reads {player: Player} reserve {value: F64}
-  subject player
-  mode given player yields value: one
+mode score given player yields score: one
+
+reserve:
+  ?example:
+    player: Player
+    reserve: F64
+    ?player:
+      reserve: ?reserve
+
+mode reserve given player yields reserve: one
 
 player-1
   member of: Player
@@ -233,20 +262,32 @@ const SPACED_TEXT_INSERTION_WORLD: &str = r#"Root
 Command
 Text
 
-relation phase
-  reads {root: Root} phase {value: Text}
-  subject root
-  mode given root yields value: one
+phase:
+  ?example:
+    root: Root
+    phase: Text
+    ?root:
+      phase: ?phase
 
-relation known-command
-  reads {root: Root} known command {value: Command}
-  subject root
-  mode given root yields value: many
+mode phase given root yields phase: one
 
-relation command-description
-  reads {command: Command} description {value: Text}
-  subject command
-  mode given command yields value: maybe
+known-command:
+  ?example:
+    root: Root
+    known-command: Command
+    ?root:
+      known command: ?known-command
+
+mode known-command given root yields known-command: many
+
+command-description:
+  ?example:
+    command: Command
+    command-description: Text
+    ?command:
+      description: ?command-description
+
+mode command-description given command yields command-description: maybe
 
 root-main
   member of: Root
@@ -270,20 +311,32 @@ const TRANSITIVE_REFERENT_WORLD: &str = r#"F64
 Root
 Policy
 
-relation balance
-  reads {root: Root} balance {value: F64}
-  subject root
-  mode given root yields value: one
+balance:
+  ?example:
+    root: Root
+    balance: F64
+    ?root:
+      balance: ?balance
 
-relation selected-policy
-  reads {root: Root} selected policy {policy: Policy}
-  subject root
-  mode given root yields policy: one
+mode balance given root yields balance: one
 
-relation policy-adjustment
-  reads {policy: Policy} policy adjustment {value: F64}
-  subject policy
-  mode given policy yields value: one
+selected-policy:
+  ?example:
+    root: Root
+    policy: Policy
+    ?root:
+      selected policy: ?policy
+
+mode selected-policy given root yields policy: one
+
+policy-adjustment:
+  ?example:
+    policy: Policy
+    policy-adjustment: F64
+    ?policy:
+      policy adjustment: ?policy-adjustment
+
+mode policy-adjustment given policy yields policy-adjustment: one
 
 root-1
   member of: Root
@@ -312,40 +365,65 @@ ProjectileState
 ProjectileFaction
 Arena
 
-shape Vec3
-  x: F64
-  y: F64
-  z: F64
+Vec3:
+  ?example:
+    x: F64
+    y: F64
+    z: F64
 
-relation player-position
-  reads {player: Player} player position {value: Vec3}
-  subject player
-  mode given player yields value: one
+player-position:
+  ?example:
+    player: Player
+    player-position: Vec3
+    ?player:
+      player position: ?player-position
 
-relation projectile-position
-  reads {projectile: Projectile} projectile position {value: Vec3}
-  subject projectile
-  mode given projectile yields value: one
+mode player-position given player yields player-position: one
 
-relation projectile-state
-  reads {projectile: Projectile} projectile state {value: ProjectileState}
-  subject projectile
-  mode given projectile yields value: one
+projectile-position:
+  ?example:
+    projectile: Projectile
+    projectile-position: Vec3
+    ?projectile:
+      projectile position: ?projectile-position
 
-relation projectile-faction
-  reads {projectile: Projectile} projectile faction {value: ProjectileFaction}
-  subject projectile
-  mode given projectile yields value: one
+mode projectile-position given projectile yields projectile-position: one
 
-relation contact-radius
-  reads {arena: Arena} contact radius {value: F64}
-  subject arena
-  mode given arena yields value: one
+projectile-state:
+  ?example:
+    projectile: Projectile
+    projectile-state: ProjectileState
+    ?projectile:
+      projectile state: ?projectile-state
 
-relation hostile-contact
-  reads {player: Player} hostile contact {value: Bool}
-  subject player
-  mode given player yields value: one
+mode projectile-state given projectile yields projectile-state: one
+
+projectile-faction:
+  ?example:
+    projectile: Projectile
+    projectile-faction: ProjectileFaction
+    ?projectile:
+      projectile faction: ?projectile-faction
+
+mode projectile-faction given projectile yields projectile-faction: one
+
+contact-radius:
+  ?example:
+    arena: Arena
+    contact-radius: F64
+    ?arena:
+      contact radius: ?contact-radius
+
+mode contact-radius given arena yields contact-radius: one
+
+hostile-contact:
+  ?example:
+    player: Player
+    hostile-contact: Bool
+    ?player:
+      hostile contact: ?hostile-contact
+
+mode hostile-contact given player yields hostile-contact: one
 
 law projectile-contact
   if
@@ -688,8 +766,8 @@ fn boolean_law_selector_rejects_wrong_domain_missing_value_and_non_singleton_sta
     ));
 
     let nonsingleton = MULTI_SUBJECT_BOOLEAN_LAW_WORLD.replacen(
-        "relation projectile-faction\n  reads {projectile: Projectile} projectile faction {value: ProjectileFaction}\n  subject projectile\n  mode given projectile yields value: one",
-        "relation projectile-faction\n  reads {projectile: Projectile} projectile faction {value: ProjectileFaction}\n  subject projectile\n  mode given projectile yields value: many",
+        "mode projectile-faction given projectile yields projectile-faction: one",
+        "mode projectile-faction given projectile yields projectile-faction: many",
         1,
     );
     assert!(matches!(
@@ -701,8 +779,8 @@ fn boolean_law_selector_rejects_wrong_domain_missing_value_and_non_singleton_sta
 #[test]
 fn boolean_law_selector_preserves_ambiguous_relation_rejection() {
     let ambiguous = MULTI_SUBJECT_BOOLEAN_LAW_WORLD.replacen(
-        "relation contact-radius",
-        "relation alternate-projectile-faction\n  reads {projectile: Projectile} projectile faction {value: ProjectileFaction}\n  subject projectile\n  mode given projectile yields value: one\n\nrelation contact-radius",
+        "contact-radius:\n",
+        "alternate-projectile-faction:\n  ?example:\n    projectile: Projectile\n    faction: ProjectileFaction\n    ?projectile:\n      projectile faction: ?faction\n\nmode alternate-projectile-faction given projectile yields faction: one\n\ncontact-radius:\n",
         1,
     );
     assert!(matches!(
@@ -763,29 +841,48 @@ Bool
 Player
 Enemy
 
-shape Vec3
-  x: F64
-  y: F64
-  z: F64
+Vec3:
+  ?example:
+    x: F64
+    y: F64
+    z: F64
 
-relation clamped-between
-  reads {value: F64} clamped between {lower: F64} and {upper: F64} as {result: F64}
-  mode given value lower upper yields result: maybe
+clamped-between:
+  ?example:
+    value: F64
+    lower: F64
+    upper: F64
+    result: F64
+    ?value clamped between ?lower and ?upper as ?result
 
-relation combat-target
-  reads {player: Player} combat target {enemy: Enemy}
-  subject player
-  mode given player yields enemy: one
+mode clamped-between given value lower upper yields result: maybe
 
-relation target-active
-  reads {player: Player} target active {value: Bool}
-  subject player
-  mode given player yields value: one
+combat-target:
+  ?example:
+    player: Player
+    enemy: Enemy
+    ?player:
+      combat target: ?enemy
 
-relation vitals
-  reads {enemy: Enemy} vitals {value: Vec3}
-  subject enemy
-  mode given enemy yields value: one
+mode combat-target given player yields enemy: one
+
+target-active:
+  ?example:
+    player: Player
+    target-active: Bool
+    ?player:
+      target active: ?target-active
+
+mode target-active given player yields target-active: one
+
+vitals:
+  ?example:
+    enemy: Enemy
+    vitals: Vec3
+    ?enemy:
+      vitals: ?vitals
+
+mode vitals given enemy yields vitals: one
 
 law clamp-lower
   if
@@ -881,8 +978,8 @@ on targeted-hit ?enemy
 #[test]
 fn transitive_referent_join_rejects_wrong_type_missing_cardinality_and_ambiguity() {
     let wrong_type = TRANSITIVE_REFERENT_WORLD.replacen(
-        "reads {policy: Policy} policy adjustment",
-        "reads {policy: Root} policy adjustment",
+        "    policy: Policy",
+        "    policy: Root",
         1,
     );
     assert!(matches!(
@@ -897,8 +994,8 @@ fn transitive_referent_join_rejects_wrong_type_missing_cardinality_and_ambiguity
     ));
 
     let nonsingleton = TRANSITIVE_REFERENT_WORLD.replacen(
-        "mode given root yields policy: one",
-        "mode given root yields policy: many",
+        "mode selected-policy given root yields policy: one",
+        "mode selected-policy given root yields policy: many",
         1,
     );
     assert!(matches!(
@@ -960,10 +1057,14 @@ fn general_tick_handler_specializes_every_subject_and_receives_delta_time() {
     let source = r#"F64
 Unit
 
-relation clock
-  reads {unit: Unit} clock {value: F64}
-  subject unit
-  mode given unit yields value: one
+clock:
+  ?example:
+    unit: Unit
+    clock: F64
+    ?unit:
+      clock: ?clock
+
+mode clock given unit yields clock: one
 
 unit-a
   member of: Unit
@@ -1043,20 +1144,32 @@ fn source_keyboard_bindings_leave_unbound_actor_relative_scalar_handlers_on_fixe
     source.extend_from_slice(
         br#"
 
-relation recovery-clock
-  reads {player: Player} recovery clock {value: F64}
-  subject player
-  mode given player yields value: one
+recovery-clock:
+  ?example:
+    player: Player
+    recovery-clock: F64
+    ?player:
+      recovery clock: ?recovery-clock
 
-relation recovery-rate
-  reads {player: Player} recovery rate {value: F64}
-  subject player
-  mode given player yields value: one
+mode recovery-clock given player yields recovery-clock: one
 
-relation heat
-  reads {player: Player} heat {value: F64}
-  subject player
-  mode given player yields value: one
+recovery-rate:
+  ?example:
+    player: Player
+    recovery-rate: F64
+    ?player:
+      recovery rate: ?recovery-rate
+
+mode recovery-rate given player yields recovery-rate: one
+
+heat:
+  ?example:
+    player: Player
+    heat: F64
+    ?player:
+      heat: ?heat
+
+mode heat given player yields heat: one
 
 player-1 recovery clock 8.0
 player-1 recovery rate 1.0
@@ -1122,8 +1235,8 @@ fn tick_rules_accept_typed_state_equality_guards() {
     let source = std::str::from_utf8(WORLD)
         .expect("canonical arena source is UTF-8")
         .replacen(
-            "relation position",
-            "relation reset-gate\n  reads {arena: Arena} reset gate {value: Vec3}\n  subject arena\n  mode given arena yields value: one\n\nrelation position",
+            "position:\n",
+            "reset-gate:\n  ?example:\n    arena: Arena\n    gate: Vec3\n    ?arena:\n      reset gate: ?gate\n\nmode reset-gate given arena yields gate: one\n\nposition:\n",
             1,
         )
         .replacen(
@@ -1625,15 +1738,23 @@ fn duplicate_declared_readings_are_an_explicit_ambiguity() {
     let declared_frontend = br#"Role
 Term
 
-relation first-edge
-  reads {relation: Role}: {object: Term}
-  subject relation
-  mode given relation yields object: one
+first-edge:
+  ?example:
+    relation: Role
+    object: Term
+    ?relation:
+      : ?object
 
-relation second-edge
-  reads {relation: Role}: {object: Term}
-  subject relation
-  mode given relation yields object: one
+mode first-edge given relation yields object: one
+
+second-edge:
+  ?example:
+    relation: Role
+    object: Term
+    ?relation:
+      : ?object
+
+mode second-edge given relation yields object: one
 "#;
     let frontend = CanonicalDeclaredFrontendV1::read(declared_frontend)
         .expect("both Readings are individually valid");

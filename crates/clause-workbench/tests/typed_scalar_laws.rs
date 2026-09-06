@@ -43,7 +43,7 @@ fn one_typed_rule_drives_feedback_and_action_eligibility() {
 #[test]
 fn text_results_feed_another_typed_law() {
     let source = SOURCE
-        .replace("relation enabled", "relation label\n  reads label {message: Text} as {result: Text}\n  mode given message yields result: maybe\n\nlaw label\n  then\n    label ?message as \"State: \" ++ ?message\nderive label\n\nrelation enabled")
+        .replace("enabled:\n", "label:\n  ?example:\n    message: Text\n    result: Text\n    label ?message as ?result\n\nmode label given message yields result: maybe\n\nlaw label\n  then\n    label ?message as \"State: \" ++ ?message\nderive label\n\nenabled:\n")
         .replace("?device message ?message\n", "?device message ?label\n")
         .replacen("  withdraw\n", "    label ?message as ?label\n  withdraw\n", 1);
     let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
@@ -101,10 +101,10 @@ fn declared_types_survive_law_specialization() {
 #[test]
 fn readiness_accepts_equality_of_typed_state_referents() {
     let source = SOURCE
-        .replace("relation readiness", "Mode\n\nrelation mode\n  reads {device: Device} mode {value: Mode}\n  subject device\n  mode given device yields value: one\n\nrunning\n  member of: Mode\n\nrelation readiness")
+        .replace("readiness:\n", "Mode\n\nmode:\n  ?example:\n    device: Device\n    state: Mode\n    ?device:\n      mode: ?state\n\nmode mode given device yields state: one\n\nrunning\n  member of: Mode\n\nreadiness:\n")
         .replace("device enabled true", "device enabled true\ndevice mode running")
         .replace("    ?device enabled ?enabled\n", "    ?device mode ?mode\n")
-        .replace("?enabled enabled with charge ?charge reports ?message", "(?mode = running) enabled with charge ?charge reports ?message");
+        .replace("    ?enabled enabled with charge ?charge reports ?message\n  withdraw", "    (?mode = running) enabled with charge ?charge reports ?message\n  withdraw");
     for expression in ["?mode = running", "running = ?mode", "(?mode = running) = true"] {
         let source = source.replace("?mode = running", expression);
         let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();

@@ -2,30 +2,50 @@ North
 GoalState
 Text
 
-relation goal-state
-  reads {north: North} goal state {value: GoalState}
-  subject north
-  mode given north yields value: one
+goal-state:
+  ?example:
+    north: North
+    goal-state: GoalState
+    ?north:
+      goal state: ?goal-state
 
-relation goal-title
-  reads {north: North} goal title {value: Text}
-  subject north
-  mode given north yields value: maybe
+mode goal-state given north yields goal-state: one
 
-relation goal-objective
-  reads {north: North} goal objective {value: Text}
-  subject north
-  mode given north yields value: maybe
+goal-title:
+  ?example:
+    north: North
+    goal-title: Text
+    ?north:
+      goal title: ?goal-title
 
-relation goal-tags
-  reads {north: North} goal tags {value: Text}
-  subject north
-  mode given north yields value: many
+mode goal-title given north yields goal-title: maybe
 
-relation banner
-  reads {north: North} banner {value: Text}
-  subject north
-  mode given north yields value: one
+goal-objective:
+  ?example:
+    north: North
+    goal-objective: Text
+    ?north:
+      goal objective: ?goal-objective
+
+mode goal-objective given north yields goal-objective: maybe
+
+goal-tags:
+  ?example:
+    north: North
+    goal-tags: Text
+    ?north:
+      goal tags: ?goal-tags
+
+mode goal-tags given north yields goal-tags: many
+
+banner:
+  ?example:
+    north: North
+    banner: Text
+    ?north:
+      banner: ?banner
+
+mode banner given north yields banner: one
 
 north-main
   member of: North

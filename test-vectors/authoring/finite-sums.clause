@@ -3,22 +3,38 @@ Bool
 Item
 Report
 
-relation enabled
-  reads {item: Item} enabled {value: Bool}
-  subject item
-  mode given item yields value: one
-relation amount
-  reads {item: Item} amount {value: F64}
-  subject item
-  mode given item yields value: one
-relation total
-  reads {report: Report} total {value: F64}
-  subject report
-  mode given report yields value: one
-relation count
-  reads {report: Report} count {value: F64}
-  subject report
-  mode given report yields value: one
+enabled:
+  ?example:
+    item: Item
+    enabled: Bool
+    ?item:
+      enabled: ?enabled
+
+mode enabled given item yields enabled: one
+amount:
+  ?example:
+    item: Item
+    amount: F64
+    ?item:
+      amount: ?amount
+
+mode amount given item yields amount: one
+total:
+  ?example:
+    report: Report
+    total: F64
+    ?report:
+      total: ?total
+
+mode total given report yields total: one
+count:
+  ?example:
+    report: Report
+    count: F64
+    ?report:
+      count: ?count
+
+mode count given report yields count: one
 
 first
   member of: Item

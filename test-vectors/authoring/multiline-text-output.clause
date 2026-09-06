@@ -1,10 +1,14 @@
 Document
 Text
 
-relation output
-  reads {document: Document} output {value: Text}
-  subject document
-  mode given document yields value: one
+output:
+  ?example:
+    document: Document
+    output: Text
+    ?document:
+      output: ?output
+
+mode output given document yields output: one
 
 document-main output """
   initial

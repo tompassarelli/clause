@@ -2,9 +2,12 @@ Number
 
 answer: 41 + 2
 
-relation successor
-  reads {before: Number} succeeds to {after: Number}
-  subject before
+successor:
+  ?example:
+    before: Number
+    after: Number
+    ?before:
+      succeeds to: ?after
 
 41 succeeds to 43
 

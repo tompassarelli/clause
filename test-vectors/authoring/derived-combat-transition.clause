@@ -3,54 +3,96 @@ Actor
 Move
 CombatRules
 
-relation clamped-between
-  reads {value: F64} clamped between {lower: F64} and {upper: F64} as {result: F64}
-  mode given value lower upper yields result: maybe
+clamped-between:
+  ?example:
+    value: F64
+    lower: F64
+    upper: F64
+    result: F64
+    ?value clamped between ?lower and ?upper as ?result
 
-relation vitality
-  reads {actor: Actor} vitality {value: F64}
-  subject actor
-  mode given actor yields value: one
+mode clamped-between given value lower upper yields result: maybe
 
-relation destabilization
-  reads {actor: Actor} destabilization {value: F64}
-  subject actor
-  mode given actor yields value: one
+vitality:
+  ?example:
+    actor: Actor
+    vitality: F64
+    ?actor:
+      vitality: ?vitality
 
-relation mass
-  reads {actor: Actor} mass {value: F64}
-  subject actor
-  mode given actor yields value: one
+mode vitality given actor yields vitality: one
 
-relation launch-velocity
-  reads {actor: Actor} launch velocity {value: F64}
-  subject actor
-  mode given actor yields value: one
+destabilization:
+  ?example:
+    actor: Actor
+    destabilization: F64
+    ?actor:
+      destabilization: ?destabilization
 
-relation damage
-  reads {move: Move} damage {value: F64}
-  subject move
-  mode given move yields value: one
+mode destabilization given actor yields destabilization: one
 
-relation destabilization-gain
-  reads {move: Move} destabilization gain {value: F64}
-  subject move
-  mode given move yields value: one
+mass:
+  ?example:
+    actor: Actor
+    mass: F64
+    ?actor:
+      mass: ?mass
 
-relation base-impulse
-  reads {move: Move} base impulse {value: F64}
-  subject move
-  mode given move yields value: one
+mode mass given actor yields mass: one
 
-relation launch-growth
-  reads {move: Move} launch growth {value: F64}
-  subject move
-  mode given move yields value: one
+launch-velocity:
+  ?example:
+    actor: Actor
+    launch-velocity: F64
+    ?actor:
+      launch velocity: ?launch-velocity
 
-relation destabilization-threshold
-  reads {rules: CombatRules} destabilization threshold {value: F64}
-  subject rules
-  mode given rules yields value: one
+mode launch-velocity given actor yields launch-velocity: one
+
+damage:
+  ?example:
+    move: Move
+    damage: F64
+    ?move:
+      damage: ?damage
+
+mode damage given move yields damage: one
+
+destabilization-gain:
+  ?example:
+    move: Move
+    destabilization-gain: F64
+    ?move:
+      destabilization gain: ?destabilization-gain
+
+mode destabilization-gain given move yields destabilization-gain: one
+
+base-impulse:
+  ?example:
+    move: Move
+    base-impulse: F64
+    ?move:
+      base impulse: ?base-impulse
+
+mode base-impulse given move yields base-impulse: one
+
+launch-growth:
+  ?example:
+    move: Move
+    launch-growth: F64
+    ?move:
+      launch growth: ?launch-growth
+
+mode launch-growth given move yields launch-growth: one
+
+destabilization-threshold:
+  ?example:
+    rules: CombatRules
+    destabilization-threshold: F64
+    ?rules:
+      destabilization threshold: ?destabilization-threshold
+
+mode destabilization-threshold given rules yields destabilization-threshold: one
 
 law clamp-lower
   if

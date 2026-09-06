@@ -1,9 +1,13 @@
 F64
 Meter
 
-relation magnitude
-  reads | {input: F64} | = {output: F64}
-  mode given input yields output: maybe
+magnitude:
+  ?example:
+    input: F64
+    output: F64
+    | ?input | = ?output
+
+mode magnitude given input yields output: maybe
 
 law negative-magnitude
   if
@@ -20,10 +24,14 @@ law nonnegative-magnitude
 derive negative-magnitude
 derive nonnegative-magnitude
 
-relation reading
-  reads {meter: Meter} reading {value: F64}
-  subject meter
-  mode given meter yields value: one
+reading:
+  ?example:
+    meter: Meter
+    reading: F64
+    ?meter:
+      reading: ?reading
+
+mode reading given meter yields reading: one
 
 meter-1
   member of: Meter

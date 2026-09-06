@@ -3,35 +3,59 @@ Goal
 GoalStatus
 Text
 
-relation known-goal
-  reads {north: North} known goal {value: Goal}
-  subject north
-  mode given north yields value: many
+known-goal:
+  ?example:
+    north: North
+    known-goal: Goal
+    ?north:
+      known goal: ?known-goal
 
-relation goal-title
-  reads {goal: Goal} title {value: Text}
-  subject goal
-  mode given goal yields value: maybe
+mode known-goal given north yields known-goal: many
 
-relation goal-objective
-  reads {goal: Goal} objective {value: Text}
-  subject goal
-  mode given goal yields value: maybe
+goal-title:
+  ?example:
+    goal: Goal
+    goal-title: Text
+    ?goal:
+      title: ?goal-title
 
-relation goal-status
-  reads {goal: Goal} status {value: GoalStatus}
-  subject goal
-  mode given goal yields value: maybe
+mode goal-title given goal yields goal-title: maybe
 
-relation prior-goal-objective
-  reads {goal: Goal} prior objective {value: Text}
-  subject goal
-  mode given goal yields value: many
+goal-objective:
+  ?example:
+    goal: Goal
+    goal-objective: Text
+    ?goal:
+      objective: ?goal-objective
 
-relation goal-catalog-state
-  reads {north: North} goal catalog state {value: GoalStatus}
-  subject north
-  mode given north yields value: one
+mode goal-objective given goal yields goal-objective: maybe
+
+goal-status:
+  ?example:
+    goal: Goal
+    goal-status: GoalStatus
+    ?goal:
+      status: ?goal-status
+
+mode goal-status given goal yields goal-status: maybe
+
+prior-goal-objective:
+  ?example:
+    goal: Goal
+    prior-goal-objective: Text
+    ?goal:
+      prior objective: ?prior-goal-objective
+
+mode prior-goal-objective given goal yields prior-goal-objective: many
+
+goal-catalog-state:
+  ?example:
+    north: North
+    goal-catalog-state: GoalStatus
+    ?north:
+      goal catalog state: ?goal-catalog-state
+
+mode goal-catalog-state given north yields goal-catalog-state: one
 
 north-main
   member of: North

@@ -3,20 +3,32 @@ Bool
 Item
 ItemClass
 
-relation item-class
-  reads {item: Item} item class {value: ItemClass}
-  subject item
-  mode given item yields value: one
+item-class:
+  ?example:
+    item: Item
+    item-class: ItemClass
+    ?item:
+      item class: ?item-class
 
-relation selected
-  reads {item: Item} selected {value: Bool}
-  subject item
-  mode given item yields value: one
+mode item-class given item yields item-class: one
 
-relation progress
-  reads {item: Item} progress {value: F64}
-  subject item
-  mode given item yields value: one
+selected:
+  ?example:
+    item: Item
+    selected: Bool
+    ?item:
+      selected: ?selected
+
+mode selected given item yields selected: one
+
+progress:
+  ?example:
+    item: Item
+    progress: F64
+    ?item:
+      progress: ?progress
+
+mode progress given item yields progress: one
 
 first
   member of: Item

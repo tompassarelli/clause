@@ -7,10 +7,17 @@ Result
 
 capability dispatch-capability
 
-relation dispatch
-  reads {request: Request} dispatches {action: Action} to {resource: Resource} with {payload: Payload} yielding {result: Result}
-  subject request
-  mode given request action resource payload yields result: many
-    reactive while DispatchOpen
-    continues linearly
-    effect action resource resource payload payload requires dispatch-capability
+dispatch:
+  ?example:
+    request: Request
+    action: Action
+    resource: Resource
+    payload: Payload
+    result: Result
+    ?request:
+      dispatches ?action to ?resource with ?payload yielding: ?result
+
+mode dispatch given request action resource payload yields result: many
+  reactive while DispatchOpen
+  continues linearly
+  effect action resource resource payload payload requires dispatch-capability

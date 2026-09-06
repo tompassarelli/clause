@@ -1,10 +1,14 @@
 Bool
 Item
 
-relation selected
-  reads {item: Item} selected {value: Bool}
-  subject item
-  mode given item yields value: one
+selected:
+  ?example:
+    item: Item
+    selected: Bool
+    ?item:
+      selected: ?selected
+
+mode selected given item yields selected: one
 
 first
   member of: Item

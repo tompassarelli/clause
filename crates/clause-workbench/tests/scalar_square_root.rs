@@ -33,14 +33,14 @@ fn square_root_accepts_zero_and_nonnegative_finite_scalars() {
 
 #[test]
 fn square_root_composes_with_law_bindings_and_nested_arithmetic() {
-    let source = SOURCE.replace("relation reading", concat!(
-        "relation magnitude\n",
-        "  reads {input: F64} magnitude {result: F64}\n",
-        "  mode given input yields result: maybe\n",
+    let source = SOURCE.replace("reading:\n", concat!(
+        "magnitude:\n  ?example:\n",
+        "    input: F64\n    result: F64\n    ?input magnitude ?result\n",
+        "mode magnitude given input yields result: maybe\n",
         "law root-magnitude\n",
         "  if\n    ?input >= 0.0\n",
         "  then\n    ?input magnitude sqrt(?input)\n",
-        "derive root-magnitude\n\nrelation reading",
+        "derive root-magnitude\n\nreading:\n",
     )).replace("    ?meter reading ?value\n  withdraw", "    ?meter reading ?value\n    ?value magnitude ?root\n  withdraw")
       .replace("reading sqrt(?value)", "reading sqrt(?root * ?root + 11.0)");
     let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();

@@ -3,18 +3,30 @@ Item
 Text
 F64
 
-relation known
-  reads {root: Root} known {value: Item}
-  subject root
-  mode given root yields value: many
-relation label
-  reads {item: Item} label {value: Text}
-  subject item
-  mode given item yields value: one
-relation count
-  reads {root: Root} count {value: F64}
-  subject root
-  mode given root yields value: one
+known:
+  ?example:
+    root: Root
+    known: Item
+    ?root:
+      known: ?known
+
+mode known given root yields known: many
+label:
+  ?example:
+    item: Item
+    label: Text
+    ?item:
+      label: ?label
+
+mode label given item yields label: one
+count:
+  ?example:
+    root: Root
+    count: F64
+    ?root:
+      count: ?count
+
+mode count given root yields count: one
 
 root
   member of: Root

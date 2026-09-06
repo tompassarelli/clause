@@ -12,25 +12,41 @@ turn-ready
 turn-active
 no-agent-run
 
-relation phase
-  reads {north: North} phase {value: NorthPhase}
-  subject north
-  mode given north yields value: one
+phase:
+  ?example:
+    north: North
+    phase: NorthPhase
+    ?north:
+      phase: ?phase
 
-relation active-delegated-child
-  reads {north: North} active delegated child {value: AgentRunIdentity}
-  subject north
-  mode given north yields value: one
+mode phase given north yields phase: one
 
-relation terminal-delegated-child
-  reads {north: North} terminal delegated child {value: AgentRunIdentity}
-  subject north
-  mode given north yields value: one
+active-delegated-child:
+  ?example:
+    north: North
+    active-delegated-child: AgentRunIdentity
+    ?north:
+      active delegated child: ?active-delegated-child
 
-relation turn-readiness
-  reads {north: North} turn readiness {value: TurnReadiness}
-  subject north
-  mode given north yields value: one
+mode active-delegated-child given north yields active-delegated-child: one
+
+terminal-delegated-child:
+  ?example:
+    north: North
+    terminal-delegated-child: AgentRunIdentity
+    ?north:
+      terminal delegated child: ?terminal-delegated-child
+
+mode terminal-delegated-child given north yields terminal-delegated-child: one
+
+turn-readiness:
+  ?example:
+    north: North
+    turn-readiness: TurnReadiness
+    ?north:
+      turn readiness: ?turn-readiness
+
+mode turn-readiness given north yields turn-readiness: one
 
 north-main
   member of: North

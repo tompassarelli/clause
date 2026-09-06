@@ -1,10 +1,14 @@
 F64
 Player
 
-relation score
-  reads {player: Player} score {value: F64}
-  subject player
-  mode given player yields value: one
+score:
+  ?example:
+    player: Player
+    score: F64
+    ?player:
+      score: ?score
+
+mode score given player yields score: one
 
 player-1 score 0.0
 

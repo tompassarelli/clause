@@ -2,23 +2,35 @@ Observer
 Target
 Space
 
-relation observer-position-v1
-  reads {observer: Observer, space: Space}
-  has {point: point2-v1}
-  subject observer
-  mode given observer, space yields point: one
+observer-position-v1:
+  ?example:
+    observer: Observer
+    space: Space
+    point: point2-v1
+    ?observer:
+      has observer-position ?point in: ?space
 
-relation target-position-v1
-  reads {target: Target, space: Space}
-  has {point: point2-v1}
-  subject target
-  mode given target, space yields point: one
+mode observer-position-v1 given observer space yields point: one
 
-relation proximity-radius-v1
-  reads {observer: Observer, space: Space}
-  has {radius: nonnegative-q16-16-v1}
-  subject observer
-  mode given observer, space yields radius: one
+target-position-v1:
+  ?example:
+    target: Target
+    space: Space
+    point: point2-v1
+    ?target:
+      has target-position ?point in: ?space
+
+mode target-position-v1 given target space yields point: one
+
+proximity-radius-v1:
+  ?example:
+    observer: Observer
+    space: Space
+    radius: nonnegative-q16-16-v1
+    ?observer:
+      has proximity-radius ?radius in: ?space
+
+mode proximity-radius-v1 given observer space yields radius: one
 
 law radius-proximity-law-v1
   if

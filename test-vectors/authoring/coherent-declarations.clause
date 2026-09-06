@@ -1,0 +1,79 @@
+F64
+Bool
+Item
+
+Point:
+  ?example:
+    x: F64
+    y: F64
+
+limited:
+  ?example:
+    amount: F64
+    minimum: F64
+    maximum: F64
+    result: F64
+    ?amount:
+      limited between ?minimum and ?maximum as: ?result
+
+mode limited given amount minimum maximum yields result: maybe
+
+law below
+  if
+    ?minimum <= ?maximum
+    ?amount < ?minimum
+  then
+    ?amount:
+      limited between ?minimum and ?maximum as: ?minimum
+law inside
+  if
+    ?minimum <= ?amount
+    ?amount <= ?maximum
+  then
+    ?amount:
+      limited between ?minimum and ?maximum as: ?amount
+law above
+  if
+    ?minimum <= ?maximum
+    ?amount > ?maximum
+  then
+    ?amount limited between ?minimum and ?maximum as ?maximum
+derive below
+derive inside
+derive above
+
+position
+  domain: Item
+  range: Point
+  cardinality: one
+destination
+  domain: Item
+  range: Point
+  cardinality: one
+charge
+  domain: Item
+  range: F64
+  cardinality: one
+
+first position Point { x: 2.0, y: 3.0 }
+first destination Point { x: 8.0, y: 9.0 }
+first charge 9.0
+second position Point { x: 4.0, y: 5.0 }
+second destination Point { x: 0.0, y: 0.0 }
+second charge -4.0
+
+on settle ?item
+  when
+    ?item:
+      position: ?position
+      destination: ?destination
+      charge: ?charge
+    (?charge + 3.0) limited between 0.0 and 10.0 as ?limited
+  withdraw
+    ?item:
+      destination: ?destination
+      charge: ?charge
+  include
+    ?item:
+      destination: ?position
+      charge: ?limited

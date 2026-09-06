@@ -4,15 +4,23 @@ LootState
 hidden
 acquired
 
-relation carried-distance
-  reads {loot: Loot} carried distance {value: F64}
-  subject loot
-  mode given loot yields value: one
+carried-distance:
+  ?example:
+    loot: Loot
+    carried-distance: F64
+    ?loot:
+      carried distance: ?carried-distance
 
-relation loot-state
-  reads {loot: Loot} loot state {value: LootState}
-  subject loot
-  mode given loot yields value: one
+mode carried-distance given loot yields carried-distance: one
+
+loot-state:
+  ?example:
+    loot: Loot
+    loot-state: LootState
+    ?loot:
+      loot state: ?loot-state
+
+mode loot-state given loot yields loot-state: one
 
 ashen-key
   member of: Loot

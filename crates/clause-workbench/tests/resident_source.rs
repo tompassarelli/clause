@@ -681,24 +681,37 @@ Policy
 policy-a
 policy-b
 
-shape PolicyParameters
-  adjustment: F64
-  floor: F64
+PolicyParameters:
+  ?example:
+    adjustment: F64
+    floor: F64
 
-relation balance
-  reads {root: Root} balance {value: F64}
-  subject root
-  mode given root yields value: one
+balance:
+  ?example:
+    root: Root
+    balance: F64
+    ?root:
+      balance: ?balance
 
-relation selected-policy
-  reads {root: Root} selected policy {policy: Policy}
-  subject root
-  mode given root yields policy: one
+mode balance given root yields balance: one
 
-relation policy-parameters
-  reads {policy: Policy} policy parameters {value: PolicyParameters}
-  subject policy
-  mode given policy yields value: one
+selected-policy:
+  ?example:
+    root: Root
+    policy: Policy
+    ?root:
+      selected policy: ?policy
+
+mode selected-policy given root yields policy: one
+
+policy-parameters:
+  ?example:
+    policy: Policy
+    policy-parameters: PolicyParameters
+    ?policy:
+      policy parameters: ?policy-parameters
+
+mode policy-parameters given policy yields policy-parameters: one
 
 root-1
   member of: Root
@@ -732,25 +745,42 @@ on apply-selected-policy ?root
     ?root balance ?prior - ?adjustment
 "#;
 const SOURCE_ONLY_AUTOMATIC_EXTENSION: &[u8] = br#"
-relation pulse-count
-  reads {objective: Objective} pulse count {value: F64}
-  subject objective
-  mode given objective yields value: one
+pulse-count:
+  ?example:
+    objective: Objective
+    pulse-count: F64
+    ?objective:
+      pulse count: ?pulse-count
 
-relation pulse-radius
-  reads {objective: Objective} pulse radius {value: F64}
-  subject objective
-  mode given objective yields value: one
+mode pulse-count given objective yields pulse-count: one
 
-relation pulse-echo
-  reads {player: Player} pulse echo {value: F64}
-  subject player
-  mode given player yields value: one
+pulse-radius:
+  ?example:
+    objective: Objective
+    pulse-radius: F64
+    ?objective:
+      pulse radius: ?pulse-radius
 
-relation pulse-contact
-  reads {objective: Objective} has pulse contact with {player: Player} as {value: Bool}
-  subject objective
-  mode given objective player yields value: one
+mode pulse-radius given objective yields pulse-radius: one
+
+pulse-echo:
+  ?example:
+    player: Player
+    pulse-echo: F64
+    ?player:
+      pulse echo: ?pulse-echo
+
+mode pulse-echo given player yields pulse-echo: one
+
+pulse-contact:
+  ?example:
+    objective: Objective
+    player: Player
+    pulse-contact: Bool
+    ?objective:
+      has pulse contact with ?player as: ?pulse-contact
+
+mode pulse-contact given objective player yields pulse-contact: one
 
 game-objective pulse count 0.0
 game-objective pulse radius 0.6
@@ -797,10 +827,14 @@ on planar-burst ?player
     ?player velocity Vec3 { x: ?velocity-x + 3.0, y: ?velocity-y, z: ?velocity-z - 2.0 }
 "#;
 const SOURCE_SCALAR_CAMERA_EXTENSION: &[u8] = br#"
-relation camera-heading
-  reads {player: Player} camera heading {value: F64}
-  subject player
-  mode given player yields value: one
+camera-heading:
+  ?example:
+    player: Player
+    camera-heading: F64
+    ?player:
+      camera heading: ?camera-heading
+
+mode camera-heading given player yields camera-heading: one
 
 player-1 camera heading 0.0
 
@@ -818,25 +852,41 @@ const ACTOR_NEUTRAL_HIT: &str = r#"F64
 Actor
 Move
 
-relation vitality
-  reads {actor: Actor} vitality {value: F64}
-  subject actor
-  mode given actor yields value: one
+vitality:
+  ?example:
+    actor: Actor
+    vitality: F64
+    ?actor:
+      vitality: ?vitality
 
-relation destabilization
-  reads {actor: Actor} destabilization {value: F64}
-  subject actor
-  mode given actor yields value: one
+mode vitality given actor yields vitality: one
 
-relation damage
-  reads {move: Move} damage {value: F64}
-  subject move
-  mode given move yields value: one
+destabilization:
+  ?example:
+    actor: Actor
+    destabilization: F64
+    ?actor:
+      destabilization: ?destabilization
 
-relation move-destabilization
-  reads {move: Move} move destabilization {value: F64}
-  subject move
-  mode given move yields value: one
+mode destabilization given actor yields destabilization: one
+
+damage:
+  ?example:
+    move: Move
+    damage: F64
+    ?move:
+      damage: ?damage
+
+mode damage given move yields damage: one
+
+move-destabilization:
+  ?example:
+    move: Move
+    move-destabilization: F64
+    ?move:
+      move destabilization: ?move-destabilization
+
+mode move-destabilization given move yields move-destabilization: one
 
 magitek-boar
   member of: Actor
@@ -886,54 +936,96 @@ Actor
 Move
 CombatRules
 
-relation clamped-between
-  reads {value: F64} clamped between {lower: F64} and {upper: F64} as {result: F64}
-  mode given value lower upper yields result: maybe
+clamped-between:
+  ?example:
+    value: F64
+    lower: F64
+    upper: F64
+    result: F64
+    ?value clamped between ?lower and ?upper as ?result
 
-relation vitality
-  reads {actor: Actor} vitality {value: F64}
-  subject actor
-  mode given actor yields value: one
+mode clamped-between given value lower upper yields result: maybe
 
-relation destabilization
-  reads {actor: Actor} destabilization {value: F64}
-  subject actor
-  mode given actor yields value: one
+vitality:
+  ?example:
+    actor: Actor
+    vitality: F64
+    ?actor:
+      vitality: ?vitality
 
-relation mass
-  reads {actor: Actor} mass {value: F64}
-  subject actor
-  mode given actor yields value: one
+mode vitality given actor yields vitality: one
 
-relation launch-velocity
-  reads {actor: Actor} launch velocity {value: F64}
-  subject actor
-  mode given actor yields value: one
+destabilization:
+  ?example:
+    actor: Actor
+    destabilization: F64
+    ?actor:
+      destabilization: ?destabilization
 
-relation damage
-  reads {move: Move} damage {value: F64}
-  subject move
-  mode given move yields value: one
+mode destabilization given actor yields destabilization: one
 
-relation destabilization-gain
-  reads {move: Move} destabilization gain {value: F64}
-  subject move
-  mode given move yields value: one
+mass:
+  ?example:
+    actor: Actor
+    mass: F64
+    ?actor:
+      mass: ?mass
 
-relation base-impulse
-  reads {move: Move} base impulse {value: F64}
-  subject move
-  mode given move yields value: one
+mode mass given actor yields mass: one
 
-relation launch-growth
-  reads {move: Move} launch growth {value: F64}
-  subject move
-  mode given move yields value: one
+launch-velocity:
+  ?example:
+    actor: Actor
+    launch-velocity: F64
+    ?actor:
+      launch velocity: ?launch-velocity
 
-relation destabilization-threshold
-  reads {rules: CombatRules} destabilization threshold {value: F64}
-  subject rules
-  mode given rules yields value: one
+mode launch-velocity given actor yields launch-velocity: one
+
+damage:
+  ?example:
+    move: Move
+    damage: F64
+    ?move:
+      damage: ?damage
+
+mode damage given move yields damage: one
+
+destabilization-gain:
+  ?example:
+    move: Move
+    destabilization-gain: F64
+    ?move:
+      destabilization gain: ?destabilization-gain
+
+mode destabilization-gain given move yields destabilization-gain: one
+
+base-impulse:
+  ?example:
+    move: Move
+    base-impulse: F64
+    ?move:
+      base impulse: ?base-impulse
+
+mode base-impulse given move yields base-impulse: one
+
+launch-growth:
+  ?example:
+    move: Move
+    launch-growth: F64
+    ?move:
+      launch growth: ?launch-growth
+
+mode launch-growth given move yields launch-growth: one
+
+destabilization-threshold:
+  ?example:
+    rules: CombatRules
+    destabilization-threshold: F64
+    ?rules:
+      destabilization threshold: ?destabilization-threshold
+
+mode destabilization-threshold given rules yields destabilization-threshold: one
 
 law clamp-lower
   if
@@ -1012,25 +1104,38 @@ Phase
 ready
 committed
 
-shape Vec3
-  x: F64
-  y: F64
-  z: F64
+Vec3:
+  ?example:
+    x: F64
+    y: F64
+    z: F64
 
-relation phase
-  reads {actor: Actor} phase {phase: Phase}
-  subject actor
-  mode given actor yields phase: one
+phase:
+  ?example:
+    actor: Actor
+    phase: Phase
+    ?actor:
+      phase: ?phase
 
-relation position
-  reads {actor: Actor} position {position: Vec3}
-  subject actor
-  mode given actor yields position: one
+mode phase given actor yields phase: one
 
-relation anchor
-  reads {actor: Actor} anchor {position: Vec3}
-  subject actor
-  mode given actor yields position: maybe
+position:
+  ?example:
+    actor: Actor
+    position: Vec3
+    ?actor:
+      position: ?position
+
+mode position given actor yields position: one
+
+anchor:
+  ?example:
+    actor: Actor
+    position: Vec3
+    ?actor:
+      anchor: ?position
+
+mode anchor given actor yields position: maybe
 
 test-actor
   member of: Actor
@@ -1082,15 +1187,23 @@ idle
 alpha
 beta
 
-relation phase
-  reads {root: Root} phase {value: Item}
-  subject root
-  mode given root yields value: one
+phase:
+  ?example:
+    root: Root
+    phase: Item
+    ?root:
+      phase: ?phase
 
-relation known
-  reads {root: Root} known {value: Item}
-  subject root
-  mode given root yields value: many
+mode phase given root yields phase: one
+
+known:
+  ?example:
+    root: Root
+    known: Item
+    ?root:
+      known: ?known
+
+mode known given root yields known: many
 
 root phase idle
 
@@ -2247,7 +2360,11 @@ fn declared_scalar_laws_compose_without_formula_or_binder_spelling_dispatch() {
         .replace(" as ", " giving ")
         .replace("?lower", "?low")
         .replace("?upper", "?high")
-        .replace("?value", "?sample");
+        .replace("?value", "?sample")
+        .replace("    lower:", "    low:")
+        .replace("    upper:", "    high:")
+        .replace("    value:", "    sample:")
+        .replace("given value lower upper", "given sample low high");
     let mut workbench = ResidentSourceWorkbenchV1::open(renamed.as_bytes()).unwrap();
     let hit = workbench.handler_occurrence(b"blade-two-hit", &[]).unwrap();
     workbench.run_occurrences_to_candidate(&[hit]).unwrap();
@@ -2262,19 +2379,27 @@ fn declared_scalar_laws_compose_without_formula_or_binder_spelling_dispatch() {
 fn guarded_law_results_are_not_evaluated_outside_their_domain() {
     let source = br#"F64
 Meter
-relation reciprocal
-  reads reciprocal {input: F64} is {output: F64}
-  mode given input yields output: maybe
+reciprocal:
+  ?example:
+    input: F64
+    output: F64
+    reciprocal ?input is ?output
+
+mode reciprocal given input yields output: maybe
 law positive-reciprocal
   if
     ?x > 0.0
   then
     reciprocal ?x is (1.0 / ?x)
 derive positive-reciprocal
-relation reading
-  reads {meter: Meter} reading {value: F64}
-  subject meter
-  mode given meter yields value: one
+reading:
+  ?example:
+    meter: Meter
+    reading: F64
+    ?meter:
+      reading: ?reading
+
+mode reading given meter yields reading: one
 meter-1 reading 0.0
 on invert ?meter
   when
@@ -2314,8 +2439,8 @@ fn scalar_laws_reject_unbound_results_and_unproved_unique_outputs() {
         source.replace("(0.0 - ?x)", "?unbound"),
         source.replace("?x >= 0.0", "?x <= 0.0"),
         source.replace(
-            "reads | {input: F64} | = {output: F64}",
-            "reads | {input: F64} | = {output: Text}",
+            "    output: F64",
+            "    output: Text",
         ),
     ] {
         assert!(ResidentSourceWorkbenchV1::open(invalid.as_bytes()).is_err());

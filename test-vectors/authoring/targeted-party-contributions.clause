@@ -6,55 +6,92 @@ Target
 Encounter
 EncounterState
 
-shape Vec3
-  x: F64
-  y: F64
-  z: F64
+Vec3:
+  ?example:
+    x: F64
+    y: F64
+    z: F64
 
-relation selected
-  reads {unit: Unit} selected {value: Bool}
-  subject unit
-  mode given unit yields value: one
+selected:
+  ?example:
+    unit: Unit
+    selected: Bool
+    ?unit:
+      selected: ?selected
 
-relation combat-position
-  reads {target: Target} combat position {value: Vec3}
-  subject target
-  mode given target yields value: one
+mode selected given unit yields selected: one
 
-relation vitality
-  reads {target: Target} vitality {value: F64}
-  subject target
-  mode given target yields value: one
+combat-position:
+  ?example:
+    target: Target
+    combat-position: Vec3
+    ?target:
+      combat position: ?combat-position
 
-relation hostile
-  reads {target: Target} hostile {value: Bool}
-  subject target
-  mode given target yields value: one
+mode combat-position given target yields combat-position: one
 
-relation chosen-target
-  reads {controller: Controller} chosen target {value: Target}
-  subject controller
-  mode given controller yields value: one
+vitality:
+  ?example:
+    target: Target
+    vitality: F64
+    ?target:
+      vitality: ?vitality
 
-relation attack-damage
-  reads {unit: Unit} attack damage {value: F64}
-  subject unit
-  mode given unit yields value: one
+mode vitality given target yields vitality: one
 
-relation attack-range
-  reads {unit: Unit} attack range {value: F64}
-  subject unit
-  mode given unit yields value: one
+hostile:
+  ?example:
+    target: Target
+    hostile: Bool
+    ?target:
+      hostile: ?hostile
 
-relation action-cooldown
-  reads {unit: Unit} action cooldown {value: F64}
-  subject unit
-  mode given unit yields value: one
+mode hostile given target yields hostile: one
 
-relation encounter-state
-  reads {encounter: Encounter} encounter state {value: EncounterState}
-  subject encounter
-  mode given encounter yields value: one
+chosen-target:
+  ?example:
+    controller: Controller
+    chosen-target: Target
+    ?controller:
+      chosen target: ?chosen-target
+
+mode chosen-target given controller yields chosen-target: one
+
+attack-damage:
+  ?example:
+    unit: Unit
+    attack-damage: F64
+    ?unit:
+      attack damage: ?attack-damage
+
+mode attack-damage given unit yields attack-damage: one
+
+attack-range:
+  ?example:
+    unit: Unit
+    attack-range: F64
+    ?unit:
+      attack range: ?attack-range
+
+mode attack-range given unit yields attack-range: one
+
+action-cooldown:
+  ?example:
+    unit: Unit
+    action-cooldown: F64
+    ?unit:
+      action cooldown: ?action-cooldown
+
+mode action-cooldown given unit yields action-cooldown: one
+
+encounter-state:
+  ?example:
+    encounter: Encounter
+    encounter-state: EncounterState
+    ?encounter:
+      encounter state: ?encounter-state
+
+mode encounter-state given encounter yields encounter-state: one
 
 player
   member of: Controller

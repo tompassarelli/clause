@@ -2,22 +2,38 @@ F64
 Account
 Goal
 
-relation balance
-  reads {account: Account} balance {value: F64}
-  subject account
-  mode given account yields value: one
-relation known-goal
-  reads {account: Account} known goal {value: Goal}
-  subject account
-  mode given account yields value: many
-relation contribution
-  reads {goal: Goal} contribution {value: F64}
-  subject goal
-  mode given goal yields value: one
-relation remaining
-  reads {goal: Goal} remaining {value: F64}
-  subject goal
-  mode given goal yields value: one
+balance:
+  ?example:
+    account: Account
+    balance: F64
+    ?account:
+      balance: ?balance
+
+mode balance given account yields balance: one
+known-goal:
+  ?example:
+    account: Account
+    known-goal: Goal
+    ?account:
+      known goal: ?known-goal
+
+mode known-goal given account yields known-goal: many
+contribution:
+  ?example:
+    goal: Goal
+    contribution: F64
+    ?goal:
+      contribution: ?contribution
+
+mode contribution given goal yields contribution: one
+remaining:
+  ?example:
+    goal: Goal
+    remaining: F64
+    ?goal:
+      remaining: ?remaining
+
+mode remaining given goal yields remaining: one
 
 account
   member of: Account

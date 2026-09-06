@@ -1,10 +1,14 @@
 F64
 Meter
 
-relation reading
-  reads {meter: Meter} reading {value: F64}
-  subject meter
-  mode given meter yields value: one
+reading:
+  ?example:
+    meter: Meter
+    reading: F64
+    ?meter:
+      reading: ?reading
+
+mode reading given meter yields reading: one
 
 meter
   member of: Meter

@@ -1,20 +1,29 @@
 F64
 Loot
 
-shape Vec3
-  x: F64
-  y: F64
-  z: F64
+Vec3:
+  ?example:
+    x: F64
+    y: F64
+    z: F64
 
-relation loot-position
-  reads {loot: Loot} loot position {value: Vec3}
-  subject loot
-  mode given loot yields value: one
+loot-position:
+  ?example:
+    loot: Loot
+    loot-position: Vec3
+    ?loot:
+      loot position: ?loot-position
 
-relation loot-origin-position
-  reads {loot: Loot} loot origin position {value: Vec3}
-  subject loot
-  mode given loot yields value: one
+mode loot-position given loot yields loot-position: one
+
+loot-origin-position:
+  ?example:
+    loot: Loot
+    loot-origin-position: Vec3
+    ?loot:
+      loot origin position: ?loot-origin-position
+
+mode loot-origin-position given loot yields loot-origin-position: one
 
 ashen-key
   member of: Loot
