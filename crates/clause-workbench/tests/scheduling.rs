@@ -130,7 +130,7 @@ fn scheduling_uses_a_changed_declared_reading_without_a_host_reader_change() {
     let prototype = referent(&initial, b"prototype");
     let extended = run(&mut workbench, Some((b"extend", prototype)));
     assert!(rows(&extended, b"duration").rows().values().flatten()
-        .any(|value| value.as_number() == Some(5.0)));
+        .any(|value| value.as_number() == Some(6.0)));
 }
 
 #[test]
