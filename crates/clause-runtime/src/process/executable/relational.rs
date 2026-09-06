@@ -159,8 +159,8 @@ pub(super) struct Matched {
     pub predicates: Vec<EvaluatedValue>,
 }
 
-// Successful queries belong to one evaluator invocation: its configuration is
-// borrowed and immutable, and no result survives into another state or step.
+// Successful queries belong to one immutable pre-state evaluation scope; no
+// result survives another preparation, state, or step.
 #[derive(Default)]
 pub(super) struct SumQueries {
     entries: Vec<SumQuery>,
@@ -640,6 +640,53 @@ impl RowEffects {
 #[cfg(test)]
 mod sum_reuse_tests {
     use super::*;
+
+    #[test]
+    fn preparation_effects_share_queries_with_exact_reads_and_independent_errors() {
+        use ExecutableExpressionV1 as E;
+        let number = |n| ExecutableValueV1::number(n).unwrap();
+        let configuration = vec![ExecutableValueV1::RelationTable(ExecutableRelationTableV1 {
+            subject_domain: 7, value_kind: ExecutableRelationValueKindV1::Number,
+            value_domain: None, cardinality: ExecutableRelationCardinalityV1::One,
+            total: false,
+            rows: (0..3).map(|id| (ExecutableReferentV1::declared(7, id),
+                BTreeSet::from([number(1.0)]))).collect(),
+        }).into()];
+        let query = E::Sum {
+            inputs: vec![E::Argument(0)],
+            predicates: vec![E::RelationMatch(0, Box::new(E::Binding(0)), Box::new(E::Argument(0)))],
+            value: Box::new(E::Constant(number(1.0))),
+        };
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
+            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+        let expected = [1.0, 2.0].map(|input|
+            evaluate_with_reads(&query, &configuration, &[number(input)], context).unwrap());
+        assert_eq!(expected[0].value, number(3.0));
+        assert_eq!(expected[1].value, number(0.0));
+        assert!(expected[1].reads.iter().any(|read| matches!(read, ExecutableReadV1::RelationSearch(..))));
+        for _preparation in 0..2 {
+            let queries = std::cell::RefCell::new(SumQueries::default());
+            let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
+            assert!(begin_executable_source_profile_v1());
+            for _effect in 0..3 {
+                for (input, expected) in [1.0, 2.0].into_iter().zip(&expected) {
+                    let actual = evaluate_with_reads(&query, &configuration, &[number(input)], shared).unwrap();
+                    assert_eq!(actual.value, expected.value);
+                    assert_eq!(actual.reads, expected.reads);
+                }
+            }
+            let report = finish_executable_source_profile_v1().unwrap();
+            assert_eq!(report.phases[SourceProfilePhaseV1::SumEvaluation as usize].calls, 6);
+            assert_eq!(report.phases[SourceProfilePhaseV1::SumQuery as usize].calls, 2);
+            let invalid = E::Sum { inputs: vec![], predicates: vec![],
+                value: Box::new(E::Constant(ExecutableValueV1::Boolean(true))) };
+            for _ in 0..2 {
+                assert!(matches!(evaluate_with_reads(&invalid, &configuration, &[], shared),
+                    Err(ExecutableErrorV1::TypeMismatch)));
+                assert_eq!(queries.borrow().entries.len(), 2);
+            }
+        }
+    }
 
     #[test]
     fn repeated_sum_preserves_value_and_ordered_reads() {
