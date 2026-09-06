@@ -211,6 +211,22 @@ fn withdrawing_a_collection_joins_known_members_by_value() {
 }
 
 #[test]
+fn continuous_admissions_retain_created_identity_beyond_one_command_window() {
+    let mut w = ResidentSourceWorkbenchV1::open_continuous(SOURCE).unwrap();
+    let frame = run(&mut w, b"create-goal", &[n(7.0), n(2000.0)]);
+    let identity = known(&frame);
+    let handle = w.generation().handle;
+    for _ in 0..1100 {
+        run(&mut w, b"tick", &[n(1.0)]);
+    }
+    let frame = run(&mut w, b"expire", &[]);
+    assert_eq!(w.generation().handle, handle);
+    assert_eq!(known(&frame), identity);
+    assert_eq!(balance(&frame), 7800.0);
+    assert_eq!(table(&frame, b"remaining").rows()[&identity[0]].first().unwrap().as_number(), Some(900.0));
+}
+
+#[test]
 fn real_encounter_accepts_independent_runtime_created_burns() {
     let source = [
         include_bytes!("../../../test-vectors/authoring/live-encounter.clause").as_slice(),

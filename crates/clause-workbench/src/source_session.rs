@@ -84,6 +84,7 @@ pub struct ResidentSourceAdmissionV1 {
 /// boundary. The checked CWR1 template owns physical input/projection data;
 /// source elaboration replaces every executable rule and gameplay value.
 pub struct ResidentSourceWorkbenchV1 {
+    trace_retention: clause_runtime::WasmSessionTraceRetentionV1,
     boundary: WasmPersistentSessionBoundaryV1,
     coherent_template: WasmProcessRequestV1,
     template_scope: TermScope,
@@ -111,6 +112,23 @@ impl ResidentSourceWorkbenchV1 {
     pub fn open_with_declared_frontend(
         exact_source: &[u8],
         declared_frontend_source: &[u8],
+    ) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
+        Self::open_with_retention(exact_source, declared_frontend_source,
+            clause_runtime::WasmSessionTraceRetentionV1::FullUntilCommandLimit)
+    }
+
+    /// Retain the current admitted frontier and renew the bounded command
+    /// window after each admission. State, identities and command sequence
+    /// continue; unfinished work cannot renew its allowance.
+    pub fn open_continuous(exact_source: &[u8]) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
+        Self::open_with_retention(exact_source, DECLARED_FOCUSED_FRONTEND_SOURCE_V1,
+            clause_runtime::WasmSessionTraceRetentionV1::CurrentAdmission)
+    }
+
+    fn open_with_retention(
+        exact_source: &[u8],
+        declared_frontend_source: &[u8],
+        trace_retention: clause_runtime::WasmSessionTraceRetentionV1,
     ) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
         let declared_frontend = CanonicalDeclaredFrontendV1::read(declared_frontend_source)
             .map_err(|error| debug_error("declared frontend", error))?;
@@ -142,6 +160,7 @@ impl ResidentSourceWorkbenchV1 {
             decode_executable_physical_plan_v1(&coherent_template.physical_plan_bytes)
                 .map_err(|error| boxed_error("CPP1 template decode", error))?;
         let mut workbench = Self {
+            trace_retention,
             boundary: WasmPersistentSessionBoundaryV1::new(),
             generation: ResidentSourceGenerationV1 {
                 handle: WasmSessionHandleV1 {
@@ -551,6 +570,12 @@ impl ResidentSourceWorkbenchV1 {
         };
         self.pending = None;
         self.last_projection = Some(projection.clone());
+        if self.trace_retention == clause_runtime::WasmSessionTraceRetentionV1::CurrentAdmission {
+            let renewed = self.command(WasmSessionOperationV1::RenewCommandWindow)?;
+            if !matches!(renewed, WasmSessionEventKindV1::CommandWindowRenewed) {
+                return Err(unexpected_event("command window renewal", renewed));
+            }
+        }
         Ok(ResidentSourceAdmissionV1 {
             handle: self.generation.handle,
             predecessor,
@@ -826,7 +851,7 @@ impl ResidentSourceWorkbenchV1 {
                     .map_err(|_| ResidentSourceWorkbenchErrorV1("command limit overflow".into()))?,
                 event_bytes: u32::try_from(WASM_SESSION_EVENT_LIMIT_V1)
                     .map_err(|_| ResidentSourceWorkbenchErrorV1("event limit overflow".into()))?,
-                trace_retention: clause_runtime::WasmSessionTraceRetentionV1::FullUntilCommandLimit,
+                trace_retention: self.trace_retention,
             },
         };
         let mut cwr1 = template.clone();
@@ -1235,4 +1260,32 @@ fn unexpected_event(stage: &str, event: WasmSessionEventKindV1) -> ResidentSourc
         return ResidentSourceWorkbenchErrorV1(format!("{stage} rejected: {}", String::from_utf8_lossy(diagnostic)));
     }
     ResidentSourceWorkbenchErrorV1(format!("unexpected {stage} event: {event:?}"))
+}
+
+#[cfg(test)]
+mod command_window_tests {
+    use super::*;
+
+    const SOURCE: &[u8] = include_bytes!("../../../test-vectors/authoring/scalar-comparison.clause");
+
+    #[test]
+    fn renewal_requires_a_new_admission_and_keeps_the_window_bounded() {
+        for continuous in [false, true] {
+            let mut w = if continuous { ResidentSourceWorkbenchV1::open_continuous(SOURCE) }
+                else { ResidentSourceWorkbenchV1::open(SOURCE) }.unwrap();
+            assert!(w.command(WasmSessionOperationV1::RenewCommandWindow).is_err());
+            let input = w.handler_occurrence(b"measure", &[]).unwrap();
+            w.run_occurrences_to_candidate(&[input.clone()]).unwrap();
+            assert!(w.command(WasmSessionOperationV1::RenewCommandWindow).is_err());
+            w.admit().unwrap();
+            assert!(w.command(WasmSessionOperationV1::RenewCommandWindow).is_err());
+            let stale = encode_wasm_session_command_v1(&WasmSessionCommandV1 {
+                handle: w.generation.handle, expected_sequence: w.sequence - 1,
+                operation: WasmSessionOperationV1::RenewCommandWindow,
+            }).unwrap();
+            assert_eq!(w.boundary.command(&stale), Err(WasmProcessStatusV1::SequenceRejected));
+            let error = w.run_occurrences_to_candidate(&vec![input; MAX_COMMANDS as usize + 1]).unwrap_err();
+            assert!(error.to_string().contains("SessionLimitReached"), "{error}");
+        }
+    }
 }
