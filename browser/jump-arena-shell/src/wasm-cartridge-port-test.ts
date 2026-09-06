@@ -935,6 +935,12 @@ test["test"]("CWR1 hex transport is exact and bounded", () => {
   })();
 });
 
+test["test"]("CET1 hex transport is exact", () => {
+  test["expect"](json_string(wasm["decode-cet1-hex"]("43 45\n54\t31"))).toBe(
+    "[67,69,84,49]",
+  );
+});
+
 test["test"](
   "real Wasm lowers physical input and exposes only the admitted arena frame",
   () =>
