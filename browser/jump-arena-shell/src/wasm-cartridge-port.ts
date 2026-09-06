@@ -52,6 +52,8 @@ const cse1_projected_term_max_properties = cse1_max_bytes;
 
 const cse1_projected_term_json_max_source_units = 4 * cse1_max_bytes + 1;
 
+const session_open_max_bytes = 4 * 1024 * 1024;
+
 const session_command_max_bytes = 1024 * 1024;
 
 const session_command_limit = Number.MAX_SAFE_INTEGER;
@@ -1153,7 +1155,10 @@ function dispatch_session_request(
   request: unknown,
   operation: "open" | "command",
 ): ExactBytes {
-  if (exact_byte_array_p(request, session_command_max_bytes) || binary_text_p(request, session_command_max_bytes)) {
+  const maximum = operation === "open"
+    ? session_open_max_bytes
+    : session_command_max_bytes;
+  if (exact_byte_array_p(request, maximum) || binary_text_p(request, maximum)) {
     const api = session_module_functions(module);
     const typed_request = typed_bytes(request);
     const status = process_status(
