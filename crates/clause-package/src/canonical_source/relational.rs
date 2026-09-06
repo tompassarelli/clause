@@ -186,7 +186,7 @@ fn checked_conditions_with_inputs(
         ));
     }
     for selector in &source.selectors {
-        validate_scalar_state_selector(cst, plan, selector)?;
+        validate_scalar_selector_value(cst, plan, selector)?;
         let relation =
             resolved_state_relation(cst, plan, &selector.source.relation, selector.origin)?;
         let subject = operand(&selector.source.subject, relation.subject_domain)?;

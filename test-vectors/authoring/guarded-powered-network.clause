@@ -1,0 +1,121 @@
+F64
+Bool
+Component
+Report
+
+total
+  domain: Report
+  range: F64
+  cardinality: one
+report
+  total: 0.0
+
+mounted
+  domain: Component
+  range: Bool
+  cardinality: one
+health
+  domain: Component
+  range: F64
+  cardinality: one
+generation
+  domain: Component
+  range: F64
+  cardinality: one
+powered
+  domain: Component
+  range: Bool
+  cardinality: maybe
+wired
+  domain: Component
+  range: Component
+  cardinality: many
+
+core
+  mounted: true
+  health: 100.0
+  generation: 12.0
+relay
+  mounted: true
+  health: 100.0
+  generation: 0.0
+  wired: core
+  wired: load
+load
+  mounted: true
+  health: 100.0
+  generation: 0.0
+  wired: relay
+
+law live-source
+  if
+    ?component mounted true
+    ?component health ?health
+    ?health > 0.0
+    ?component generation ?generation
+    ?generation > 0.0
+  then
+    ?component powered true
+derive live-source
+
+law live-wire
+  if
+    ?component wired ?source
+    ?source powered true
+    ?component mounted true
+    ?component health ?health
+    ?health > 0.0
+  then
+    ?component powered true
+derive live-wire
+
+on inspect ?component
+  when
+    ?component powered ?powered
+    ?component mounted ?mounted
+  withdraw
+    ?component mounted ?mounted
+  include
+    ?component mounted ?mounted
+
+on set-generation ?component ?value
+  when
+    ?component generation ?prior
+    ?component = core
+  withdraw
+    ?component generation ?prior
+  include
+    ?component generation ?value
+
+on set-health ?component ?value
+  when
+    ?component health ?prior
+    ?component = core
+  withdraw
+    ?component health ?prior
+  include
+    ?component health ?value
+
+on set-mounted ?component ?value
+  when
+    ?component mounted ?prior
+    ?component = core
+  withdraw
+    ?component mounted ?prior
+  include
+    ?component mounted ?value
+
+on disconnect ?component
+  when
+    ?component wired ?source
+  withdraw
+    ?component wired ?source
+
+on measure ?report
+  when
+    ?report total ?prior
+    sum ?generation where { ?component powered true; ?component generation ?generation } as ?total
+  withdraw
+    ?report total ?prior
+  include
+    ?report total ?total

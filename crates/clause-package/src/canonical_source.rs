@@ -4267,7 +4267,6 @@ fn validate_scalar_state_selector(
     plan: &CanonicalSourceAllocationPlanV1,
     selector: &ScalarStateSelectorCst,
 ) -> Result<(), CanonicalSourceErrorV1> {
-    let relation = resolved_state_relation(cst, plan, &selector.source.relation, selector.origin)?;
     if state_relation_cardinality(cst, plan, &selector.source, selector.origin)?
         != SourceCardinality::One
     {
@@ -4275,6 +4274,15 @@ fn validate_scalar_state_selector(
             origin: selector.origin,
         });
     }
+    validate_scalar_selector_value(cst, plan, selector)
+}
+
+fn validate_scalar_selector_value(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    selector: &ScalarStateSelectorCst,
+) -> Result<(), CanonicalSourceErrorV1> {
+    let relation = resolved_state_relation(cst, plan, &selector.source.relation, selector.origin)?;
     let domain = general_source_value_domain(cst, &relation, &selector.source, selector.origin)?;
     let valid = match (&selector.expected, domain.as_slice()) {
         (CanonicalScalarValueV1::Number(_), b"F64")
@@ -7708,6 +7716,23 @@ fn parse_expanded_item(
             });
         }
         if let Some(law) = parse_boolean_law(artifact, block, origin)? {
+            // Optional and many-valued conclusions are positive relation rows;
+            // the total Boolean evaluator would manufacture false on absence.
+            if let Some(relational_law) = parse_general_handler(artifact, block, origin, scalar_laws, frontend)?
+                && relational_law.insertions.iter().any(|insertion| {
+                    scalar_laws.relations.iter().any(|relation| {
+                        relation.surface == insertion.target.relation
+                            && relation.roles.len() == 2
+                            && relation.modes.iter().any(|mode| {
+                                relation.subject.as_ref().is_some_and(|subject|
+                                    mode.known.as_slice() == std::slice::from_ref(subject))
+                                    && matches!(mode.cardinality, SourceCardinality::Maybe | SourceCardinality::Many)
+                            })
+                    })
+                })
+            {
+                return Ok(CstItem { origin, kind: CstKind::GeneralHandler(relational_law) });
+            }
             return Ok(CstItem {
                 origin,
                 kind: CstKind::BooleanLaw(law),
@@ -9639,13 +9664,17 @@ impl ScalarExpressionParser<'_> {
     fn comparison(&mut self) -> Option<CanonicalScalarExpressionV1> {
         let left = self.additive()?;
         self.skip_spaces();
-        let operation = [b">=".as_slice(), b"<=", b">", b"<", b"="]
+        let operation = [b">=".as_slice(), b"<=", b"!=", b">", b"<", b"="]
             .into_iter().find(|operator| self.take_exact(operator));
         let Some(operation) = operation else { return Some(left) };
         let right = self.additive()?;
         let (left, right) = (Box::new(left), Box::new(right));
         Some(match operation {
             b"=" => CanonicalScalarExpressionV1::Equal(left, right),
+            b"!=" => CanonicalScalarExpressionV1::Equal(
+                Box::new(CanonicalScalarExpressionV1::Equal(left, right)),
+                Box::new(CanonicalScalarExpressionV1::Boolean(false)),
+            ),
             b">" => CanonicalScalarExpressionV1::GreaterThan(left, right),
             b"<" => CanonicalScalarExpressionV1::GreaterThan(right, left),
             b"<=" => CanonicalScalarExpressionV1::LessThanOrEqual(left, right),
@@ -9776,7 +9805,7 @@ impl ScalarExpressionParser<'_> {
         while let Some(byte) = self.source.get(self.cursor)
             && !byte.is_ascii_whitespace()
             && !matches!(*byte, b'+' | b'*' | b'/' | b'(' | b')' | b',')
-            && !matches!(*byte, b'>' | b'<')
+            && !matches!(*byte, b'>' | b'<' | b'=' | b'!')
         {
             self.cursor += 1;
         }
