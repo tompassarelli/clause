@@ -2,6 +2,27 @@ use clause_package::{Term, decode_canonical_term_bytes};
 use clause_runtime::{ExecutableValueV1, projected_text_value_v1};
 use clause_workbench::ResidentSourceWorkbenchV1;
 
+#[test]
+fn text_selectors_match_exact_values_on_declared_and_created_rows() {
+    use clause_runtime::projected_relation_table_v1;
+    let source = include_str!("../../../test-vectors/authoring/text-selectors.clause");
+    let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    for handler in [b"spawn".as_slice(), b"select".as_slice()] {
+        let occurrence = workbench.handler_occurrence(handler, &[]).unwrap();
+        workbench.run_occurrences_to_candidate(&[occurrence]).unwrap();
+        let projection = workbench.admit().unwrap().projection;
+        if handler == b"select" {
+            let term = decode_canonical_term_bytes(&projection.exact_term_bytes).unwrap();
+            let selected = projected_relation_table_v1(field(field(&term, b"relations"), b"selected")).unwrap().unwrap();
+            let values = selected.rows().values().flatten().collect::<Vec<_>>();
+            assert_eq!(values.len(), 3);
+            assert_eq!(values.iter().filter(|value| ***value == ExecutableValueV1::Boolean(true)).count(), 2);
+        }
+    }
+    let invalid = source.replace("    ?item status \"finished\"", "    ?item status true");
+    assert!(ResidentSourceWorkbenchV1::open(invalid.as_bytes()).is_err());
+}
+
 const SOURCE: &str = include_str!("../../../test-vectors/authoring/text-operations.clause");
 
 fn field<'a>(term: &'a Term, key: &[u8]) -> &'a Term {

@@ -1,0 +1,42 @@
+Text
+Bool
+Item
+
+relation status
+  reads {item: Item} status {value: Text}
+  subject item
+  mode given item yields value: one
+
+relation selected
+  reads {item: Item} selected {value: Bool}
+  subject item
+  mode given item yields value: one
+
+first
+  member of: Item
+second
+  member of: Item
+
+first status "waiting {世界} \"yes\""
+first selected false
+second status "finished"
+second selected false
+
+on select ?item
+  when
+    ?item status "waiting {世界} \"yes\""
+    ?item selected ?prior
+  withdraw
+    ?item selected ?prior
+  include
+    ?item selected true
+
+on spawn ?item
+  when
+    ?item status "finished"
+  create
+    ?new
+      member of: Item
+  include
+    ?new status "waiting {世界} \"yes\""
+    ?new selected false

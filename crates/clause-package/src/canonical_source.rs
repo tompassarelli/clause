@@ -9809,6 +9809,19 @@ fn parse_scalar_state_selector(
     source: &str,
     origin: CanonicalSourceOriginV1,
 ) -> Option<ScalarStateSelectorCst> {
+    if let Some(assertion) = parse_text_assertion(source, origin) {
+        return Some(ScalarStateSelectorCst {
+            origin,
+            source: ScalarParameterSourceCst {
+                parameter: vec![],
+                subject: assertion.subject,
+                relation: assertion.relation,
+                shape: None,
+                field: None,
+            },
+            expected: CanonicalScalarValueV1::Text(assertion.value),
+        });
+    }
     if source.contains('{') || source.contains('"') {
         return None;
     }

@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "text-selectors",
+        title: "Exact text-valued conditions",
+        summary: "A focused relation condition matches a Text literal using the same typed row equality as numbers and Booleans. Quoting, Unicode, and escaping have their ordinary Text meaning, including for runtime-created subjects.",
+        source: include_str!("../../../test-vectors/authoring/text-selectors.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "role-contracts",
         title: "Ordinary role contracts",
         summary: "Domain, range, and cardinality facts constrain a binary role. Actual properties establish structural participation without a membership registry. Required properties remain checked across atomic changes.",
