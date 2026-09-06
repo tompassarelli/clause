@@ -5001,6 +5001,9 @@ impl ExecutableProcessRuntimeV1 {
         let mut row_effects = relational::RowEffects::default();
         let effect_evaluation_profile =
             source_profile_scope_v1(SourceProfilePhaseV1::EffectEvaluation);
+        // All effects read this preparation's immutable, closed pre-state.
+        // The context below never reaches closure of the staged next state.
+        let sum_queries = std::cell::RefCell::new(relational::SumQueries::default());
         for (rule_index, rule, bindings, trace_index) in &selected {
             let identity = {
                 let _profile =
@@ -5009,6 +5012,7 @@ impl ExecutableProcessRuntimeV1 {
             };
             let evaluation = EvaluationContextV1 {
                 bindings: Some(bindings),
+                sum_queries: Some(&sum_queries),
                 relational_occurrence: (!bindings.is_empty()).then_some(&identity),
                 ..evaluation
             };
