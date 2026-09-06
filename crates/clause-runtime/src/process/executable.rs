@@ -7049,7 +7049,10 @@ fn encode_projection(
         bytes.push(0);
         return Ok(());
     };
-    bytes.push(1);
+    let template = canonical_term_bytes(&projection.template)
+        .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
+    let wide_template = template.len() > usize::from(u16::MAX);
+    bytes.push(if wide_template { 2 } else { 1 });
     encode_count(bytes, projection.bindings.len())?;
     for binding in &projection.bindings {
         bytes.extend_from_slice(&binding.role.schema.get().to_le_bytes());
@@ -7057,9 +7060,15 @@ fn encode_projection(
         bytes.extend_from_slice(&binding.slot.to_le_bytes());
         bytes.push(binding.value_kind as u8);
     }
-    let template = canonical_term_bytes(&projection.template)
-        .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
-    encode_count(bytes, template.len())?;
+    if wide_template {
+        bytes.extend_from_slice(
+            &u32::try_from(template.len())
+                .map_err(|_| ExecutableErrorV1::ResourceLimit)?
+                .to_le_bytes(),
+        );
+    } else {
+        encode_count(bytes, template.len())?;
+    }
     bytes.extend_from_slice(&template);
     Ok(())
 }
@@ -7069,7 +7078,7 @@ fn decode_projection(
 ) -> Result<Option<ExecutableProjectionV1>, ExecutableErrorV1> {
     match decoder.byte()? {
         0 => Ok(None),
-        1 => {
+        encoding @ (1 | 2) => {
             let count = decoder.count()?;
             let mut bindings = Vec::with_capacity(count);
             for _ in 0..count {
@@ -7098,7 +7107,11 @@ fn decode_projection(
                     value_kind,
                 });
             }
-            let length = decoder.count()?;
+            let length = if encoding == 1 {
+                decoder.count()?
+            } else {
+                decoder.u32()? as usize
+            };
             let template = decode_canonical_term_bytes(decoder.take(length)?)
                 .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
             Ok(Some(ExecutableProjectionV1 { bindings, template }))
