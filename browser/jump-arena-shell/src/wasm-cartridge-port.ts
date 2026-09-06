@@ -409,12 +409,17 @@ function lowercase_hex_nibble(code: number): number {
       : -1;
 }
 
-function decode_cwr1_hex(source: unknown): ExactBytes {
+function decode_hex_transport(
+  source: unknown,
+  label: string,
+  maximumBytes: number,
+  maximumSourceUnits: number,
+): ExactBytes {
   if (typeof source === "string") {
     const length = source.length;
-    if (equivalent(length, 0) || length > cwr1_hex_max_source_units) {
+    if (equivalent(length, 0) || length > maximumSourceUnits) {
       (() => {
-        throw new Error("CWR1 hex transport is outside its source bound");
+        throw new Error(`${label} hex transport is outside its source bound`);
       })();
     }
     const bytes = [];
@@ -425,11 +430,11 @@ function decode_cwr1_hex(source: unknown): ExactBytes {
         if (index === length) {
           return !equivalent(high, -1)
             ? (() => {
-                throw new Error("CWR1 hex transport has an incomplete byte");
+                throw new Error(`${label} hex transport has an incomplete byte`);
               })()
             : equivalent(countValues(bytes), 0)
               ? (() => {
-                  throw new Error("CWR1 hex transport is empty");
+                  throw new Error(`${label} hex transport is empty`);
                 })()
               : Object.freeze(bytes);
         } else {
@@ -443,7 +448,7 @@ function decode_cwr1_hex(source: unknown): ExactBytes {
             continue;
           } else if (nibble < 0) {
             return (() => {
-              throw new Error("CWR1 hex transport contains a non-hex unit");
+              throw new Error(`${label} hex transport contains a non-hex unit`);
             })();
           } else if (equivalent(high, -1)) {
             const _recur_0 = index + 1;
@@ -451,9 +456,9 @@ function decode_cwr1_hex(source: unknown): ExactBytes {
             index = _recur_0;
             high = _recur_1;
             continue;
-          } else if (countValues(bytes) >= cwr1_max_bytes) {
+          } else if (countValues(bytes) >= maximumBytes) {
             return (() => {
-              throw new Error("CWR1 hex transport exceeds its byte bound");
+              throw new Error(`${label} hex transport exceeds its byte bound`);
             })();
           } else {
             bytes.push(high * 16 + nibble);
@@ -468,9 +473,17 @@ function decode_cwr1_hex(source: unknown): ExactBytes {
     })();
   } else {
     return (() => {
-      throw new Error("CWR1 hex transport must be text");
+      throw new Error(`${label} hex transport must be text`);
     })();
   }
+}
+
+function decode_cwr1_hex(source: unknown): ExactBytes {
+  return decode_hex_transport(source, "CWR1", cwr1_max_bytes, cwr1_hex_max_source_units);
+}
+
+function decode_cet1_hex(source: unknown): ExactBytes {
+  return decode_hex_transport(source, "CET1", cet1_max_bytes, 3 * cet1_max_bytes);
 }
 
 function ExactProcessRequest(bytes: ExactBytes): ExactProcessRequest {
@@ -3124,6 +3137,7 @@ export { cwo1observation_observationId as "cwo1observation-observationId" };
 export { cwo1observation_stateRevisionId as "cwo1observation-stateRevisionId" };
 export { cwo1observation_values as "cwo1observation-values" };
 export { decode_cwo1_observation as "decode-cwo1-observation" };
+export { decode_cet1_hex as "decode-cet1-hex" };
 export { decode_cwr1_hex as "decode-cwr1-hex" };
 export { decode_projected_term_frame as "decode-projected-term-frame" };
 export { emit_effect_intent_bang as "emit-effect-intent!" };
