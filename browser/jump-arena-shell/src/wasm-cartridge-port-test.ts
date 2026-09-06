@@ -1636,7 +1636,7 @@ test["test"](
 );
 
 test["test"](
-  "real Wasm transports one source-owned ongoing effect lifecycle",
+  "real Wasm refuses an effect before intent admission",
   () =>
     Promise.all([
       file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(),
@@ -1662,71 +1662,8 @@ test["test"](
       if (queried.kind !== "effect-intent") {
         throw new Error("emitted effect intent was not queryable");
       }
-      const issued = wasm["issue-effect-authorization!"](
-        module,
-        session,
-        intent.intentId,
-      );
-      const attempt = wasm["begin-effect-attempt!"](
-        module,
-        session,
-        issued.authorizationId,
-      );
-      const settled = wasm["settle-effect-attempt!"](
-        module,
-        session,
-        attempt.attemptId,
-        202,
-        [97, 99, 99, 101, 112, 116, 101, 100],
-      );
-      const state_count = concatenate(absent.stateRevisionCount);
-      test["expect"](concatenate(absent.kind)).toBe("effect-intent-absent");
-      test["expect"](json_string(queried.intentId)).toBe(
-        json_string(intent.intentId),
-      );
-      test["expect"](json_string(attempt.actionBytes)).toBe(
-        json_string(intent.actionBytes),
-      );
-      test["expect"](json_string(attempt.resourceBytes)).toBe(
-        json_string(intent.resourceBytes),
-      );
-      test["expect"](json_string(attempt.payloadBytes)).toBe(
-        json_string(intent.payloadBytes),
-      );
-      test["expect"](concatenate(settled.disposition)).toBe("receipt-observed");
-      test["expect"](settled.receiptId == null ? "false" : "true").toBe("true");
-      test["expect"](settled.observationId == null ? "false" : "true").toBe(
-        "true",
-      );
-      test["expect"](concatenate(settled.stateRevisionCount)).toBe(state_count);
-      const second_intent = wasm["emit-effect-intent!"](module, session);
-      const second_issued = wasm["issue-effect-authorization!"](
-        module,
-        session,
-        second_intent.intentId,
-      );
-      const second_attempt = wasm["begin-effect-attempt!"](
-        module,
-        session,
-        second_issued.authorizationId,
-      );
-      const no_receipt = wasm["settle-effect-attempt!"](
-        module,
-        session,
-        second_attempt.attemptId,
-        null,
-        null,
-      );
-      test["expect"](concatenate(no_receipt.disposition)).toBe("no-receipt");
-      test["expect"](no_receipt.receiptId == null ? "true" : "false").toBe(
-        "true",
-      );
-      test["expect"](no_receipt.observationId == null ? "true" : "false").toBe(
-        "true",
-      );
-      test["expect"](concatenate(no_receipt.stateRevisionCount)).toBe(
-        state_count,
-      );
+      test["expect"](json_string(queried.intentId)).toBe(json_string(intent.intentId));
+      test["expect"](() => wasm["issue-effect-authorization!"](module, session, intent.intentId)).toThrow();
       port.disposeSession(session);
       return null;
     }),

@@ -53,16 +53,39 @@ export function clause_session_v1_io_reset(): void;
 
 export function clause_session_v1_open(): number;
 
+export function clause_session_v1_project_bulk(slot: number, generation: number): Uint8Array;
+
 export function clause_session_v1_reclaim_retired(): boolean;
 
 export function clause_session_v1_request_push(byte: number): number;
 
 export function clause_session_v1_source_continuity_bulk(slot: number, generation: number): Uint8Array;
 
+export function clause_source_profile_v1_begin(): boolean;
+
+export function clause_source_profile_v1_finish(): string;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly clause_session_v1_command: () => number;
+    readonly clause_session_v1_command_bulk: (a: number, b: number) => number;
+    readonly clause_session_v1_event_bulk: () => [number, number];
+    readonly clause_session_v1_event_byte: (a: number) => number;
+    readonly clause_session_v1_event_len: () => number;
+    readonly clause_session_v1_explain_bulk: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly clause_session_v1_intervene_bulk: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly clause_session_v1_io_reset: () => void;
+    readonly clause_session_v1_open: () => number;
+    readonly clause_session_v1_open_bulk: (a: number, b: number) => number;
+    readonly clause_session_v1_project_bulk: (a: number, b: number) => [number, number, number, number];
+    readonly clause_session_v1_reclaim_retired: () => number;
+    readonly clause_session_v1_request_push: (a: number) => number;
+    readonly clause_session_v1_source_continuity_bulk: (a: number, b: number) => [number, number, number, number];
+    readonly clause_session_v1_source_edit_bulk: (a: number, b: number, c: bigint, d: number, e: number, f: number, g: number) => number;
+    readonly clause_source_profile_v1_begin: () => number;
+    readonly clause_source_profile_v1_finish: () => [number, number];
     readonly clause_branch_v1_command: () => number;
     readonly clause_branch_v1_event_byte: (a: number) => number;
     readonly clause_branch_v1_event_len: () => number;
@@ -74,20 +97,6 @@ export interface InitOutput {
     readonly clause_process_v1_reset: () => void;
     readonly clause_process_v1_response_byte: (a: number) => number;
     readonly clause_process_v1_response_len: () => number;
-    readonly clause_session_v1_command: () => number;
-    readonly clause_session_v1_command_bulk: (a: number, b: number) => number;
-    readonly clause_session_v1_event_bulk: () => [number, number];
-    readonly clause_session_v1_event_byte: (a: number) => number;
-    readonly clause_session_v1_event_len: () => number;
-    readonly clause_session_v1_explain_bulk: (a: number, b: number, c: number) => [number, number, number, number];
-    readonly clause_session_v1_intervene_bulk: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly clause_session_v1_io_reset: () => void;
-    readonly clause_session_v1_open: () => number;
-    readonly clause_session_v1_open_bulk: (a: number, b: number) => number;
-    readonly clause_session_v1_reclaim_retired: () => number;
-    readonly clause_session_v1_request_push: (a: number) => number;
-    readonly clause_session_v1_source_continuity_bulk: (a: number, b: number) => [number, number, number, number];
-    readonly clause_session_v1_source_edit_bulk: (a: number, b: number, c: bigint, d: number, e: number, f: number, g: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
