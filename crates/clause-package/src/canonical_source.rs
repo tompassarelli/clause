@@ -225,32 +225,6 @@ pub struct CanonicalInputHandlerV1 {
     pub result_z: CanonicalInputScalarV1,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CanonicalJumpScalarV1 {
-    VelocityComponent(u8),
-    JumpSpeed,
-    Number(u64),
-}
-
-/// Checked source-owned meaning for one bounded jump-shaped transition. Source
-/// owns its designation, the three prerequisite assertions, the grounded
-/// predicate, and every included value; a later physical refinement supplies
-/// only entry and slot coordinates.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CanonicalJumpHandlerV1 {
-    pub artifact: CanonicalSourceArtifactIdV1,
-    pub handler_origin: CanonicalSourceOriginV1,
-    pub velocity_assertion_origin: CanonicalSourceOriginV1,
-    pub grounded_assertion_origin: CanonicalSourceOriginV1,
-    pub jump_speed_assertion_origin: CanonicalSourceOriginV1,
-    pub initial_velocity: [u64; 3],
-    pub initial_grounded: bool,
-    pub jump_speed: u64,
-    pub required_grounded: bool,
-    pub result_velocity: [CanonicalJumpScalarV1; 3],
-    pub result_grounded: bool,
-}
-
 /// One construct-blind scalar value owned by canonical source.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CanonicalScalarValueV1 {
@@ -497,6 +471,7 @@ pub enum CanonicalKeyPhaseV1 {
 /// physical refinement supplies package Roles and executable entries.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CanonicalKeyboardBindingV1 {
+    pub arguments: Vec<u64>,
     pub code: Vec<u8>,
     pub phase: CanonicalKeyPhaseV1,
     pub handler_designation: Vec<u8>,
@@ -575,98 +550,6 @@ pub struct CanonicalScalarHandlerV1 {
     pub parameters: Vec<Vec<u8>>,
     pub predicates: Vec<CanonicalScalarPredicateV1>,
     pub result: CanonicalScalarExpressionV1,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CanonicalTickValueV1 {
-    DeltaTime,
-    PositionComponent(u8),
-    VelocityComponent(u8),
-    IntentComponent(u8),
-    Grounded,
-    Gravity,
-    MoveSpeed,
-    FloorHeight,
-    MinimumX,
-    MaximumX,
-    MinimumZ,
-    MaximumZ,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CanonicalTickExpressionV1 {
-    SquareRoot(Box<Self>),
-    Value(CanonicalTickValueV1),
-    Number(u64),
-    Add(Box<Self>, Box<Self>),
-    Subtract(Box<Self>, Box<Self>),
-    Multiply(Box<Self>, Box<Self>),
-    Divide(Box<Self>, Box<Self>),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CanonicalTickPredicateV1 {
-    EqualBoolean(CanonicalTickValueV1, bool),
-    EqualState {
-        subject: Vec<u8>,
-        relation: Vec<u8>,
-        field: Option<Vec<u8>>,
-        expected: CanonicalScalarValueV1,
-    },
-    GreaterThan(CanonicalTickExpressionV1, CanonicalTickExpressionV1),
-    LessThanOrEqual(CanonicalTickExpressionV1, CanonicalTickExpressionV1),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CanonicalTickAssignmentTargetV1 {
-    PositionComponent(u8),
-    VelocityComponent(u8),
-    Grounded,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CanonicalTickAssignmentValueV1 {
-    Number(CanonicalTickExpressionV1),
-    Boolean(bool),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CanonicalTickAssignmentV1 {
-    pub target: CanonicalTickAssignmentTargetV1,
-    pub value: CanonicalTickAssignmentValueV1,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CanonicalTickRuleV1 {
-    pub law_origins: Vec<CanonicalSourceOriginV1>,
-    pub handler_origin: CanonicalSourceOriginV1,
-    pub include_origins: Vec<CanonicalSourceOriginV1>,
-    pub predicates: Vec<CanonicalTickPredicateV1>,
-    pub assignments: Vec<CanonicalTickAssignmentV1>,
-}
-
-/// Checked source-owned meaning for the three bounded `on tick` branches.
-/// The source owns all initial world values, arithmetic, predicates, clamp
-/// use, and result grouping. A later physical refinement supplies only the
-/// tick entry and configuration coordinates.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CanonicalTickProgramV1 {
-    pub artifact: CanonicalSourceArtifactIdV1,
-    pub initial_position: [u64; 3],
-    pub initial_velocity: [u64; 3],
-    pub initial_intent: [u64; 3],
-    pub initial_grounded: bool,
-    pub gravity: u64,
-    pub move_speed: u64,
-    pub floor_height: u64,
-    pub minimum_x: u64,
-    pub maximum_x: u64,
-    pub minimum_z: u64,
-    pub maximum_z: u64,
-    pub assertion_origins: Vec<CanonicalSourceOriginV1>,
-    pub law_origins: Vec<CanonicalSourceOriginV1>,
-    pub derive_origins: Vec<CanonicalSourceOriginV1>,
-    pub rules: Vec<CanonicalTickRuleV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -871,9 +754,7 @@ pub struct CanonicalSourcePackageSliceV1 {
     pub scalar_input_bindings: Vec<CanonicalScalarInputBindingV1>,
     pub referent_input_bindings: Vec<CanonicalReferentInputBindingV1>,
     pub input_handler: Option<CanonicalInputHandlerV1>,
-    pub jump_handler: Option<CanonicalJumpHandlerV1>,
     pub scalar_handlers: Vec<CanonicalScalarHandlerV1>,
-    pub tick_program: Option<CanonicalTickProgramV1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -957,15 +838,6 @@ pub enum CanonicalSourceErrorV1 {
     AmbiguousInputInitialAssertion {
         origin: CanonicalSourceOriginV1,
     },
-    InvalidJumpHandler {
-        origin: CanonicalSourceOriginV1,
-    },
-    MissingJumpInitialAssertion {
-        origin: CanonicalSourceOriginV1,
-    },
-    AmbiguousJumpInitialAssertion {
-        origin: CanonicalSourceOriginV1,
-    },
     InvalidScalarHandler {
         origin: CanonicalSourceOriginV1,
     },
@@ -1007,15 +879,6 @@ pub enum CanonicalSourceErrorV1 {
         origin: CanonicalSourceOriginV1,
     },
     AmbiguousScalarInitialAssertion {
-        origin: CanonicalSourceOriginV1,
-    },
-    InvalidTickProfile {
-        origin: CanonicalSourceOriginV1,
-    },
-    MissingTickInitialAssertion {
-        origin: CanonicalSourceOriginV1,
-    },
-    AmbiguousTickInitialAssertion {
         origin: CanonicalSourceOriginV1,
     },
     MissingExecutableBinding {
@@ -1110,10 +973,8 @@ enum CstKind {
     },
     Relation(RelationCst),
     InputHandler(InputHandlerCst),
-    JumpHandler(JumpHandlerCst),
     ScalarHandler(ScalarHandlerCst),
     GeneralHandler(GeneralHandlerCst),
-    TickHandler(TickHandlerCst),
     KeyboardBinding(KeyboardBindingCst),
     ScalarInputBinding(ScalarInputBindingCst),
     ReferentInputBinding(ReferentInputBindingCst),
@@ -1222,21 +1083,6 @@ struct HandlerIncludeCst {
 }
 
 #[derive(Clone, Debug)]
-struct JumpHandlerCst {
-    origin: CanonicalSourceOriginV1,
-    producer: CanonicalSemanticProducerV1,
-    designation: Vec<u8>,
-    velocity_relation: Vec<u8>,
-    grounded_relation: Vec<u8>,
-    jump_speed_subject: Vec<u8>,
-    jump_speed_relation: Vec<u8>,
-    required_grounded: bool,
-    result_velocity: [CanonicalJumpScalarV1; 3],
-    result_grounded: bool,
-    includes: [HandlerIncludeCst; 2],
-}
-
-#[derive(Clone, Debug)]
 struct ScalarHandlerCst {
     origin: CanonicalSourceOriginV1,
     producer: CanonicalSemanticProducerV1,
@@ -1338,6 +1184,7 @@ struct GeneralAggregateResultCst {
 
 #[derive(Clone, Debug)]
 struct KeyboardBindingCst {
+    arguments: Vec<u64>,
     origin: CanonicalSourceOriginV1,
     code: Vec<u8>,
     phase: CanonicalKeyPhaseV1,
@@ -1417,25 +1264,6 @@ fn scalar_parts_use_parameter(
         })
 }
 
-#[derive(Clone, Copy)]
-struct JumpHandlerParts<'a> {
-    handler: &'a JumpHandlerCst,
-    velocity: &'a VectorAssertionCst,
-    grounded: &'a BooleanAssertionCst,
-    jump_speed: &'a NumberAssertionCst,
-}
-
-#[derive(Clone, Debug)]
-struct TickHandlerCst {
-    origin: CanonicalSourceOriginV1,
-    producer: CanonicalSemanticProducerV1,
-    designation: Vec<u8>,
-    predicates: Vec<CanonicalTickPredicateV1>,
-    assignments: Vec<CanonicalTickAssignmentV1>,
-    includes: Vec<HandlerIncludeCst>,
-    cases: Vec<CanonicalTickRuleV1>,
-}
-
 #[derive(Clone, Debug)]
 struct BooleanRelationUseCst {
     origin: CanonicalSourceOriginV1,
@@ -1463,22 +1291,6 @@ struct ScalarStateSelectorCst {
 struct BooleanDeriveCst {
     origin: CanonicalSourceOriginV1,
     designation: Vec<u8>,
-}
-
-#[derive(Clone, Copy)]
-struct TickProgramParts<'a> {
-    handlers: [&'a TickHandlerCst; 3],
-    position: &'a VectorAssertionCst,
-    velocity: &'a VectorAssertionCst,
-    intent: &'a VectorAssertionCst,
-    grounded: &'a BooleanAssertionCst,
-    gravity: &'a NumberAssertionCst,
-    move_speed: &'a NumberAssertionCst,
-    floor_height: &'a NumberAssertionCst,
-    minimum_x: &'a NumberAssertionCst,
-    maximum_x: &'a NumberAssertionCst,
-    minimum_z: &'a NumberAssertionCst,
-    maximum_z: &'a NumberAssertionCst,
 }
 
 #[derive(Clone, Debug)]
@@ -1985,9 +1797,9 @@ fn allocation_requests(
     let mut many_assertions = BTreeSet::new();
     let mut initial_assertion_repetitions = BTreeMap::new();
     let input = input_handler_parts(cst)?;
-    let jump = jump_handler_parts(cst)?;
+
     let scalar = scalar_handler_parts(cst)?;
-    let tick = tick_program_parts(cst)?;
+
     let relational_handlers = relational_handler_origins(cst);
     for item in &cst.items {
         if let Some(subject) = assertion_subject(&item.kind)
@@ -2115,23 +1927,6 @@ fn allocation_requests(
                     },
                 ]);
             }
-            CstKind::JumpHandler(handler) => {
-                requested.push(AllocationRequest {
-                    producer: handler.producer.clone(),
-                    slot: head_slot(CanonicalSourceProductionV1::Handler),
-                    domain: AllocationDomain::Formation,
-                });
-                for include in &handler.includes {
-                    requested.push(AllocationRequest {
-                        producer: handler.producer.clone(),
-                        slot: child_slot(
-                            CanonicalSourceProductionV1::HandlerInclude,
-                            &include.local,
-                        ),
-                        domain: AllocationDomain::Formation,
-                    });
-                }
-            }
             CstKind::ScalarHandler(handler) => {
                 requested.extend([
                     AllocationRequest {
@@ -2202,23 +1997,6 @@ fn allocation_requests(
                 }
                 requested.extend(optional_assertions);
             }
-            CstKind::TickHandler(handler) => {
-                requested.push(AllocationRequest {
-                    producer: handler.producer.clone(),
-                    slot: head_slot(CanonicalSourceProductionV1::Handler),
-                    domain: AllocationDomain::Formation,
-                });
-                for include in &handler.includes {
-                    requested.push(AllocationRequest {
-                        producer: handler.producer.clone(),
-                        slot: child_slot(
-                            CanonicalSourceProductionV1::HandlerInclude,
-                            &include.local,
-                        ),
-                        domain: AllocationDomain::Formation,
-                    });
-                }
-            }
             CstKind::ScalarLaw(law) => requested.push(AllocationRequest {
                 producer: semantic_producer(CanonicalSourceProductionV1::Law, &law.designation),
                 slot: head_slot(CanonicalSourceProductionV1::Law),
@@ -2249,15 +2027,6 @@ fn allocation_requests(
                 if input
                     .as_ref()
                     .is_some_and(|(_, selected)| selected.origin == assertion.origin)
-                    || jump.is_some_and(|parts| parts.velocity.origin == assertion.origin)
-                    || tick.is_some_and(|parts| {
-                        [
-                            parts.position.origin,
-                            parts.velocity.origin,
-                            parts.intent.origin,
-                        ]
-                        .contains(&assertion.origin)
-                    })
                     || scalar.iter().any(|parts| {
                         scalar_parts_use_initial(parts, assertion.origin)
                             || scalar_parts_use_parameter(
@@ -2286,9 +2055,7 @@ fn allocation_requests(
                 }
             }
             CstKind::BooleanAssertion(assertion) => {
-                if jump.is_some_and(|parts| parts.grounded.origin == assertion.origin)
-                    || tick.is_some_and(|parts| parts.grounded.origin == assertion.origin)
-                    || scalar.iter().any(|parts| {
+                if scalar.iter().any(|parts| {
                         scalar_parts_use_initial(parts, assertion.origin)
                             || scalar_parts_use_parameter(
                                 parts,
@@ -2307,8 +2074,7 @@ fn allocation_requests(
                 }
             }
             CstKind::NumberAssertion(assertion) => {
-                if jump.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
-                    || scalar.iter().any(|parts| {
+                if scalar.iter().any(|parts| {
                         scalar_parts_use_initial(parts, assertion.origin)
                             || scalar_parts_use_parameter(
                                 parts,
@@ -2316,18 +2082,6 @@ fn allocation_requests(
                                 &assertion.relation,
                                 false,
                             )
-                    })
-                    || tick.is_some_and(|parts| {
-                        [
-                            parts.gravity.origin,
-                            parts.move_speed.origin,
-                            parts.floor_height.origin,
-                            parts.minimum_x.origin,
-                            parts.maximum_x.origin,
-                            parts.minimum_z.origin,
-                            parts.maximum_z.origin,
-                        ]
-                        .contains(&assertion.origin)
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
@@ -5027,130 +4781,6 @@ fn canonical_scalar_executable_predicates(
         .collect()
 }
 
-fn tick_state_ref(
-    cst: &CanonicalSourceCstV1,
-    plan: &CanonicalSourceAllocationPlanV1,
-    parts: TickProgramParts<'_>,
-    value: CanonicalTickValueV1,
-) -> Result<CanonicalExecutableExpressionV1, CanonicalSourceErrorV1> {
-    let state = match value {
-        CanonicalTickValueV1::DeltaTime => {
-            return Ok(CanonicalExecutableExpressionV1::Argument(0));
-        }
-        CanonicalTickValueV1::PositionComponent(index) => state_ref_for_origin(
-            cst,
-            plan,
-            parts.position.origin,
-            Some([b"x", b"y", b"z"][usize::from(index)]),
-        )?,
-        CanonicalTickValueV1::VelocityComponent(index) => state_ref_for_origin(
-            cst,
-            plan,
-            parts.velocity.origin,
-            Some([b"x", b"y", b"z"][usize::from(index)]),
-        )?,
-        CanonicalTickValueV1::IntentComponent(index) => state_ref_for_origin(
-            cst,
-            plan,
-            parts.intent.origin,
-            Some([b"x", b"y", b"z"][usize::from(index)]),
-        )?,
-        CanonicalTickValueV1::Grounded => {
-            state_ref_for_origin(cst, plan, parts.grounded.origin, None)?
-        }
-        CanonicalTickValueV1::Gravity => {
-            state_ref_for_origin(cst, plan, parts.gravity.origin, None)?
-        }
-        CanonicalTickValueV1::MoveSpeed => {
-            state_ref_for_origin(cst, plan, parts.move_speed.origin, None)?
-        }
-        CanonicalTickValueV1::FloorHeight => {
-            state_ref_for_origin(cst, plan, parts.floor_height.origin, None)?
-        }
-        CanonicalTickValueV1::MinimumX => {
-            state_ref_for_origin(cst, plan, parts.minimum_x.origin, None)?
-        }
-        CanonicalTickValueV1::MaximumX => {
-            state_ref_for_origin(cst, plan, parts.maximum_x.origin, None)?
-        }
-        CanonicalTickValueV1::MinimumZ => {
-            state_ref_for_origin(cst, plan, parts.minimum_z.origin, None)?
-        }
-        CanonicalTickValueV1::MaximumZ => {
-            state_ref_for_origin(cst, plan, parts.maximum_z.origin, None)?
-        }
-    };
-    Ok(CanonicalExecutableExpressionV1::State(state))
-}
-
-fn tick_executable_expression(
-    cst: &CanonicalSourceCstV1,
-    plan: &CanonicalSourceAllocationPlanV1,
-    parts: TickProgramParts<'_>,
-    expression: &CanonicalTickExpressionV1,
-) -> Result<CanonicalExecutableExpressionV1, CanonicalSourceErrorV1> {
-    let pair = |left: &CanonicalTickExpressionV1,
-                right: &CanonicalTickExpressionV1|
-     -> Result<_, CanonicalSourceErrorV1> {
-        Ok((
-            Box::new(tick_executable_expression(cst, plan, parts, left)?),
-            Box::new(tick_executable_expression(cst, plan, parts, right)?),
-        ))
-    };
-    Ok(match expression {
-        CanonicalTickExpressionV1::SquareRoot(value) => {
-            CanonicalExecutableExpressionV1::SquareRoot(Box::new(
-                tick_executable_expression(cst, plan, parts, value)?,
-            ))
-        }
-        CanonicalTickExpressionV1::Value(value) => tick_state_ref(cst, plan, parts, *value)?,
-        CanonicalTickExpressionV1::Number(bits) => {
-            constant_expression(CanonicalScalarValueV1::Number(*bits))
-        }
-        CanonicalTickExpressionV1::Add(left, right) => {
-            let (left, right) = pair(left, right)?;
-            CanonicalExecutableExpressionV1::Add(left, right)
-        }
-        CanonicalTickExpressionV1::Subtract(left, right) => {
-            let (left, right) = pair(left, right)?;
-            CanonicalExecutableExpressionV1::Subtract(left, right)
-        }
-        CanonicalTickExpressionV1::Multiply(left, right) => {
-            let (left, right) = pair(left, right)?;
-            CanonicalExecutableExpressionV1::Multiply(left, right)
-        }
-        CanonicalTickExpressionV1::Divide(left, right) => {
-            let (left, right) = pair(left, right)?;
-            CanonicalExecutableExpressionV1::Divide(left, right)
-        }
-    })
-}
-
-fn tick_assignment_target(
-    cst: &CanonicalSourceCstV1,
-    plan: &CanonicalSourceAllocationPlanV1,
-    parts: TickProgramParts<'_>,
-    target: CanonicalTickAssignmentTargetV1,
-) -> Result<CanonicalStateRefV1, CanonicalSourceErrorV1> {
-    match target {
-        CanonicalTickAssignmentTargetV1::PositionComponent(index) => state_ref_for_origin(
-            cst,
-            plan,
-            parts.position.origin,
-            Some([b"x", b"y", b"z"][usize::from(index)]),
-        ),
-        CanonicalTickAssignmentTargetV1::VelocityComponent(index) => state_ref_for_origin(
-            cst,
-            plan,
-            parts.velocity.origin,
-            Some([b"x", b"y", b"z"][usize::from(index)]),
-        ),
-        CanonicalTickAssignmentTargetV1::Grounded => {
-            state_ref_for_origin(cst, plan, parts.grounded.origin, None)
-        }
-    }
-}
-
 fn relational_subject_expression(
     variables: &BTreeMap<Vec<u8>, CanonicalExecutableExpressionV1>,
     subject: &[u8],
@@ -5334,9 +4964,7 @@ fn checked_executable_handlers(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
     input: Option<(&InputHandlerCst, &VectorAssertionCst)>,
-    jump: Option<JumpHandlerParts<'_>>,
     scalar: &[ScalarHandlerParts<'_>],
-    tick: Option<TickProgramParts<'_>>,
     keyboard: &[CanonicalKeyboardBindingV1],
 ) -> Result<Vec<CanonicalExecutableHandlerV1>, CanonicalSourceErrorV1> {
     let mut handlers = Vec::new();
@@ -5373,153 +5001,6 @@ fn checked_executable_handlers(
                 removals: vec![],
             }],
         });
-    }
-    if let Some(parts) = jump {
-        let velocity = [b"x".as_slice(), b"y".as_slice(), b"z".as_slice()]
-            .map(|field| state_ref_for_origin(cst, plan, parts.velocity.origin, Some(field)))
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()?;
-        let grounded = state_ref_for_origin(cst, plan, parts.grounded.origin, None)?;
-        let jump_speed = state_ref_for_origin(cst, plan, parts.jump_speed.origin, None)?;
-        let jump_expression = |value| match value {
-            CanonicalJumpScalarV1::VelocityComponent(index) => velocity
-                .get(usize::from(index))
-                .cloned()
-                .map(CanonicalExecutableExpressionV1::State),
-            CanonicalJumpScalarV1::JumpSpeed => {
-                Some(CanonicalExecutableExpressionV1::State(jump_speed.clone()))
-            }
-            CanonicalJumpScalarV1::Number(bits) => {
-                Some(constant_expression(CanonicalScalarValueV1::Number(bits)))
-            }
-        };
-        let mut assignments = velocity
-            .iter()
-            .cloned()
-            .zip(parts.handler.result_velocity)
-            .map(|(target, value)| {
-                Ok(CanonicalExecutableAssignmentV1 {
-                    target,
-                    value: jump_expression(value).ok_or(
-                        CanonicalSourceErrorV1::InvalidJumpHandler {
-                            origin: parts.handler.origin,
-                        },
-                    )?,
-                })
-            })
-            .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
-        assignments.push(CanonicalExecutableAssignmentV1 {
-            target: grounded.clone(),
-            value: constant_expression(CanonicalScalarValueV1::Boolean(
-                parts.handler.result_grounded,
-            )),
-        });
-        handlers.push(CanonicalExecutableHandlerV1 {
-            id: handler_id(&parts.handler.producer)?,
-            designation: parts.handler.designation.clone(),
-            trigger: CanonicalHandlerTriggerV1::External,
-            argument_count: 0,
-            rules: vec![CanonicalExecutableRuleV1 {
-                law_origins: vec![],
-                predicates: vec![CanonicalExecutablePredicateV1::Equal(
-                    CanonicalExecutableExpressionV1::State(grounded),
-                    constant_expression(CanonicalScalarValueV1::Boolean(
-                        parts.handler.required_grounded,
-                    )),
-                )],
-                required_present: vec![],
-                required_absent: vec![],
-                assignments,
-                removals: vec![],
-            }],
-        });
-    }
-    if let Some(parts) = tick {
-        for source in parts.handlers {
-            let mut rules = Vec::new();
-            for case in &source.cases {
-                let predicates = case
-                    .predicates
-                    .iter()
-                    .map(|predicate| match predicate {
-                        CanonicalTickPredicateV1::EqualBoolean(value, expected) => {
-                            Ok(CanonicalExecutablePredicateV1::Equal(
-                                tick_state_ref(cst, plan, parts, *value)?,
-                                constant_expression(CanonicalScalarValueV1::Boolean(*expected)),
-                            ))
-                        }
-                        CanonicalTickPredicateV1::EqualState {
-                            subject,
-                            relation,
-                            field,
-                            expected,
-                        } => {
-                            let subject = if subject == b"?player" {
-                                parts.position.subject.as_slice()
-                            } else {
-                                subject.as_slice()
-                            };
-                            Ok(CanonicalExecutablePredicateV1::Equal(
-                                CanonicalExecutableExpressionV1::State(canonical_state_ref(
-                                    cst,
-                                    plan,
-                                    subject,
-                                    relation,
-                                    field.as_deref(),
-                                    source.origin,
-                                )?),
-                                constant_expression(expected.clone()),
-                            ))
-                        }
-                        CanonicalTickPredicateV1::GreaterThan(left, right) => {
-                            Ok(CanonicalExecutablePredicateV1::GreaterThan(
-                                tick_executable_expression(cst, plan, parts, left)?,
-                                tick_executable_expression(cst, plan, parts, right)?,
-                            ))
-                        }
-                        CanonicalTickPredicateV1::LessThanOrEqual(left, right) => {
-                            Ok(CanonicalExecutablePredicateV1::LessThanOrEqual(
-                                tick_executable_expression(cst, plan, parts, left)?,
-                                tick_executable_expression(cst, plan, parts, right)?,
-                            ))
-                        }
-                    })
-                    .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
-                let assignments = case
-                    .assignments
-                    .iter()
-                    .map(|assignment| {
-                        let value = match &assignment.value {
-                            CanonicalTickAssignmentValueV1::Number(expression) => {
-                                tick_executable_expression(cst, plan, parts, expression)?
-                            }
-                            CanonicalTickAssignmentValueV1::Boolean(value) => {
-                                constant_expression(CanonicalScalarValueV1::Boolean(*value))
-                            }
-                        };
-                        Ok(CanonicalExecutableAssignmentV1 {
-                            target: tick_assignment_target(cst, plan, parts, assignment.target)?,
-                            value,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
-                rules.push(CanonicalExecutableRuleV1 {
-                    law_origins: case.law_origins.clone(),
-                    predicates,
-                    required_present: vec![],
-                    required_absent: vec![],
-                    assignments,
-                    removals: vec![],
-                });
-            }
-            handlers.push(CanonicalExecutableHandlerV1 {
-                id: handler_id(&source.producer)?,
-                designation: source.designation.clone(),
-                trigger: CanonicalHandlerTriggerV1::FixedTickRoot,
-                argument_count: 1,
-                rules,
-            });
-        }
     }
     let derives = resolved_boolean_derives(cst, plan)?;
     for derive in &derives {
@@ -6107,7 +5588,7 @@ fn checked_executable_handlers(
             id: handler_id(&source.producer)?,
             designation: source.designation.clone(),
             trigger: if source.designation == b"tick" {
-                CanonicalHandlerTriggerV1::FixedTick
+                CanonicalHandlerTriggerV1::FixedTickRoot
             } else if !source.arguments.is_empty()
                 || keyboard
                     .iter()
@@ -6231,6 +5712,7 @@ fn source_keyboard_bindings(
             });
         }
         bindings.push(CanonicalKeyboardBindingV1 {
+            arguments: source.arguments.clone(),
             code: source.code.clone(),
             phase: source.phase,
             handler_designation: source.handler_designation.clone(),
@@ -6345,7 +5827,7 @@ fn validate_keyboard_handler_targets(
             });
         }
         if matching.iter().any(|handler|
-            handler.trigger != CanonicalHandlerTriggerV1::External || handler.argument_count != 0)
+            handler.trigger != CanonicalHandlerTriggerV1::External || usize::from(handler.argument_count) != binding.arguments.len())
         {
             let origin = cst
                 .items
@@ -6415,18 +5897,14 @@ struct CheckedCanonicalSourceExecutionV1 {
     scalar_input_bindings: Vec<CanonicalScalarInputBindingV1>,
     referent_input_bindings: Vec<CanonicalReferentInputBindingV1>,
     input_handler: Option<CanonicalInputHandlerV1>,
-    jump_handler: Option<CanonicalJumpHandlerV1>,
     scalar_handlers: Vec<CanonicalScalarHandlerV1>,
-    tick_program: Option<CanonicalTickProgramV1>,
 }
 
 fn checked_canonical_source_execution_v1(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
     input_parts: Option<(&InputHandlerCst, &VectorAssertionCst)>,
-    jump_parts: Option<JumpHandlerParts<'_>>,
     scalar_parts: &[ScalarHandlerParts<'_>],
-    tick_parts: Option<TickProgramParts<'_>>,
 ) -> Result<CheckedCanonicalSourceExecutionV1, CanonicalSourceErrorV1> {
     let input_handler = input_parts
         .as_ref()
@@ -6439,19 +5917,6 @@ fn checked_canonical_source_execution_v1(
             result_x: handler.result_x,
             result_z: handler.result_z,
         });
-    let jump_handler = jump_parts.map(|parts| CanonicalJumpHandlerV1 {
-        artifact: cst.artifact,
-        handler_origin: parts.handler.origin,
-        velocity_assertion_origin: parts.velocity.origin,
-        grounded_assertion_origin: parts.grounded.origin,
-        jump_speed_assertion_origin: parts.jump_speed.origin,
-        initial_velocity: [parts.velocity.x, parts.velocity.y, parts.velocity.z],
-        initial_grounded: parts.grounded.value,
-        jump_speed: parts.jump_speed.value,
-        required_grounded: parts.handler.required_grounded,
-        result_velocity: parts.handler.result_velocity,
-        result_grounded: parts.handler.result_grounded,
-    });
     let scalar_handlers = scalar_parts
         .iter()
         .flat_map(|parts| {
@@ -6479,62 +5944,12 @@ fn checked_canonical_source_execution_v1(
         cst,
         plan,
         input_parts,
-        jump_parts,
         scalar_parts,
-        tick_parts,
         &keyboard_bindings,
     )?;
     validate_keyboard_handler_targets(cst, &keyboard_bindings, &executable_handlers)?;
     validate_scalar_input_handler_targets(cst, &scalar_input_bindings, &executable_handlers)?;
     let referent_input_bindings = checked_referent_input_bindings(cst, plan, &executable_handlers)?;
-    let tick_program = tick_parts.map(|parts| CanonicalTickProgramV1 {
-        artifact: cst.artifact,
-        initial_position: [parts.position.x, parts.position.y, parts.position.z],
-        initial_velocity: [parts.velocity.x, parts.velocity.y, parts.velocity.z],
-        initial_intent: [parts.intent.x, parts.intent.y, parts.intent.z],
-        initial_grounded: parts.grounded.value,
-        gravity: parts.gravity.value,
-        move_speed: parts.move_speed.value,
-        floor_height: parts.floor_height.value,
-        minimum_x: parts.minimum_x.value,
-        maximum_x: parts.maximum_x.value,
-        minimum_z: parts.minimum_z.value,
-        maximum_z: parts.maximum_z.value,
-        assertion_origins: vec![
-            parts.position.origin,
-            parts.velocity.origin,
-            parts.intent.origin,
-            parts.grounded.origin,
-            parts.gravity.origin,
-            parts.move_speed.origin,
-            parts.floor_height.origin,
-            parts.minimum_x.origin,
-            parts.maximum_x.origin,
-            parts.minimum_z.origin,
-            parts.maximum_z.origin,
-        ],
-        law_origins: cst
-            .items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                CstKind::ScalarLaw(law) => Some(law.origin),
-                _ => None,
-            })
-            .collect(),
-        derive_origins: cst
-            .items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                CstKind::ScalarDerive(derive) => Some(derive.origin),
-                _ => None,
-            })
-            .collect(),
-        rules: parts
-            .handlers
-            .iter()
-            .flat_map(|handler| handler.cases.clone())
-            .collect(),
-    });
     Ok(CheckedCanonicalSourceExecutionV1 {
         state_cells,
         executable_handlers,
@@ -6542,9 +5957,7 @@ fn checked_canonical_source_execution_v1(
         scalar_input_bindings,
         referent_input_bindings,
         input_handler,
-        jump_handler,
         scalar_handlers,
-        tick_program,
     })
 }
 
@@ -6594,9 +6007,9 @@ pub fn elaborate_canonical_source_package_v1(
         }
     }
     let input_parts = input_handler_parts(cst)?;
-    let jump_parts = jump_handler_parts(cst)?;
+
     let scalar_parts = scalar_handler_parts(cst)?;
-    let tick_parts = tick_program_parts(cst)?;
+
     let mut emitted_referents = BTreeSet::new();
     let mut application_repetitions = BTreeMap::<(Vec<u8>, Vec<u8>), u64>::new();
     let mut initial_assertion_repetitions = BTreeMap::new();
@@ -6947,43 +6360,6 @@ pub fn elaborate_canonical_source_package_v1(
                     handler.include_origin,
                 ));
             }
-            CstKind::JumpHandler(handler) => {
-                let head = head_slot(CanonicalSourceProductionV1::Handler);
-                let head_id = formation_id(plan, &handler.producer, &head)?;
-                formations.push(source_formation(
-                    scope,
-                    head_id,
-                    cst.source_slice(handler.origin)
-                        .expect("owned jump handler origin"),
-                    handler.origin,
-                    "jump-handler",
-                )?);
-                emissions.push(emission(
-                    plan,
-                    handler.producer.clone(),
-                    head,
-                    handler.origin,
-                ));
-                for include in &handler.includes {
-                    let slot =
-                        child_slot(CanonicalSourceProductionV1::HandlerInclude, &include.local);
-                    let id = formation_id(plan, &handler.producer, &slot)?;
-                    formations.push(source_formation(
-                        scope,
-                        id,
-                        cst.source_slice(include.origin)
-                            .expect("owned jump include origin"),
-                        include.origin,
-                        "handler-include",
-                    )?);
-                    emissions.push(emission(
-                        plan,
-                        handler.producer.clone(),
-                        slot,
-                        include.origin,
-                    ));
-                }
-            }
             CstKind::ScalarHandler(handler) => {
                 let head = head_slot(CanonicalSourceProductionV1::Handler);
                 let head_id = formation_id(plan, &handler.producer, &head)?;
@@ -7047,43 +6423,6 @@ pub fn elaborate_canonical_source_package_v1(
                         id,
                         cst.source_slice(include.origin)
                             .expect("owned general handler include origin"),
-                        include.origin,
-                        "handler-include",
-                    )?);
-                    emissions.push(emission(
-                        plan,
-                        handler.producer.clone(),
-                        slot,
-                        include.origin,
-                    ));
-                }
-            }
-            CstKind::TickHandler(handler) => {
-                let head = head_slot(CanonicalSourceProductionV1::Handler);
-                let head_id = formation_id(plan, &handler.producer, &head)?;
-                formations.push(source_formation(
-                    scope,
-                    head_id,
-                    cst.source_slice(handler.origin)
-                        .expect("owned tick handler origin"),
-                    handler.origin,
-                    "tick-handler",
-                )?);
-                emissions.push(emission(
-                    plan,
-                    handler.producer.clone(),
-                    head,
-                    handler.origin,
-                ));
-                for include in &handler.includes {
-                    let slot =
-                        child_slot(CanonicalSourceProductionV1::HandlerInclude, &include.local);
-                    let id = formation_id(plan, &handler.producer, &slot)?;
-                    formations.push(source_formation(
-                        scope,
-                        id,
-                        cst.source_slice(include.origin)
-                            .expect("owned tick include origin"),
                         include.origin,
                         "handler-include",
                     )?);
@@ -7159,15 +6498,6 @@ pub fn elaborate_canonical_source_package_v1(
                 if input_parts
                     .as_ref()
                     .is_some_and(|(_, selected)| selected.origin == assertion.origin)
-                    || jump_parts.is_some_and(|parts| parts.velocity.origin == assertion.origin)
-                    || tick_parts.is_some_and(|parts| {
-                        [
-                            parts.position.origin,
-                            parts.velocity.origin,
-                            parts.intent.origin,
-                        ]
-                        .contains(&assertion.origin)
-                    })
                     || scalar_parts.iter().any(|parts| {
                         scalar_parts_use_initial(parts, assertion.origin)
                             || scalar_parts_use_parameter(
@@ -7222,9 +6552,7 @@ pub fn elaborate_canonical_source_package_v1(
                 }
             }
             CstKind::BooleanAssertion(assertion) => {
-                if jump_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
-                    || tick_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
-                    || scalar_parts.iter().any(|parts| {
+                if scalar_parts.iter().any(|parts| {
                         scalar_parts_use_initial(parts, assertion.origin)
                             || scalar_parts_use_parameter(
                                 parts,
@@ -7256,8 +6584,7 @@ pub fn elaborate_canonical_source_package_v1(
                 }
             }
             CstKind::NumberAssertion(assertion) => {
-                if jump_parts.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
-                    || scalar_parts.iter().any(|parts| {
+                if scalar_parts.iter().any(|parts| {
                         scalar_parts_use_initial(parts, assertion.origin)
                             || scalar_parts_use_parameter(
                                 parts,
@@ -7265,18 +6592,6 @@ pub fn elaborate_canonical_source_package_v1(
                                 &assertion.relation,
                                 false,
                             )
-                    })
-                    || tick_parts.is_some_and(|parts| {
-                        [
-                            parts.gravity.origin,
-                            parts.move_speed.origin,
-                            parts.floor_height.origin,
-                            parts.minimum_x.origin,
-                            parts.maximum_x.origin,
-                            parts.minimum_z.origin,
-                            parts.maximum_z.origin,
-                        ]
-                        .contains(&assertion.origin)
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
@@ -7373,9 +6688,7 @@ pub fn elaborate_canonical_source_package_v1(
             cst,
             plan,
             input_parts,
-            jump_parts,
             &scalar_parts,
-            tick_parts,
         )
     };
     let check_package = || {
@@ -7436,9 +6749,7 @@ pub fn elaborate_canonical_source_package_v1(
         scalar_input_bindings,
         referent_input_bindings,
         input_handler,
-        jump_handler,
         scalar_handlers,
-        tick_program,
     } = checked_execution;
     Ok(CanonicalSourcePackageSliceV1 {
         checked_package,
@@ -7453,9 +6764,7 @@ pub fn elaborate_canonical_source_package_v1(
         scalar_input_bindings,
         referent_input_bindings,
         input_handler,
-        jump_handler,
         scalar_handlers,
-        tick_program,
     })
 }
 
@@ -7784,18 +7093,6 @@ fn parse_expanded_item(
             return Ok(CstItem {
                 origin,
                 kind: CstKind::InputHandler(handler),
-            });
-        }
-        if let Some(handler) = parse_jump_handler(artifact, block, origin)? {
-            return Ok(CstItem {
-                origin,
-                kind: CstKind::JumpHandler(handler),
-            });
-        }
-        if let Some(handler) = parse_tick_handler(artifact, block, origin, scalar_laws)? {
-            return Ok(CstItem {
-                origin,
-                kind: CstKind::TickHandler(handler),
             });
         }
         if let Some(handler) = parse_scalar_handler(artifact, block, origin, scalar_laws)? {
@@ -8272,7 +7569,7 @@ fn parse_keyboard_binding(
     origin: CanonicalSourceOriginV1,
 ) -> Result<KeyboardBindingCst, CanonicalSourceErrorV1> {
     let parts = source.split_whitespace().collect::<Vec<_>>();
-    let ["bind", "keyboard", code, phase, "to", handler] = parts.as_slice() else {
+    let ["bind", "keyboard", code, phase, "to", handler, rest @ ..] = parts.as_slice() else {
         return Err(CanonicalSourceErrorV1::InvalidKeyboardBinding { origin });
     };
     if code.is_empty()
@@ -8291,7 +7588,15 @@ fn parse_keyboard_binding(
         "up" => CanonicalKeyPhaseV1::Up,
         _ => return Err(CanonicalSourceErrorV1::InvalidKeyboardBinding { origin }),
     };
+    let arguments = match rest {
+        [] => Vec::new(),
+        ["with", values @ ..] if !values.is_empty() => values.iter()
+            .map(|value| parse_source_number(value).ok_or(CanonicalSourceErrorV1::InvalidKeyboardBinding { origin }))
+            .collect::<Result<Vec<_>, _>>()?,
+        _ => return Err(CanonicalSourceErrorV1::InvalidKeyboardBinding { origin }),
+    };
     Ok(KeyboardBindingCst {
+        arguments,
         origin,
         code: code.as_bytes().to_vec(),
         phase,
@@ -8434,192 +7739,6 @@ fn parse_input_handler(
         include_origin,
         include_local: include_line.as_bytes().to_vec(),
     }))
-}
-
-fn parse_jump_handler(
-    artifact: CanonicalSourceArtifactIdV1,
-    block: &[SourceLine<'_>],
-    origin: CanonicalSourceOriginV1,
-) -> Result<Option<JumpHandlerCst>, CanonicalSourceErrorV1> {
-    let Some(header) = block[0].text.strip_prefix("on ") else {
-        return Ok(None);
-    };
-    let mut header = header.split_whitespace();
-    let Some(designation) = header.next() else {
-        return Ok(None);
-    };
-    let Some(subject) = header.next() else {
-        return jump_shape_mismatch(designation, origin);
-    };
-    if header.next().is_some() || !subject.starts_with('?') {
-        return jump_shape_mismatch(designation, origin);
-    }
-
-    let mut section = "";
-    let mut when = Vec::new();
-    let mut withdraw = Vec::new();
-    let mut include = Vec::new();
-    let mut seen_sections = BTreeSet::new();
-    for line in block
-        .iter()
-        .skip(1)
-        .filter(|line| !line.text.trim().is_empty())
-    {
-        let trimmed = line.text.trim();
-        if line.indent == 2 {
-            if trimmed == "admit" {
-                return Err(CanonicalSourceErrorV1::NonCanonicalKeyword {
-                    origin: line_origin(artifact, *line),
-                    keyword: b"admit".to_vec(),
-                });
-            }
-            if !matches!(trimmed, "when" | "withdraw" | "include") || !seen_sections.insert(trimmed)
-            {
-                return jump_shape_mismatch(designation, line_origin(artifact, *line));
-            }
-            section = trimmed;
-            continue;
-        }
-        if line.indent != 4 {
-            return jump_shape_mismatch(designation, line_origin(artifact, *line));
-        }
-        let entry = (trimmed, line_origin(artifact, *line));
-        match section {
-            "when" => when.push(entry),
-            "withdraw" => withdraw.push(entry),
-            "include" => include.push(entry),
-            _ => {
-                return jump_shape_mismatch(designation, line_origin(artifact, *line));
-            }
-        }
-    }
-    if when.len() != 3 || withdraw.len() != 2 || include.len() != 2 {
-        return jump_shape_mismatch(designation, origin);
-    }
-    if withdraw[0].0 != when[0].0 || withdraw[1].0 != when[1].0 {
-        return jump_shape_mismatch(designation, origin);
-    }
-
-    let Some((velocity_prefix, velocity_vector)) = split_vector_subject(when[0].0) else {
-        return jump_shape_mismatch(designation, origin);
-    };
-    let Some(velocity_relation) = velocity_prefix
-        .strip_prefix(subject)
-        .and_then(|rest| rest.strip_prefix(' '))
-        .filter(|rest| !rest.is_empty())
-        .map(|relation| relation.as_bytes().to_vec())
-    else {
-        return jump_shape_mismatch(designation, origin);
-    };
-    let Some(velocity_parameters) = parse_vec3_components(velocity_vector).filter(|components| {
-        components.iter().all(|value| value.starts_with('?'))
-            && components.iter().collect::<BTreeSet<_>>().len() == 3
-    }) else {
-        return jump_shape_mismatch(designation, origin);
-    };
-
-    let Some((grounded_subject, grounded_relation, required_grounded)) =
-        parse_boolean_clause(when[1].0)
-    else {
-        return jump_shape_mismatch(designation, origin);
-    };
-    if grounded_subject != subject {
-        return jump_shape_mismatch(designation, origin);
-    }
-
-    let jump_parts = when[2].0.split_whitespace().collect::<Vec<_>>();
-    if jump_parts.len() < 3
-        || !jump_parts
-            .last()
-            .is_some_and(|value| value.starts_with('?'))
-    {
-        return jump_shape_mismatch(designation, origin);
-    }
-    let jump_speed_subject = jump_parts[0].as_bytes().to_vec();
-    let jump_speed_relation = jump_parts[1..jump_parts.len() - 1].join(" ").into_bytes();
-    let jump_speed_parameter = jump_parts[jump_parts.len() - 1];
-
-    let Some((result_prefix, result_vector)) = split_vector_subject(include[0].0) else {
-        return jump_shape_mismatch(designation, origin);
-    };
-    let expected_result_prefix =
-        format!("{subject} {}", String::from_utf8_lossy(&velocity_relation));
-    if result_prefix != expected_result_prefix {
-        return jump_shape_mismatch(designation, origin);
-    }
-    let Some(result_components) = parse_vec3_components(result_vector) else {
-        return jump_shape_mismatch(designation, origin);
-    };
-    let Some(result_velocity) = result_components
-        .map(|value| parse_jump_scalar(value, velocity_parameters, jump_speed_parameter))
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-        .and_then(|values| values.try_into().ok())
-    else {
-        return jump_shape_mismatch(designation, origin);
-    };
-
-    let Some((result_subject, result_relation, result_grounded)) =
-        parse_boolean_clause(include[1].0)
-    else {
-        return jump_shape_mismatch(designation, origin);
-    };
-    if result_subject != subject || result_relation.as_bytes() != grounded_relation.as_bytes() {
-        return jump_shape_mismatch(designation, origin);
-    }
-
-    Ok(Some(JumpHandlerCst {
-        origin,
-        producer: semantic_producer(
-            CanonicalSourceProductionV1::Handler,
-            &handler_semantic_producer(block),
-        ),
-        designation: designation.as_bytes().to_vec(),
-        velocity_relation,
-        grounded_relation: grounded_relation.into_bytes(),
-        jump_speed_subject,
-        jump_speed_relation,
-        required_grounded,
-        result_velocity,
-        result_grounded,
-        includes: [
-            HandlerIncludeCst {
-                origin: include[0].1,
-                local: include[0].0.as_bytes().to_vec(),
-                structured: None,
-            },
-            HandlerIncludeCst {
-                origin: include[1].1,
-                local: include[1].0.as_bytes().to_vec(),
-                structured: None,
-            },
-        ],
-    }))
-}
-
-fn jump_shape_mismatch<T>(
-    designation: &str,
-    origin: CanonicalSourceOriginV1,
-) -> Result<Option<T>, CanonicalSourceErrorV1> {
-    if designation == "jump" {
-        Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin })
-    } else {
-        Ok(None)
-    }
-}
-
-fn parse_jump_scalar(
-    source: &str,
-    velocity_parameters: [&str; 3],
-    jump_speed_parameter: &str,
-) -> Option<CanonicalJumpScalarV1> {
-    velocity_parameters
-        .iter()
-        .position(|parameter| *parameter == source)
-        .and_then(|index| u8::try_from(index).ok())
-        .map(CanonicalJumpScalarV1::VelocityComponent)
-        .or_else(|| (source == jump_speed_parameter).then_some(CanonicalJumpScalarV1::JumpSpeed))
-        .or_else(|| parse_source_number(source).map(CanonicalJumpScalarV1::Number))
 }
 
 fn parse_scalar_handler(
@@ -9040,7 +8159,7 @@ fn parse_general_handler(
         let Some(sources) = structured_values::state_declaration(clause, subject) else {
             return Ok(None);
         };
-        if clause.structured.is_some() {
+        if clause.structured.is_some() || split_shape_subject(condition).is_some() {
             selectors.extend(structured_values::selectors(clause)
                 .ok_or(CanonicalSourceErrorV1::InvalidGeneralHandler { origin: clause.origin })?);
         }
@@ -9414,17 +8533,16 @@ fn parse_general_state_declaration(
         let subject = prefix[0].as_bytes().to_vec();
         let relation = prefix[1..].join(" ").into_bytes();
         let fields = parse_shape_fields(fields)?;
-        if !fields
-            .iter()
-            .all(|(_, parameter)| parameter.starts_with('?'))
-        {
-            return None;
-        }
         return fields
             .into_iter()
             .map(|(field, parameter)| {
                 Some(ScalarParameterSourceCst {
-                    parameter: parameter.as_bytes().to_vec(),
+                    parameter: match parse_scalar_expression(parameter, "")? {
+                        CanonicalScalarExpressionV1::Parameter(parameter) => parameter,
+                        CanonicalScalarExpressionV1::Number(_) | CanonicalScalarExpressionV1::Boolean(_)
+                        | CanonicalScalarExpressionV1::Text(_) | CanonicalScalarExpressionV1::Symbol(_) => Vec::new(),
+                        _ => return None,
+                    },
                     subject: subject.clone(),
                     relation: relation.clone(),
                     shape: Some(shape.as_bytes().to_vec()),
@@ -10118,583 +9236,6 @@ fn parse_law_state_declaration(source: &str) -> Option<Vec<ScalarParameterSource
         shape: None,
         field: None,
     }])
-}
-
-fn parse_tick_handler(
-    artifact: CanonicalSourceArtifactIdV1,
-    block: &[SourceLine<'_>],
-    origin: CanonicalSourceOriginV1,
-    scalar_laws: &ScalarLawEnvironment,
-) -> Result<Option<TickHandlerCst>, CanonicalSourceErrorV1> {
-    if block[0].text != "on tick ?player ?dt" {
-        return Ok(None);
-    }
-    let mut section = "";
-    let mut when = Vec::new();
-    let mut withdraw = Vec::new();
-    let mut include = Vec::new();
-    let mut seen_sections = BTreeSet::new();
-    for line in block
-        .iter()
-        .skip(1)
-        .filter(|line| !line.text.trim().is_empty())
-    {
-        let trimmed = line.text.trim();
-        if line.indent == 2 {
-            if trimmed == "admit" {
-                return Err(CanonicalSourceErrorV1::NonCanonicalKeyword {
-                    origin: line_origin(artifact, *line),
-                    keyword: b"admit".to_vec(),
-                });
-            }
-            if !matches!(trimmed, "when" | "withdraw" | "include") || !seen_sections.insert(trimmed)
-            {
-                return Err(CanonicalSourceErrorV1::InvalidTickProfile {
-                    origin: line_origin(artifact, *line),
-                });
-            }
-            section = trimmed;
-            continue;
-        }
-        if line.indent != 4 {
-            return Err(CanonicalSourceErrorV1::InvalidTickProfile {
-                origin: line_origin(artifact, *line),
-            });
-        }
-        let entry = (trimmed, line_origin(artifact, *line));
-        match section {
-            "when" => when.push(entry),
-            "withdraw" => withdraw.push(entry),
-            "include" => include.push(entry),
-            _ => {
-                return Err(CanonicalSourceErrorV1::InvalidTickProfile {
-                    origin: line_origin(artifact, *line),
-                });
-            }
-        }
-    }
-    if when.first().map(|entry| entry.0) != Some("?dt > 0.0") {
-        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-    }
-    let position_index = when
-        .iter()
-        .position(|entry| entry.0.starts_with("?player position Vec3 { "))
-        .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?;
-    let state_guards = parse_tick_state_guards(&when[1..position_index], origin)?;
-    let mut core_when = Vec::with_capacity(when.len() - position_index + 1);
-    core_when.push(when[0]);
-    core_when.extend_from_slice(&when[position_index..]);
-    let when = core_when;
-    let grounded = when
-        .get(4)
-        .and_then(|entry| parse_boolean_clause(entry.0))
-        .filter(|(subject, relation, _)| *subject == "?player" && relation == "grounded")
-        .map(|(_, _, value)| value)
-        .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?;
-    let grounded_branch = grounded && when.len() == 13 && withdraw.len() == 2 && include.len() == 2;
-    let airborne_branch =
-        !grounded && when.len() == 15 && withdraw.len() == 2 && include.len() == 2;
-    let landing_branch = !grounded && when.len() == 15 && withdraw.len() == 3 && include.len() == 3;
-    if !grounded_branch && !airborne_branch && !landing_branch {
-        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-    }
-
-    let expected_position = if grounded_branch {
-        "?player position Vec3 { x: ?position-x, y: ?floor, z: ?position-z }"
-    } else {
-        "?player position Vec3 { x: ?position-x, y: ?position-y, z: ?position-z }"
-    };
-    let expected_velocity = if grounded_branch {
-        "?player velocity Vec3 { x: ?velocity-x, y: 0.0, z: ?velocity-z }"
-    } else {
-        "?player velocity Vec3 { x: ?velocity-x, y: ?velocity-y, z: ?velocity-z }"
-    };
-    let fixed_prefix = [
-        expected_position,
-        expected_velocity,
-        "?player horizontal intent Vec3 { x: ?intent-x, y: 0.0, z: ?intent-z }",
-    ];
-    if when[1..4].iter().map(|entry| entry.0).ne(fixed_prefix) {
-        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-    }
-    let constants = if grounded_branch {
-        &when[5..11]
-    } else {
-        &when[5..12]
-    };
-    let expected_constants: &[&str] = if grounded_branch {
-        &[
-            "jump-arena move speed ?move-speed",
-            "jump-arena floor height ?floor",
-            "jump-arena minimum x ?min-x",
-            "jump-arena maximum x ?max-x",
-            "jump-arena minimum z ?min-z",
-            "jump-arena maximum z ?max-z",
-        ]
-    } else {
-        &[
-            "jump-arena gravity ?gravity",
-            "jump-arena move speed ?move-speed",
-            "jump-arena floor height ?floor",
-            "jump-arena minimum x ?min-x",
-            "jump-arena maximum x ?max-x",
-            "jump-arena minimum z ?min-z",
-            "jump-arena maximum z ?max-z",
-        ]
-    };
-    let constants_match = constants
-        .iter()
-        .zip(expected_constants)
-        .all(|(actual, expected)| {
-            actual.0 == *expected
-                || (*expected == "jump-arena move speed ?move-speed"
-                    && actual.0 == "?player move speed ?move-speed")
-        });
-    if !constants_match || constants.len() != expected_constants.len() {
-        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-    }
-    let binding_start = if grounded_branch { 11 } else { 12 };
-    let bindings = when[binding_start..binding_start + 2]
-        .iter()
-        .map(|line| {
-            scalar_laws
-                .binding(line.0, line.1)?
-                .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: line.1 })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut cases = Vec::new();
-    for case in binding_cases(&bindings)? {
-        let derived = case
-            .bindings
-            .iter()
-            .map(|(name, expression)| {
-                let expression = expand_scalar_law_bindings(
-                    expression,
-                    &case.bindings,
-                    &mut BTreeSet::new(),
-                    origin,
-                )?;
-                Ok((
-                    String::from_utf8(name.clone()).expect("source binder UTF-8"),
-                    scalar_tick_expression(&expression, origin)?,
-                ))
-            })
-            .collect::<Result<BTreeMap<_, _>, CanonicalSourceErrorV1>>()?;
-        if !derived.contains_key("?next-x") || !derived.contains_key("?next-z") {
-            return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-        }
-
-        let mut predicates = vec![
-            parse_tick_comparison(when[0].0, &derived)
-                .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: when[0].1 })?,
-        ];
-        predicates.extend(state_guards.clone());
-        for predicate in &case.predicates {
-            let convert = |expression: &CanonicalScalarExpressionV1| {
-                let expression = expand_scalar_law_bindings(
-                    expression,
-                    &case.bindings,
-                    &mut BTreeSet::new(),
-                    origin,
-                )?;
-                scalar_tick_expression(&expression, origin)
-            };
-            match predicate {
-                CanonicalScalarPredicateV1::Equal(a, b) => {
-                    predicates.push(CanonicalTickPredicateV1::LessThanOrEqual(
-                        convert(a)?,
-                        convert(b)?,
-                    ));
-                    predicates.push(CanonicalTickPredicateV1::LessThanOrEqual(
-                        convert(b)?,
-                        convert(a)?,
-                    ));
-                }
-                CanonicalScalarPredicateV1::GreaterThan(a, b) => predicates.push(
-                    CanonicalTickPredicateV1::GreaterThan(convert(a)?, convert(b)?),
-                ),
-                CanonicalScalarPredicateV1::LessThanOrEqual(a, b) => predicates.push(
-                    CanonicalTickPredicateV1::LessThanOrEqual(convert(a)?, convert(b)?),
-                ),
-            }
-        }
-        predicates.push(CanonicalTickPredicateV1::EqualBoolean(
-            CanonicalTickValueV1::Grounded,
-            grounded,
-        ));
-        if !grounded_branch {
-            predicates.push(
-                parse_tick_comparison(when[14].0, &derived)
-                    .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: when[14].1 })?,
-            );
-        }
-        if withdraw.get(0).map(|entry| entry.0) != Some(expected_position)
-            || withdraw.get(1).map(|entry| entry.0) != Some(expected_velocity)
-            || (landing_branch
-                && withdraw.get(2).map(|entry| entry.0) != Some("?player grounded false"))
-        {
-            return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-        }
-
-        let mut assignments = Vec::new();
-        let (position_prefix, position_vector) = include
-            .first()
-            .and_then(|entry| split_vector_subject(entry.0))
-            .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?;
-        let (velocity_prefix, velocity_vector) = include
-            .get(1)
-            .and_then(|entry| split_vector_subject(entry.0))
-            .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?;
-        if position_prefix != "?player position" || velocity_prefix != "?player velocity" {
-            return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-        }
-        for (target, source) in parse_vec3_components(position_vector)
-            .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?
-            .into_iter()
-            .enumerate()
-        {
-            assignments.push(CanonicalTickAssignmentV1 {
-                target: CanonicalTickAssignmentTargetV1::PositionComponent(target as u8),
-                value: CanonicalTickAssignmentValueV1::Number(
-                    parse_tick_expression(source, &derived).ok_or(
-                        CanonicalSourceErrorV1::InvalidTickProfile {
-                            origin: include[0].1,
-                        },
-                    )?,
-                ),
-            });
-        }
-        for (target, source) in parse_vec3_components(velocity_vector)
-            .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?
-            .into_iter()
-            .enumerate()
-        {
-            assignments.push(CanonicalTickAssignmentV1 {
-                target: CanonicalTickAssignmentTargetV1::VelocityComponent(target as u8),
-                value: CanonicalTickAssignmentValueV1::Number(
-                    parse_tick_expression(source, &derived).ok_or(
-                        CanonicalSourceErrorV1::InvalidTickProfile {
-                            origin: include[1].1,
-                        },
-                    )?,
-                ),
-            });
-        }
-        if landing_branch {
-            if include[2].0 != "?player grounded true" {
-                return Err(CanonicalSourceErrorV1::InvalidTickProfile {
-                    origin: include[2].1,
-                });
-            }
-            assignments.push(CanonicalTickAssignmentV1 {
-                target: CanonicalTickAssignmentTargetV1::Grounded,
-                value: CanonicalTickAssignmentValueV1::Boolean(true),
-            });
-        }
-        cases.push(CanonicalTickRuleV1 {
-            law_origins: case.origins,
-            handler_origin: origin,
-            include_origins: include.iter().map(|(_, origin)| *origin).collect(),
-            predicates,
-            assignments,
-        });
-    }
-    Ok(Some(TickHandlerCst {
-        origin,
-        producer: semantic_producer(
-            CanonicalSourceProductionV1::Handler,
-            &handler_semantic_producer(block),
-        ),
-        designation: b"tick".to_vec(),
-        predicates: cases[0].predicates.clone(),
-        assignments: cases[0].assignments.clone(),
-        cases,
-        includes: include
-            .into_iter()
-            .map(|(local, origin)| HandlerIncludeCst {
-                origin,
-                local: local.as_bytes().to_vec(),
-                structured: None,
-            })
-            .collect(),
-    }))
-}
-
-fn parse_tick_state_guards(
-    lines: &[(&str, CanonicalSourceOriginV1)],
-    origin: CanonicalSourceOriginV1,
-) -> Result<Vec<CanonicalTickPredicateV1>, CanonicalSourceErrorV1> {
-    if lines.is_empty() {
-        return Ok(vec![]);
-    }
-    let reserved = [
-        b"?dt".as_slice(),
-        b"?position-x".as_slice(),
-        b"?position-y".as_slice(),
-        b"?position-z".as_slice(),
-        b"?velocity-x".as_slice(),
-        b"?velocity-y".as_slice(),
-        b"?velocity-z".as_slice(),
-        b"?intent-x".as_slice(),
-        b"?intent-y".as_slice(),
-        b"?intent-z".as_slice(),
-        b"?gravity".as_slice(),
-        b"?move-speed".as_slice(),
-        b"?floor".as_slice(),
-        b"?min-x".as_slice(),
-        b"?max-x".as_slice(),
-        b"?min-z".as_slice(),
-        b"?max-z".as_slice(),
-    ];
-    let mut sources = BTreeMap::new();
-    let mut equalities = Vec::new();
-    for (line, line_origin) in lines {
-        if let Some(declarations) = parse_scalar_parameter_declaration(line, "?player") {
-            for source in declarations {
-                if reserved.contains(&source.parameter.as_slice())
-                    || sources.insert(source.parameter.clone(), source).is_some()
-                {
-                    return Err(CanonicalSourceErrorV1::InvalidTickProfile {
-                        origin: *line_origin,
-                    });
-                }
-            }
-            continue;
-        }
-        let Some(CanonicalScalarPredicateV1::Equal(left, right)) = parse_scalar_predicate(line, "")
-        else {
-            return Err(CanonicalSourceErrorV1::InvalidTickProfile {
-                origin: *line_origin,
-            });
-        };
-        equalities.push((left, right, *line_origin));
-    }
-    if equalities.is_empty() {
-        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-    }
-    equalities
-        .into_iter()
-        .map(|(left, right, predicate_origin)| {
-            let (parameter, expected) = match (left, right) {
-                (CanonicalScalarExpressionV1::Parameter(parameter), expected) => {
-                    (parameter, tick_guard_literal(expected))
-                }
-                (expected, CanonicalScalarExpressionV1::Parameter(parameter)) => {
-                    (parameter, tick_guard_literal(expected))
-                }
-                _ => {
-                    return Err(CanonicalSourceErrorV1::InvalidTickProfile {
-                        origin: predicate_origin,
-                    });
-                }
-            };
-            let expected = expected.ok_or(CanonicalSourceErrorV1::InvalidTickProfile {
-                origin: predicate_origin,
-            })?;
-            let source =
-                sources
-                    .get(&parameter)
-                    .ok_or(CanonicalSourceErrorV1::InvalidTickProfile {
-                        origin: predicate_origin,
-                    })?;
-            Ok(CanonicalTickPredicateV1::EqualState {
-                subject: source.subject.clone(),
-                relation: source.relation.clone(),
-                field: source.field.clone(),
-                expected,
-            })
-        })
-        .collect()
-}
-
-fn tick_guard_literal(expression: CanonicalScalarExpressionV1) -> Option<CanonicalScalarValueV1> {
-    match expression {
-        CanonicalScalarExpressionV1::Number(value) => Some(CanonicalScalarValueV1::Number(value)),
-        CanonicalScalarExpressionV1::Boolean(value) => Some(CanonicalScalarValueV1::Boolean(value)),
-        CanonicalScalarExpressionV1::Symbol(value) => Some(CanonicalScalarValueV1::Symbol(value)),
-        CanonicalScalarExpressionV1::Text(value) => Some(CanonicalScalarValueV1::Text(value)),
-        CanonicalScalarExpressionV1::Equal(_, _)
-        | CanonicalScalarExpressionV1::GreaterThan(_, _)
-        | CanonicalScalarExpressionV1::LessThanOrEqual(_, _)
-        | CanonicalScalarExpressionV1::SquareRoot(_)
-        | CanonicalScalarExpressionV1::TextTransform(..)
-        | CanonicalScalarExpressionV1::StartsWith(..)
-        | CanonicalScalarExpressionV1::ContainsText(..)
-        | CanonicalScalarExpressionV1::Conditional(..)
-        | CanonicalScalarExpressionV1::Current
-        | CanonicalScalarExpressionV1::Parameter(_)
-        | CanonicalScalarExpressionV1::Concatenate(_, _)
-        | CanonicalScalarExpressionV1::Add(_, _)
-        | CanonicalScalarExpressionV1::Subtract(_, _)
-        | CanonicalScalarExpressionV1::Multiply(_, _)
-        | CanonicalScalarExpressionV1::Divide(_, _) => None,
-    }
-}
-
-fn parse_tick_comparison(
-    source: &str,
-    derived: &BTreeMap<String, CanonicalTickExpressionV1>,
-) -> Option<CanonicalTickPredicateV1> {
-    if let Some((left, right)) = source.split_once(" <= ") {
-        return Some(CanonicalTickPredicateV1::LessThanOrEqual(
-            parse_tick_expression(left, derived)?,
-            parse_tick_expression(right, derived)?,
-        ));
-    }
-    let (left, right) = source.split_once(" > ")?;
-    Some(CanonicalTickPredicateV1::GreaterThan(
-        parse_tick_expression(left, derived)?,
-        parse_tick_expression(right, derived)?,
-    ))
-}
-
-fn scalar_tick_expression(
-    expression: &CanonicalScalarExpressionV1,
-    origin: CanonicalSourceOriginV1,
-) -> Result<CanonicalTickExpressionV1, CanonicalSourceErrorV1> {
-    use CanonicalScalarExpressionV1 as S;
-    use CanonicalTickExpressionV1 as T;
-    let recurse = |value| scalar_tick_expression(value, origin).map(Box::new);
-    Ok(match expression {
-        S::Number(value) => T::Number(*value),
-        S::Parameter(name) => parse_tick_expression(
-            std::str::from_utf8(name).expect("source binder UTF-8"),
-            &BTreeMap::new(),
-        )
-        .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?,
-        S::Add(a, b) => T::Add(recurse(a)?, recurse(b)?),
-        S::Subtract(a, b) => T::Subtract(recurse(a)?, recurse(b)?),
-        S::Multiply(a, b) => T::Multiply(recurse(a)?, recurse(b)?),
-        S::Divide(a, b) => T::Divide(recurse(a)?, recurse(b)?),
-        S::SquareRoot(value) => T::SquareRoot(recurse(value)?),
-        _ => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
-    })
-}
-
-fn parse_tick_expression(
-    source: &str,
-    derived: &BTreeMap<String, CanonicalTickExpressionV1>,
-) -> Option<CanonicalTickExpressionV1> {
-    let mut parser = TickExpressionParser {
-        source: source.as_bytes(),
-        cursor: 0,
-        derived,
-    };
-    let expression = parser.additive()?;
-    parser.skip_spaces();
-    (parser.cursor == parser.source.len()).then_some(expression)
-}
-
-struct TickExpressionParser<'a> {
-    source: &'a [u8],
-    cursor: usize,
-    derived: &'a BTreeMap<String, CanonicalTickExpressionV1>,
-}
-
-impl TickExpressionParser<'_> {
-    fn additive(&mut self) -> Option<CanonicalTickExpressionV1> {
-        let mut value = self.multiplicative()?;
-        loop {
-            self.skip_spaces();
-            let operation = self.take_one(&[b'+', b'-']);
-            let Some(operation) = operation else { break };
-            let right = self.multiplicative()?;
-            value = match operation {
-                b'+' => CanonicalTickExpressionV1::Add(Box::new(value), Box::new(right)),
-                b'-' => CanonicalTickExpressionV1::Subtract(Box::new(value), Box::new(right)),
-                _ => unreachable!(),
-            };
-        }
-        Some(value)
-    }
-
-    fn multiplicative(&mut self) -> Option<CanonicalTickExpressionV1> {
-        let mut value = self.primary()?;
-        loop {
-            self.skip_spaces();
-            let operation = self.take_one(&[b'*', b'/']);
-            let Some(operation) = operation else { break };
-            let right = self.primary()?;
-            value = match operation {
-                b'*' => CanonicalTickExpressionV1::Multiply(Box::new(value), Box::new(right)),
-                b'/' => CanonicalTickExpressionV1::Divide(Box::new(value), Box::new(right)),
-                _ => unreachable!(),
-            };
-        }
-        Some(value)
-    }
-
-    fn primary(&mut self) -> Option<CanonicalTickExpressionV1> {
-        self.skip_spaces();
-        if self.source[self.cursor..].starts_with(b"sqrt(") {
-            self.cursor += 5;
-            let value = self.additive()?;
-            self.skip_spaces();
-            (self.source.get(self.cursor) == Some(&b')')).then(|| self.cursor += 1)?;
-            return Some(CanonicalTickExpressionV1::SquareRoot(Box::new(value)));
-        }
-        if self.source.get(self.cursor) == Some(&b'(') {
-            self.cursor += 1;
-            let value = self.additive()?;
-            self.skip_spaces();
-            (self.source.get(self.cursor) == Some(&b')')).then(|| self.cursor += 1)?;
-            return Some(value);
-        }
-        let start = self.cursor;
-        if self.source.get(self.cursor) == Some(&b'-') {
-            self.cursor += 1;
-        }
-        while let Some(byte) = self.source.get(self.cursor)
-            && !byte.is_ascii_whitespace()
-            && !matches!(*byte, b'+' | b'*' | b'/' | b'(' | b')')
-        {
-            self.cursor += 1;
-        }
-        (self.cursor > start).then_some(())?;
-        let atom = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
-        if let Some(value) = self.derived.get(atom) {
-            return Some(value.clone());
-        }
-        let value = match atom {
-            "?dt" => CanonicalTickValueV1::DeltaTime,
-            "?position-x" => CanonicalTickValueV1::PositionComponent(0),
-            "?position-y" => CanonicalTickValueV1::PositionComponent(1),
-            "?position-z" => CanonicalTickValueV1::PositionComponent(2),
-            "?velocity-x" => CanonicalTickValueV1::VelocityComponent(0),
-            "?velocity-y" => CanonicalTickValueV1::VelocityComponent(1),
-            "?velocity-z" => CanonicalTickValueV1::VelocityComponent(2),
-            "?intent-x" => CanonicalTickValueV1::IntentComponent(0),
-            "?intent-y" => CanonicalTickValueV1::IntentComponent(1),
-            "?intent-z" => CanonicalTickValueV1::IntentComponent(2),
-            "?gravity" => CanonicalTickValueV1::Gravity,
-            "?move-speed" => CanonicalTickValueV1::MoveSpeed,
-            "?floor" => CanonicalTickValueV1::FloorHeight,
-            "?min-x" => CanonicalTickValueV1::MinimumX,
-            "?max-x" => CanonicalTickValueV1::MaximumX,
-            "?min-z" => CanonicalTickValueV1::MinimumZ,
-            "?max-z" => CanonicalTickValueV1::MaximumZ,
-            _ => return parse_source_number(atom).map(CanonicalTickExpressionV1::Number),
-        };
-        Some(CanonicalTickExpressionV1::Value(value))
-    }
-
-    fn skip_spaces(&mut self) {
-        while self
-            .source
-            .get(self.cursor)
-            .is_some_and(u8::is_ascii_whitespace)
-        {
-            self.cursor += 1;
-        }
-    }
-
-    fn take_one(&mut self, accepted: &[u8]) -> Option<u8> {
-        let byte = *self.source.get(self.cursor)?;
-        accepted.contains(&byte).then(|| {
-            self.cursor += 1;
-            byte
-        })
-    }
 }
 
 fn parse_vector_assertion(
@@ -11654,91 +10195,6 @@ fn input_handler_parts(
     }
 }
 
-fn jump_handler_parts(
-    cst: &CanonicalSourceCstV1,
-) -> Result<Option<JumpHandlerParts<'_>>, CanonicalSourceErrorV1> {
-    let handlers = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::JumpHandler(handler) => Some(handler),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let Some(handler) = handlers.first().copied() else {
-        return Ok(None);
-    };
-    if handlers.len() != 1 {
-        return Err(CanonicalSourceErrorV1::InvalidJumpHandler {
-            origin: handler.origin,
-        });
-    }
-    let velocities = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::VectorAssertion(assertion)
-                if assertion.relation == handler.velocity_relation =>
-            {
-                Some(assertion)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let grounded = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::BooleanAssertion(assertion)
-                if assertion.relation == handler.grounded_relation =>
-            {
-                Some(assertion)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let jump_speeds = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::NumberAssertion(assertion)
-                if assertion.subject == handler.jump_speed_subject
-                    && assertion.relation == handler.jump_speed_relation =>
-            {
-                Some(assertion)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let ([velocity], [grounded], [jump_speed]) = (
-        velocities.as_slice(),
-        grounded.as_slice(),
-        jump_speeds.as_slice(),
-    ) else {
-        let missing = velocities.is_empty() || grounded.is_empty() || jump_speeds.is_empty();
-        return Err(if missing {
-            CanonicalSourceErrorV1::MissingJumpInitialAssertion {
-                origin: handler.origin,
-            }
-        } else {
-            CanonicalSourceErrorV1::AmbiguousJumpInitialAssertion {
-                origin: handler.origin,
-            }
-        });
-    };
-    if velocity.subject != grounded.subject {
-        return Err(CanonicalSourceErrorV1::InvalidJumpHandler {
-            origin: handler.origin,
-        });
-    }
-    Ok(Some(JumpHandlerParts {
-        handler,
-        velocity,
-        grounded,
-        jump_speed,
-    }))
-}
-
 fn scalar_handler_parts(
     cst: &CanonicalSourceCstV1,
 ) -> Result<Vec<ScalarHandlerParts<'_>>, CanonicalSourceErrorV1> {
@@ -12096,188 +10552,6 @@ fn scalar_expression_matches_kind(
     }
 }
 
-fn tick_program_parts(
-    cst: &CanonicalSourceCstV1,
-) -> Result<Option<TickProgramParts<'_>>, CanonicalSourceErrorV1> {
-    let handlers = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::TickHandler(handler) => Some(handler),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if handlers.is_empty() {
-        return Ok(None);
-    }
-    let origin = handlers[0].origin;
-    if handlers.len() != 3 {
-        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-    }
-    let grounded = handlers
-        .iter()
-        .copied()
-        .filter(|handler| {
-            handler.predicates.iter().any(|predicate| {
-                matches!(
-                    predicate,
-                    CanonicalTickPredicateV1::EqualBoolean(CanonicalTickValueV1::Grounded, true)
-                )
-            })
-        })
-        .collect::<Vec<_>>();
-    let landing = handlers
-        .iter()
-        .copied()
-        .filter(|handler| {
-            handler.assignments.iter().any(|assignment| {
-                matches!(
-                    assignment,
-                    CanonicalTickAssignmentV1 {
-                        target: CanonicalTickAssignmentTargetV1::Grounded,
-                        value: CanonicalTickAssignmentValueV1::Boolean(true),
-                    }
-                )
-            })
-        })
-        .collect::<Vec<_>>();
-    let airborne = handlers
-        .iter()
-        .copied()
-        .filter(|handler| {
-            handler.predicates.iter().any(|predicate| {
-                matches!(
-                    predicate,
-                    CanonicalTickPredicateV1::EqualBoolean(CanonicalTickValueV1::Grounded, false)
-                )
-            }) && !handler.assignments.iter().any(|assignment| {
-                matches!(assignment.target, CanonicalTickAssignmentTargetV1::Grounded)
-            })
-        })
-        .collect::<Vec<_>>();
-    let ([grounded], [airborne], [landing]) =
-        (grounded.as_slice(), airborne.as_slice(), landing.as_slice())
-    else {
-        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-    };
-
-    let vectors = |relation: &[u8]| {
-        cst.items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                CstKind::VectorAssertion(assertion) if assertion.relation == relation => {
-                    Some(assertion)
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-    };
-    let booleans = |relation: &[u8]| {
-        cst.items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                CstKind::BooleanAssertion(assertion) if assertion.relation == relation => {
-                    Some(assertion)
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-    };
-    let numbers = |relation: &[u8]| {
-        cst.items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                CstKind::NumberAssertion(assertion)
-                    if assertion.subject == b"jump-arena" && assertion.relation == relation =>
-                {
-                    Some(assertion)
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-    };
-    let position = vectors(b"position");
-    let velocity = vectors(b"velocity");
-    let intent = vectors(b"horizontal intent");
-    let grounded_assertions = booleans(b"grounded");
-    let gravity = numbers(b"gravity");
-    let move_speed = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::NumberAssertion(assertion) if assertion.relation == b"move speed" => {
-                Some(assertion)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let floor_height = numbers(b"floor height");
-    let minimum_x = numbers(b"minimum x");
-    let maximum_x = numbers(b"maximum x");
-    let minimum_z = numbers(b"minimum z");
-    let maximum_z = numbers(b"maximum z");
-    let (
-        [position],
-        [velocity],
-        [intent],
-        [grounded_assertion],
-        [gravity],
-        [move_speed],
-        [floor_height],
-        [minimum_x],
-        [maximum_x],
-        [minimum_z],
-        [maximum_z],
-    ) = (
-        position.as_slice(),
-        velocity.as_slice(),
-        intent.as_slice(),
-        grounded_assertions.as_slice(),
-        gravity.as_slice(),
-        move_speed.as_slice(),
-        floor_height.as_slice(),
-        minimum_x.as_slice(),
-        maximum_x.as_slice(),
-        minimum_z.as_slice(),
-        maximum_z.as_slice(),
-    )
-    else {
-        let missing = [
-            position.len(),
-            velocity.len(),
-            intent.len(),
-            grounded_assertions.len(),
-            gravity.len(),
-            move_speed.len(),
-            floor_height.len(),
-            minimum_x.len(),
-            maximum_x.len(),
-            minimum_z.len(),
-            maximum_z.len(),
-        ]
-        .contains(&0);
-        return Err(if missing {
-            CanonicalSourceErrorV1::MissingTickInitialAssertion { origin }
-        } else {
-            CanonicalSourceErrorV1::AmbiguousTickInitialAssertion { origin }
-        });
-    };
-    Ok(Some(TickProgramParts {
-        handlers: [*grounded, *airborne, *landing],
-        position,
-        velocity,
-        intent,
-        grounded: grounded_assertion,
-        gravity,
-        move_speed,
-        floor_height,
-        minimum_x,
-        maximum_x,
-        minimum_z,
-        maximum_z,
-    }))
-}
-
 fn assertion_producer(subject: &[u8], relation: &[u8]) -> CanonicalSemanticProducerV1 {
     let mut key = Vec::new();
     frame_bytes(&mut key, subject);
@@ -12429,10 +10703,8 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
             CstKind::Relation(relation) if relation.contract_origin.is_none() => Some((&relation.designation, false, false)),
             CstKind::Relation(_) => None,
             CstKind::InputHandler(_)
-            | CstKind::JumpHandler(_)
             | CstKind::ScalarHandler(_)
             | CstKind::GeneralHandler(_)
-            | CstKind::TickHandler(_)
             | CstKind::KeyboardBinding(_)
             | CstKind::ScalarInputBinding(_)
             | CstKind::ScalarLaw(_)

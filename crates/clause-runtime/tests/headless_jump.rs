@@ -165,45 +165,55 @@ fn projected_vec3(scope: TermScope, roles: [LocalRoleRefV2; 3]) -> Term {
     )
 }
 
-fn source_handlers(
-    source: &[u8],
-    scope: TermScope,
-) -> (
-    CanonicalInputHandlerV1,
-    CanonicalJumpHandlerV1,
-    CanonicalTickProgramV1,
-    Vec<CanonicalScalarHandlerV1>,
-) {
-    let cst = read_canonical_source_v1(source).expect("canonical arena source reads");
+fn source_handlers(source: &[u8], scope: TermScope) -> CanonicalSourcePackageSliceV1 {
+    let frontend = CanonicalDeclaredFrontendV1::read(DECLARED_FOCUSED_FRONTEND_SOURCE_V1)
+        .expect("declared frontend compiles");
+    let cst = read_canonical_source_with_declared_frontend_v1(source, &frontend)
+        .expect("canonical arena source reads");
     let plan = plan_independent_canonical_source_allocations_v1(
-        &cst,
-        ProgramChangeOccurrenceId::from_bytes(raw_id(SOURCE_ALLOCATION_ROOT_TAG)),
-    )
-    .expect("canonical arena source receives rooted allocations");
-    let compiled = elaborate_canonical_source_package_v1(
-        &cst,
-        CanonicalSourceContextV1 {
-            universe: scope.universe,
-            semantics: scope.semantics,
-        },
-        &plan,
-    )
-    .expect("canonical arena source reaches the checked package boundary");
-    let input_handler = compiled
-        .input_handler
-        .expect("the bounded source profile owns one on-input handler");
-    let jump_handler = compiled
-        .jump_handler
-        .expect("the bounded source profile owns one on-jump handler");
-    let tick_program = compiled
-        .tick_program
-        .expect("the bounded source profile owns the three on-tick branches");
-    (
-        input_handler,
-        jump_handler,
-        tick_program,
-        compiled.scalar_handlers,
-    )
+        &cst, ProgramChangeOccurrenceId::from_bytes(raw_id(SOURCE_ALLOCATION_ROOT_TAG)),
+    ).expect("canonical arena source receives rooted allocations");
+    elaborate_canonical_source_package_v1(&cst, CanonicalSourceContextV1 {
+        universe: scope.universe, semantics: scope.semantics,
+    }, &plan).expect("canonical arena source reaches the checked package boundary")
+}
+
+fn arena_bindings(source: &[u8]) -> (CanonicalSourcePackageSliceV1, ExecutableCanonicalProgramV1) {
+    let scope = TermScope {
+        universe: UniverseId::from_bytes(raw_id(1)),
+        semantics: ClauseSemanticsId::from_bytes(raw_id(2)),
+    };
+    let compiled = source_handlers(source, scope);
+    let roles = (1..=compiled.state_cells.len()).map(|id| LocalRoleRefV2 {
+        schema: RelationSchemaLocalId::new(2), role: RoleLocalId::new(id as u32),
+    }).collect::<Vec<_>>();
+    let lowered = lower_canonical_executable_program_v1(scope, &compiled.state_cells,
+        &compiled.executable_handlers, &roles).expect("general source lowering succeeds");
+    (compiled, lowered)
+}
+
+fn arena_entry(source: &[u8], designation: &[u8]) -> u16 {
+    let (compiled, lowered) = arena_bindings(source);
+    let handler = compiled.executable_handlers.iter().find(|h| h.designation == designation)
+        .unwrap_or_else(|| panic!("source lacks {:?}; available: {:?}", String::from_utf8_lossy(designation), compiled.executable_handlers.iter().map(|h| String::from_utf8_lossy(&h.designation)).collect::<Vec<_>>()));
+    lowered.handlers.iter().find(|binding| binding.handler == handler.id)
+        .expect("source event has a physical binding").invocation_entry
+}
+
+fn arena_slot(source: &[u8], subject: &[u8], relation: &[u8], field: Option<&[u8]>) -> usize {
+    let (_, lowered) = arena_bindings(source);
+    lowered.states.iter().find(|binding| {
+        binding.state.subject == subject && binding.state.relation_designation == relation
+            && match (&binding.state.path, field) {
+                (CanonicalStatePathV1::Scalar, None) => true,
+                (CanonicalStatePathV1::Field { designation, .. }, Some(field)) => designation == field,
+                _ => false,
+            }
+    }).expect("source state has a physical binding").slot as usize
+}
+
+fn arena_occurrence(source: &[u8], designation: &[u8], arguments: &[f64]) -> ExecutableOccurrenceV1 {
+    occurrence(arena_entry(source, designation), arguments)
 }
 
 fn source_scalar_handler(source: &[u8], scope: TermScope) -> CanonicalScalarHandlerV1 {
@@ -282,279 +292,48 @@ fn scalar_program(
 }
 
 fn headless_program(
-    scope: TermScope,
-    input: &CanonicalInputHandlerV1,
-    jump: &CanonicalJumpHandlerV1,
-    tick: &CanonicalTickProgramV1,
-    scalar_handlers: &[CanonicalScalarHandlerV1],
-) -> ExecutableProgramV1 {
-    let collectible = scalar_handlers.first();
-    let objective = scalar_handlers.get(3);
-    let role = |id| LocalRoleRefV2 {
-        schema: RelationSchemaLocalId::new(2),
-        role: RoleLocalId::new(id),
-    };
-    let player = projection_object(
-        scope,
-        vec![
-            (
-                b"position",
-                projected_vec3(scope, [role(1), role(2), role(3)]),
-            ),
-            (
-                b"velocity",
-                projected_vec3(scope, [role(4), role(5), role(6)]),
-            ),
-            (
-                b"yaw",
-                projection_role(scope, role(7), ExecutableValueKindV1::Number),
-            ),
-            (
-                b"grounded",
-                projection_role(scope, role(8), ExecutableValueKindV1::Boolean),
-            ),
-        ],
-    );
-    let platform = projection_object(
-        scope,
-        vec![
-            (
-                b"position",
-                projected_vec3(scope, [role(9), role(10), role(11)]),
-            ),
-            (
-                b"size",
-                projected_vec3(scope, [role(12), role(13), role(14)]),
-            ),
-        ],
-    );
-    let mut world_fields = vec![(
-        b"platforms".as_slice(),
-        projection_array(scope, vec![platform]),
-    )];
-    if collectible.is_some() {
-        let collectible = projection_object(
-            scope,
-            vec![
-                (
-                    b"position",
-                    projected_vec3(scope, [role(21), role(22), role(23)]),
-                ),
-                (
-                    b"state",
-                    projection_role(scope, role(24), ExecutableValueKindV1::Symbol),
-                ),
-            ],
-        );
-        world_fields.push((
-            b"collectibles".as_slice(),
-            projection_array(scope, vec![collectible]),
-        ));
-    }
-    if objective.is_some() {
-        world_fields.push((
-            b"objective".as_slice(),
-            projection_object(
-                scope,
-                vec![(
-                    b"state",
-                    projection_role(scope, role(25), ExecutableValueKindV1::Symbol),
-                )],
-            ),
-        ));
-    }
-    let template = projection_object(
-        scope,
-        vec![
-            (b"player", player),
-            (b"world", projection_object(scope, world_fields)),
-        ],
-    );
-
-    let mut initial_configuration = vec![
-        number(0.0),
-        number(0.0),
-        number(0.0),
-        number(0.0),
-        number(0.0),
-        ExecutableValueV1::Boolean(false),
-        number(0.0),
-        number(0.0),
-        number(0.0),
-        number(0.0),
-        number(0.0),
-        number(0.0),
-        number(0.0),
-        number(0.0),
-        number(0.0),
-        number(0.0),
-        number(-0.25),
-        number(0.0),
-        number(12.0),
-        number(0.5),
-        number(12.0),
-        number(0.0),
-        number(0.0),
-        number(0.0),
-        number(0.0),
-    ];
-    if let Some(collectible) = collectible {
-        initial_configuration.extend([
-            number(0.08),
-            number(0.9),
-            number(0.0),
-            match &collectible.initial_value {
-                CanonicalScalarValueV1::Number(bits) => ExecutableValueV1::Number(*bits),
-                CanonicalScalarValueV1::Boolean(value) => ExecutableValueV1::Boolean(*value),
-                CanonicalScalarValueV1::Symbol(value) => ExecutableValueV1::symbol(value)
-                    .expect("source-owned collectible state is bounded"),
-                CanonicalScalarValueV1::Text(value) => ExecutableValueV1::text(value)
-                    .expect("source-owned collectible Text is bounded"),
-                CanonicalScalarValueV1::Referent(_) | CanonicalScalarValueV1::RelationTable(_) => {
-                    panic!("collectible fixture state must remain scalar")
+    scope: TermScope, compiled: &CanonicalSourcePackageSliceV1,
+) -> ExecutableCanonicalProgramV1 {
+    let roles = (1..=compiled.state_cells.len()).map(|id| LocalRoleRefV2 {
+        schema: RelationSchemaLocalId::new(2), role: RoleLocalId::new(id as u32),
+    }).collect::<Vec<_>>();
+    let mut lowered = lower_canonical_executable_program_v1(scope, &compiled.state_cells,
+        &compiled.executable_handlers, &roles).expect("the real specimen lowers through the general carrier");
+    let state_role = |subject: &[u8], relation: &[u8], field: Option<&[u8]>| {
+        lowered.states.iter().find(|binding| {
+            binding.state.subject == subject && binding.state.relation_designation == relation
+                && match (&binding.state.path, field) {
+                    (CanonicalStatePathV1::Scalar, None) => true,
+                    (CanonicalStatePathV1::Field { designation, .. }, Some(field)) => designation == field,
+                    _ => false,
                 }
-            },
-        ]);
-    }
-    if let Some(objective) = objective {
-        initial_configuration.push(match &objective.initial_value {
-            CanonicalScalarValueV1::Symbol(value) => {
-                ExecutableValueV1::symbol(value).expect("source-owned objective state is bounded")
-            }
-            _ => panic!("coherent objective state must be symbolic"),
-        });
-    }
-    let mut projection_bindings = [
-        (1, 0, ExecutableValueKindV1::Number),
-        (2, 1, ExecutableValueKindV1::Number),
-        (3, 12, ExecutableValueKindV1::Number),
-        (4, 2, ExecutableValueKindV1::Number),
-        (5, 3, ExecutableValueKindV1::Number),
-        (6, 13, ExecutableValueKindV1::Number),
-        (7, 14, ExecutableValueKindV1::Number),
-        (8, 5, ExecutableValueKindV1::Boolean),
-        (9, 15, ExecutableValueKindV1::Number),
-        (10, 16, ExecutableValueKindV1::Number),
-        (11, 17, ExecutableValueKindV1::Number),
-        (12, 18, ExecutableValueKindV1::Number),
-        (13, 19, ExecutableValueKindV1::Number),
-        (14, 20, ExecutableValueKindV1::Number),
-    ]
-    .into_iter()
-    .map(
-        |(role_id, slot, value_kind)| ExecutableProjectionBindingV1 {
-            role: role(role_id),
-            slot,
-            value_kind,
-        },
-    )
-    .collect::<Vec<_>>();
-    if collectible.is_some() {
-        projection_bindings.extend(
-            [
-                (21, 25, ExecutableValueKindV1::Number),
-                (22, 26, ExecutableValueKindV1::Number),
-                (23, 27, ExecutableValueKindV1::Number),
-                (24, 28, ExecutableValueKindV1::Symbol),
-            ]
-            .into_iter()
-            .map(
-                |(role_id, slot, value_kind)| ExecutableProjectionBindingV1 {
-                    role: role(role_id),
-                    slot,
-                    value_kind,
-                },
-            ),
-        );
-    }
-    if objective.is_some() {
-        projection_bindings.push(ExecutableProjectionBindingV1 {
-            role: role(25),
-            slot: 29,
-            value_kind: ExecutableValueKindV1::Symbol,
-        });
-    }
-    let mut program = ExecutableProgramV1 {
-        // Gameplay coordinates are placeholders populated only by source-owned
-        // input, jump, and tick lowering. The remaining values are passive
-        // renderer-only platform coordinates absent from canonical game source.
-        initial_configuration,
-        rules: vec![],
-        projection: Some(ExecutableProjectionV1 {
-            bindings: projection_bindings,
-            template,
-        }),
+        }).expect("rendered source state has a generic binding").projection_role
     };
-    lower_canonical_input_handler_v1(
-        &mut program,
-        input,
-        ExecutableCanonicalInputBindingV1 {
-            entry: 0,
-            x_slot: 4,
-            z_slot: 21,
-        },
-    )
-    .expect("source-owned input handler lowers to its physical slots");
-    lower_canonical_jump_handler_v1(
-        &mut program,
-        jump,
-        ExecutableCanonicalJumpBindingV1 {
-            entry: 1,
-            velocity_slots: [2, 3, 13],
-            grounded_slot: 5,
-            jump_speed_slot: 7,
-        },
-    )
-    .expect("source-owned jump handler lowers to its physical slots");
-    lower_canonical_tick_program_v1(
-        &mut program,
-        tick,
-        ExecutableCanonicalTickBindingV1 {
-            entry: 2,
-            delta_time_argument: 0,
-            position_slots: [0, 1, 12],
-            velocity_slots: [2, 3, 13],
-            intent_slots: [4, 22, 21],
-            grounded_slot: 5,
-            gravity_slot: 6,
-            move_speed_slot: 8,
-            floor_height_slot: 9,
-            minimum_x_slot: 10,
-            maximum_x_slot: 11,
-            minimum_z_slot: 23,
-            maximum_z_slot: 24,
-            state_guard_slots: vec![],
-        },
-    )
-    .expect("source-owned tick program lowers to physical slots");
-    let scalar_state_slots = [28, 3, 5, 29, 29, 29, 29];
-    for (index, handler) in scalar_handlers.iter().enumerate() {
-        let state_slot = *scalar_state_slots
-            .get(index)
-            .expect("bounded gameplay profile has collect plus two spring cells");
-        assert_eq!(handler.parameters.len(), if index == 5 { 0 } else { 2 });
-        lower_canonical_scalar_handler_v1(
-            &mut program,
-            handler,
-            ExecutableCanonicalScalarBindingV1 {
-                entry: 3 + u16::try_from(index).expect("bounded handler index fits u16"),
-                state_slot,
-                parameters: handler
-                    .parameters
-                    .iter()
-                    .zip([0, 12])
-                    .map(
-                        |(parameter, slot)| ExecutableCanonicalScalarParameterBindingV1 {
-                            slot,
-                            parameter: parameter.clone(),
-                        },
-                    )
-                    .collect(),
-            },
-        )
-        .expect("source-owned automatic handler lowers beside arena state");
+    let literal = |value: f64| projection_atom(scope, b"clause/process-projected-f64-v1", &value.to_bits().to_le_bytes());
+    let vector = |values: [f64; 3]| projection_object(scope,
+        [b"x".as_slice(), b"y", b"z"].into_iter().zip(values).map(|(field,value)| (field,literal(value))).collect());
+    let player = projection_object(scope, vec![
+        (b"position", projected_vec3(scope, [b"x".as_slice(), b"y", b"z"].map(|f| state_role(b"player-1", b"position", Some(f))))),
+        (b"velocity", projected_vec3(scope, [b"x".as_slice(), b"y", b"z"].map(|f| state_role(b"player-1", b"velocity", Some(f))))),
+        (b"yaw", literal(0.0)),
+        (b"grounded", projection_role(scope, state_role(b"player-1", b"grounded", None), ExecutableValueKindV1::Boolean)),
+    ]);
+    let mut world = vec![(b"platforms".as_slice(), projection_array(scope, vec![
+        projection_object(scope, vec![(b"position", vector([0.0,-0.25,0.0])),(b"size", vector([12.0,0.5,12.0]))])
+    ]))];
+    if let Some(cell) = compiled.state_cells.iter().find(|c| c.state.relation_designation == b"state") {
+        world.push((b"collectibles", projection_array(scope, vec![projection_object(scope, vec![
+            (b"position", vector([0.08,0.9,0.0])),
+            (b"state", projection_role(scope, state_role(&cell.state.subject, &cell.state.relation_designation, None), ExecutableValueKindV1::Symbol)),
+        ])])));
     }
-    program
+    if let Some(cell) = compiled.state_cells.iter().find(|c| c.state.relation_designation == b"objective-state") {
+        world.push((b"objective", projection_object(scope, vec![(b"state", projection_role(scope,
+            state_role(&cell.state.subject, &cell.state.relation_designation, None), ExecutableValueKindV1::Symbol))])));
+    }
+    let projection = lowered.program.projection.as_mut().expect("arena has a projection");
+    projection.template = projection_object(scope, vec![(b"player",player), (b"world",projection_object(scope,world)), (b"state",projection.template.clone())]);
+    lowered
 }
 
 fn checked_program_package_with_scopes(
@@ -689,94 +468,20 @@ fn physical_plan_with_source(
         universe: constitution.universe(),
         semantics: constitution.semantics(),
     };
-    let (input_handler, jump_handler, tick_program, scalar_handlers) =
-        source_handlers(source, scope);
-    let mut input_events = vec![
-        ExecutableInputBindingV1 {
-            role: role(15),
-            source: ExecutableInputSourceV1::Keyboard {
-                code: b"KeyA".to_vec(),
-                phase: ExecutableKeyPhaseV1::Down,
+    let compiled = source_handlers(source, scope);
+    let lowered = headless_program(scope, &compiled);
+    let input_events = compiled.keyboard_bindings.iter().zip((1..).filter(|id| *id != 20))
+        .map(|(binding, id)| ExecutableInputBindingV1 {
+            role: role(id),
+            source: ExecutableInputSourceV1::Keyboard { code: binding.code.clone(), phase: match binding.phase {
+                CanonicalKeyPhaseV1::Down => ExecutableKeyPhaseV1::Down,
+                CanonicalKeyPhaseV1::Up => ExecutableKeyPhaseV1::Up,
+            }},
+            occurrence: ExecutableOccurrenceV1 {
+                entry: arena_entry(source, &binding.handler_designation),
+                arguments: binding.arguments.iter().copied().map(ExecutableValueV1::Number).collect(),
             },
-            occurrence: occurrence(0, &[-1.0, 0.0]),
-        },
-        ExecutableInputBindingV1 {
-            role: role(16),
-            source: ExecutableInputSourceV1::Keyboard {
-                code: b"KeyA".to_vec(),
-                phase: ExecutableKeyPhaseV1::Up,
-            },
-            occurrence: occurrence(0, &[0.0, 0.0]),
-        },
-        ExecutableInputBindingV1 {
-            role: role(17),
-            source: ExecutableInputSourceV1::Keyboard {
-                code: b"KeyD".to_vec(),
-                phase: ExecutableKeyPhaseV1::Down,
-            },
-            occurrence: occurrence(0, &[1.0, 0.0]),
-        },
-        ExecutableInputBindingV1 {
-            role: role(18),
-            source: ExecutableInputSourceV1::Keyboard {
-                code: b"KeyD".to_vec(),
-                phase: ExecutableKeyPhaseV1::Up,
-            },
-            occurrence: occurrence(0, &[0.0, 0.0]),
-        },
-        ExecutableInputBindingV1 {
-            role: role(19),
-            source: ExecutableInputSourceV1::Keyboard {
-                code: b"Space".to_vec(),
-                phase: ExecutableKeyPhaseV1::Down,
-            },
-            occurrence: occurrence(1, &[]),
-        },
-    ];
-    if scalar_handlers.len() > 5 {
-        input_events.extend([
-            ExecutableInputBindingV1 {
-                role: role(21),
-                source: ExecutableInputSourceV1::Keyboard {
-                    code: b"KeyW".to_vec(),
-                    phase: ExecutableKeyPhaseV1::Down,
-                },
-                occurrence: occurrence(0, &[0.0, 1.0]),
-            },
-            ExecutableInputBindingV1 {
-                role: role(22),
-                source: ExecutableInputSourceV1::Keyboard {
-                    code: b"KeyW".to_vec(),
-                    phase: ExecutableKeyPhaseV1::Up,
-                },
-                occurrence: occurrence(0, &[0.0, 0.0]),
-            },
-            ExecutableInputBindingV1 {
-                role: role(23),
-                source: ExecutableInputSourceV1::Keyboard {
-                    code: b"KeyS".to_vec(),
-                    phase: ExecutableKeyPhaseV1::Down,
-                },
-                occurrence: occurrence(0, &[0.0, -1.0]),
-            },
-            ExecutableInputBindingV1 {
-                role: role(24),
-                source: ExecutableInputSourceV1::Keyboard {
-                    code: b"KeyS".to_vec(),
-                    phase: ExecutableKeyPhaseV1::Up,
-                },
-                occurrence: occurrence(0, &[0.0, 0.0]),
-            },
-            ExecutableInputBindingV1 {
-                role: role(25),
-                source: ExecutableInputSourceV1::Keyboard {
-                    code: b"KeyR".to_vec(),
-                    phase: ExecutableKeyPhaseV1::Down,
-                },
-                occurrence: occurrence(8, &[]),
-            },
-        ]);
-    }
+        }).collect();
     ExecutablePhysicalPlanV1 {
         source_metadata: None,
         application_shape: constitution
@@ -795,24 +500,16 @@ fn physical_plan_with_source(
             events: input_events,
             tick: ExecutableTickBindingV1 {
                 role: role(20),
-                entries: std::iter::once(2)
-                    .chain(
-                        (0..scalar_handlers.len())
-                            .filter(|index| *index != 5)
-                            .map(|index| {
-                                3 + u16::try_from(index).expect("bounded handler index fits u16")
-                            }),
-                    )
-                    .collect(),
+                entries: {
+                    let mut bindings = lowered.handlers.iter().filter(|h| h.trigger != CanonicalHandlerTriggerV1::External
+                        && h.trigger != CanonicalHandlerTriggerV1::RelationClosure).collect::<Vec<_>>();
+                    bindings.sort_by_key(|h| (h.trigger, h.handler));
+                    let mut seen = std::collections::BTreeSet::new();
+                    bindings.into_iter().filter_map(|h| seen.insert(h.entry).then_some(h.entry)).collect()
+                },
             },
         }),
-        program: headless_program(
-            scope,
-            &input_handler,
-            &jump_handler,
-            &tick_program,
-            &scalar_handlers,
-        ),
+        program: lowered.program,
     }
 }
 
@@ -882,12 +579,12 @@ fn browser_state_admission_scopes(checker_count: usize) -> Vec<StateAdmissionSco
     for ordinal in 0..BROWSER_ADMISSION_COUNT {
         session
             .apply_opaque_input(
-                &encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0])).unwrap(),
+                &encode_executable_occurrence_v1(&arena_occurrence(WORLD, b"input", &[1.0, 0.0])).unwrap(),
             )
             .expect("fixture horizontal input advances");
         session
             .apply_opaque_input_and_emit_candidate(
-                &encode_executable_occurrence_v1(&occurrence(2, &[0.25])).unwrap(),
+                &encode_executable_occurrence_v1(&arena_occurrence(WORLD, b"tick", &[0.25])).unwrap(),
             )
             .expect("fixture tick emits one candidate");
         let candidate = session.candidate().unwrap().unwrap().clone();
@@ -964,7 +661,7 @@ fn browser_gameplay_state_admission_scopes_with_continuation(
     .expect("gameplay scope derivation opens one exact session");
 
     session
-        .apply_opaque_input(&encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0])).unwrap())
+        .apply_opaque_input(&encode_executable_occurrence_v1(&arena_occurrence(&source, b"input", &[1.0, 0.0])).unwrap())
         .expect("gameplay horizontal input advances");
     session
         .apply_fixed_tick_and_emit_candidate(16)
@@ -1038,11 +735,11 @@ fn browser_dash_gameplay_state_admission_scope(source: &[u8]) -> StateAdmissionS
     .expect("dash-jump scope derivation opens one exact session");
 
     session
-        .apply_opaque_input(&encode_executable_occurrence_v1(&occurrence(1, &[])).unwrap())
+        .apply_opaque_input(&encode_executable_occurrence_v1(&arena_occurrence(&source, b"jump", &[])).unwrap())
         .expect("dash-jump input advances locally");
     session
         .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&occurrence(2, &[0.016])).unwrap(),
+            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"tick", &[0.016])).unwrap(),
         )
         .expect("dash-jump tick emits one candidate");
     let candidate = session
@@ -1591,7 +1288,7 @@ fn admit_source_jump(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<
     .expect("source jump session starts through the persistent runtime");
     session
         .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&occurrence(1, &[]))
+            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"jump", &[]))
                 .expect("source jump occurrence encodes"),
         )
         .expect("source-owned jump meaning produces one hidden candidate");
@@ -1721,13 +1418,13 @@ fn admit_source_tick(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<
     .expect("source tick session starts through the persistent runtime");
     session
         .apply_opaque_input(
-            &encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"input", &[1.0, 0.0]))
                 .expect("source input occurrence encodes"),
         )
         .expect("source-owned horizontal intent enters before tick");
     session
         .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&occurrence(2, &[3.0]))
+            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"tick", &[3.0]))
                 .expect("source tick occurrence encodes"),
         )
         .expect("source-owned tick meaning produces one hidden candidate");
@@ -1790,14 +1487,14 @@ fn admit_source_jump_then_tick(
     .expect("air-momentum session starts through the persistent runtime");
     session
         .apply_opaque_input(
-            &encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"input", &[1.0, 0.0]))
                 .expect("horizontal intent occurrence encodes"),
         )
         .expect("horizontal intent enters before jumping");
 
     session
         .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&occurrence(1, &[])).expect("jump occurrence encodes"),
+            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"jump", &[])).expect("jump occurrence encodes"),
         )
         .expect("jump emits one hidden candidate");
     let jump_candidate = session
@@ -1821,14 +1518,14 @@ fn admit_source_jump_then_tick(
     let airborne = session
         .configuration()
         .expect("jump successor installs one live configuration");
-    assert_eq!(value(airborne, 2), 0.0);
-    assert_eq!(value(airborne, 3), 8.0);
-    assert_eq!(value(airborne, 4), 1.0);
-    assert_eq!(airborne[5], ExecutableValueV1::Boolean(false));
+    assert_eq!(value(airborne, arena_slot(&source, b"player-1", b"velocity", Some(b"x"))), 0.0);
+    assert_eq!(value(airborne, arena_slot(&source, b"player-1", b"velocity", Some(b"y"))), 8.0);
+    assert_eq!(value(airborne, arena_slot(&source, b"player-1", b"horizontal-intent", Some(b"x"))), 1.0);
+    assert_eq!(airborne[arena_slot(source, b"player-1", b"grounded", None)], ExecutableValueV1::Boolean(false));
 
     session
         .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&occurrence(2, &[0.25]))
+            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"tick", &[0.25]))
                 .expect("airborne tick occurrence encodes"),
         )
         .expect("airborne tick emits one hidden candidate");
@@ -1917,9 +1614,9 @@ fn browser_fixture_request() -> WasmProcessRequestV1 {
             budget_units: 100,
         },
         occurrences: vec![
-            encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+            encode_executable_occurrence_v1(&arena_occurrence(WORLD, b"input", &[1.0, 0.0]))
                 .expect("fixture input occurrence encodes"),
-            encode_executable_occurrence_v1(&occurrence(2, &[0.25]))
+            encode_executable_occurrence_v1(&arena_occurrence(WORLD, b"tick", &[0.25]))
                 .expect("fixture tick occurrence encodes"),
         ],
         render_slots: vec![],
@@ -1998,16 +1695,16 @@ fn browser_gameplay_fixture_request_for_package(
         },
         occurrences: if dash_jump {
             vec![
-                encode_executable_occurrence_v1(&occurrence(1, &[]))
+                encode_executable_occurrence_v1(&arena_occurrence(&source, b"jump", &[]))
                     .expect("dash-jump occurrence encodes"),
-                encode_executable_occurrence_v1(&occurrence(2, &[0.016]))
+                encode_executable_occurrence_v1(&arena_occurrence(&source, b"tick", &[0.016]))
                     .expect("dash-jump tick occurrence encodes"),
             ]
         } else {
             vec![
-                encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+                encode_executable_occurrence_v1(&arena_occurrence(&source, b"input", &[1.0, 0.0]))
                     .expect("gameplay input occurrence encodes"),
-                encode_executable_occurrence_v1(&occurrence(2, &[0.016]))
+                encode_executable_occurrence_v1(&arena_occurrence(&source, b"tick", &[0.016]))
                     .expect("gameplay tick occurrence encodes"),
             ]
         },
@@ -2154,8 +1851,8 @@ fn admit_spring_journey(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (V
         .expect("spring contact retains one hidden candidate")
         .clone();
     assert_eq!(launch.produced_by, launch_step.id);
-    assert!(launch.configuration[3].as_number().unwrap() > 0.0);
-    assert_eq!(launch.configuration[5].as_boolean(), Some(false));
+    assert!(launch.configuration[arena_slot(&source, b"player-1", b"velocity", Some(b"y"))].as_number().unwrap() > 0.0);
+    assert_eq!(launch.configuration[arena_slot(&source, b"player-1", b"grounded", None)].as_boolean(), Some(false));
     assert_eq!(
         session
             .configuration()
@@ -2251,7 +1948,7 @@ fn canonical_source_input_reaches_persistent_admission_and_projection() {
 
     session
         .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+            &encode_executable_occurrence_v1(&arena_occurrence(WORLD, b"input", &[1.0, 0.0]))
                 .expect("source input occurrence encodes"),
         )
         .expect("source-owned input meaning produces one hidden candidate");
@@ -2270,8 +1967,8 @@ fn canonical_source_input_reaches_persistent_admission_and_projection() {
         .admit_candidate_with_projection(authorization)
         .expect("separate Admission creates the successor and projection");
     assert_eq!(successor.predecessor, facts.initial_state);
-    assert_eq!(successor.configuration[4].as_number(), Some(1.0));
-    assert_eq!(successor.configuration[21].as_number(), Some(0.0));
+    assert_eq!(successor.configuration[arena_slot(WORLD, b"player-1", b"horizontal-intent", Some(b"x"))].as_number(), Some(1.0));
+    assert_eq!(successor.configuration[arena_slot(WORLD, b"player-1", b"horizontal-intent", Some(b"z"))].as_number(), Some(0.0));
     let projection = projection.expect("admitted source input emits the renderer projection");
     assert_eq!(projection.state, successor.id);
     assert_arena_projection(&projection.term, 0.0, 0.0);
@@ -2395,7 +2092,7 @@ fn automatic_contact_tick_keeps_collection_hidden_until_admission_and_inactive_a
         .input
         .as_ref()
         .expect("gameplay CPP1 carries one physical input plan");
-    assert_eq!(input.tick.entries, [2, 3, 4, 5]);
+    assert_eq!(input.tick.entries, { let mut reactions = [b"collect".as_slice(), b"spring-contact", b"spring-airborne"].map(|name| arena_entry(&source, name)); reactions.sort(); std::iter::once(arena_entry(&source, b"tick")).chain(reactions).collect::<Vec<_>>() });
     assert!(input.events.iter().all(|binding| {
         !matches!(
             &binding.source,
@@ -2406,23 +2103,23 @@ fn automatic_contact_tick_keeps_collection_hidden_until_admission_and_inactive_a
         .program
         .rules
         .iter()
-        .find(|rule| rule.entry == 3)
+        .find(|rule| rule.entry == arena_entry(&source, b"collect"))
         .expect("Clause contact meaning lowers to the final chained entry");
     assert_eq!(
         contact_rule.predicates,
         [
             ExecutableExpressionV1::Equal(
-                Box::new(ExecutableExpressionV1::Slot(28)),
+                Box::new(ExecutableExpressionV1::Slot(arena_slot(&source, b"coin-1", b"state", None) as u16)),
                 Box::new(ExecutableExpressionV1::Constant(
                     ExecutableValueV1::symbol(b"active").expect("active is a bounded symbol"),
                 )),
             ),
             ExecutableExpressionV1::Equal(
-                Box::new(ExecutableExpressionV1::Slot(0)),
+                Box::new(ExecutableExpressionV1::Slot(arena_slot(&source, b"player-1", b"position", Some(b"x")) as u16)),
                 Box::new(ExecutableExpressionV1::Constant(number(0.08))),
             ),
             ExecutableExpressionV1::Equal(
-                Box::new(ExecutableExpressionV1::Slot(12)),
+                Box::new(ExecutableExpressionV1::Slot(arena_slot(&source, b"player-1", b"position", Some(b"z")) as u16)),
                 Box::new(ExecutableExpressionV1::Constant(number(0.0))),
             ),
         ]
@@ -2460,18 +2157,18 @@ fn automatic_contact_tick_keeps_collection_hidden_until_admission_and_inactive_a
     let contact_step = session
         .apply_fixed_tick_and_emit_candidate(16)
         .expect("one fixed tick executes movement then Clause-owned contact");
-    assert_eq!(contact_step.occurrence.entry, 5);
-    assert!(!contact_step.rule_applied);
+    assert_eq!(contact_step.occurrence.entry, arena_entry(&source, b"collect"));
+    assert!(contact_step.rule_applied);
     let candidate = session
         .candidate()
         .expect("contact candidate lookup succeeds")
         .expect("the final chained entry emits one hidden candidate")
         .clone();
     assert_eq!(
-        candidate.configuration[28],
+        candidate.configuration[arena_slot(&source, b"coin-1", b"state", None)],
         ExecutableValueV1::symbol(b"collected").expect("collected is a bounded symbol")
     );
-    assert_eq!(candidate.configuration[0], number(0.08));
+    assert_eq!(candidate.configuration[arena_slot(&source, b"player-1", b"position", Some(b"x"))], number(0.08));
     assert_eq!(session.carrier().unwrap().candidate_delta_count(), 1);
     assert_eq!(session.world_base(), initial_world);
     assert!(session.last_admitted().is_none());
@@ -2547,11 +2244,11 @@ fn automatic_contact_tick_keeps_collection_hidden_until_admission_and_inactive_a
         .expect("away candidate lookup succeeds")
         .expect("the movement tick emits its sole final candidate");
     assert_eq!(
-        away_candidate.configuration[28],
+        away_candidate.configuration[arena_slot(&source, b"coin-1", b"state", None)],
         ExecutableValueV1::symbol(b"active").expect("active is a bounded symbol")
     );
-    assert_eq!(away_candidate.configuration[3].as_number(), Some(0.0));
-    assert_eq!(away_candidate.configuration[5].as_boolean(), Some(true));
+    assert_eq!(away_candidate.configuration[arena_slot(&source, b"player-1", b"velocity", Some(b"y"))].as_number(), Some(0.0));
+    assert_eq!(away_candidate.configuration[arena_slot(&source, b"player-1", b"grounded", None)].as_boolean(), Some(true));
     assert_eq!(away_session.carrier().unwrap().candidate_delta_count(), 1);
     assert_eq!(away_session.carrier().unwrap().decision_count(), 0);
     assert_eq!(away_session.carrier().unwrap().state_revision_count(), 1);
@@ -2569,28 +2266,28 @@ fn automatic_spring_contact_launches_and_source_only_strength_changes_the_visibl
             .expect("spring CPP1 has input")
             .tick
             .entries,
-        [2, 3, 4, 5]
+        { let mut reactions = [b"collect".as_slice(), b"spring-contact", b"spring-airborne"].map(|name| arena_entry(&source, name)); reactions.sort(); std::iter::once(arena_entry(&source, b"tick")).chain(reactions).collect::<Vec<_>>() }
     );
     let launch = plan
         .program
         .rules
         .iter()
-        .find(|rule| rule.entry == 4)
+        .find(|rule| rule.entry == arena_entry(&source, b"spring-contact"))
         .expect("source-owned launch velocity is the third ordered tick stage");
     assert_eq!(
         launch.assignments,
-        [(3, ExecutableExpressionV1::Constant(number(12.0)))]
+        [(arena_slot(&source, b"player-1", b"velocity", Some(b"y")) as u16, ExecutableExpressionV1::Constant(number(12.0)))]
     );
     let airborne = plan
         .program
         .rules
         .iter()
-        .find(|rule| rule.entry == 5)
+        .find(|rule| rule.entry == arena_entry(&source, b"spring-airborne"))
         .expect("source-owned airborne state is the final ordered tick stage");
     assert_eq!(
         airborne.assignments,
         [(
-            5,
+            arena_slot(&source, b"player-1", b"grounded", None) as u16,
             ExecutableExpressionV1::Constant(ExecutableValueV1::Boolean(false))
         )]
     );
@@ -2647,23 +2344,23 @@ fn coherent_game_fails_resets_completes_and_launches_in_one_persistent_session()
         .input
         .as_ref()
         .expect("coherent game has physical input");
-    assert_eq!(input.tick.entries, [2, 3, 4, 5, 6, 7, 9]);
+    assert_eq!(input.tick.entries, { let mut reactions = [b"collect".as_slice(), b"spring-contact", b"spring-airborne", b"complete-objective", b"fail-objective", b"finish-reset"].map(|name| arena_entry(&source, name)); reactions.sort(); std::iter::once(arena_entry(&source, b"tick")).chain(reactions).collect::<Vec<_>>() });
     assert!(input.events.iter().any(|binding| {
         binding.source
             == (ExecutableInputSourceV1::Keyboard {
                 code: b"KeyR".to_vec(),
                 phase: ExecutableKeyPhaseV1::Down,
             })
-            && binding.occurrence.entry == 8
+            && binding.occurrence.entry == arena_entry(&source, b"reset-objective")
     }));
     let dash = plan
         .program
         .rules
         .iter()
-        .find(|rule| rule.entry == 1)
+        .find(|rule| rule.entry == arena_entry(&source, b"jump"))
         .expect("coherent source retains the dash-jump transition");
-    assert_eq!(dash.assignments[0].1, ExecutableExpressionV1::Slot(7));
-    assert_eq!(dash.assignments[1].1, ExecutableExpressionV1::Slot(7));
+    assert_eq!(dash.assignments[0].1, ExecutableExpressionV1::Slot(arena_slot(&source, b"jump-arena", b"jump-speed", None) as u16));
+    assert_eq!(dash.assignments[1].1, ExecutableExpressionV1::Slot(arena_slot(&source, b"jump-arena", b"jump-speed", None) as u16));
 
     let changed_objective = std::str::from_utf8(OBJECTIVE)
         .expect("objective source is UTF-8")
@@ -2720,7 +2417,7 @@ fn coherent_game_fails_resets_completes_and_launches_in_one_persistent_session()
         .expect("failure candidate remains hidden")
         .clone();
     assert_eq!(
-        failed.configuration[29],
+        failed.configuration[arena_slot(&source, b"game-objective", b"objective-state", None)],
         ExecutableValueV1::symbol(b"failed").expect("failed is bounded")
     );
     assert_eq!(session.world_base(), initial_world);
@@ -2757,7 +2454,7 @@ fn coherent_game_fails_resets_completes_and_launches_in_one_persistent_session()
     assert_eq!(
         session
             .configuration()
-            .expect("reset is locally configured")[29],
+            .expect("reset is locally configured")[arena_slot(&source, b"game-objective", b"objective-state", None)],
         ExecutableValueV1::symbol(b"resetting").expect("resetting is bounded")
     );
     let failed_world = session.world_base();
@@ -2769,9 +2466,9 @@ fn coherent_game_fails_resets_completes_and_launches_in_one_persistent_session()
         .expect("reset candidate lookup succeeds")
         .expect("reset remains hidden before Admission")
         .clone();
-    assert_eq!(reset.configuration[12].as_number(), Some(0.0));
+    assert_eq!(reset.configuration[arena_slot(&source, b"player-1", b"position", Some(b"z"))].as_number(), Some(0.0));
     assert_eq!(
-        reset.configuration[29],
+        reset.configuration[arena_slot(&source, b"game-objective", b"objective-state", None)],
         ExecutableValueV1::symbol(b"playing").expect("playing is bounded")
     );
     assert_eq!(session.world_base(), failed_world);
@@ -2804,7 +2501,7 @@ fn coherent_game_fails_resets_completes_and_launches_in_one_persistent_session()
         .expect("completion remains hidden before Admission")
         .clone();
     assert_eq!(
-        completed.configuration[29],
+        completed.configuration[arena_slot(&source, b"game-objective", b"objective-state", None)],
         ExecutableValueV1::symbol(b"completed").expect("completed is bounded")
     );
     let completed_world = session.world_base();
@@ -2834,10 +2531,10 @@ fn coherent_game_fails_resets_completes_and_launches_in_one_persistent_session()
         .expect("launch candidate lookup succeeds")
         .expect("launch remains hidden before Admission")
         .clone();
-    assert_eq!(launch.configuration[3].as_number(), Some(12.0));
-    assert_eq!(launch.configuration[5].as_boolean(), Some(false));
+    assert_eq!(launch.configuration[arena_slot(&source, b"player-1", b"velocity", Some(b"y"))].as_number(), Some(12.0));
+    assert_eq!(launch.configuration[arena_slot(&source, b"player-1", b"grounded", None)].as_boolean(), Some(false));
     assert_eq!(
-        launch.configuration[29],
+        launch.configuration[arena_slot(&source, b"game-objective", b"objective-state", None)],
         ExecutableValueV1::symbol(b"completed").expect("completed is bounded")
     );
 }
@@ -2969,7 +2666,7 @@ fn clause_authored_dash_keeps_local_configuration_custody_until_admission() {
 
     let dash_step = session
         .apply_opaque_input(
-            &encode_executable_occurrence_v1(&occurrence(1, &[])).expect("dash occurrence encodes"),
+            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"jump", &[])).expect("dash occurrence encodes"),
         )
         .expect("Clause-authored dash advances local configuration");
     assert_eq!(dash_step.before, initial_configuration);
@@ -2981,11 +2678,11 @@ fn clause_authored_dash_keeps_local_configuration_custody_until_admission() {
     );
     assert_eq!(session.world_base(), initial_world);
     assert_eq!(
-        session.configuration().expect("dash configuration is live")[2].as_number(),
+        session.configuration().expect("dash configuration is live")[arena_slot(&source, b"player-1", b"velocity", Some(b"x"))].as_number(),
         Some(8.0)
     );
     assert_eq!(
-        session.configuration().expect("dash configuration is live")[3].as_number(),
+        session.configuration().expect("dash configuration is live")[arena_slot(&source, b"player-1", b"velocity", Some(b"y"))].as_number(),
         Some(8.0)
     );
     {
@@ -3023,7 +2720,7 @@ fn clause_authored_dash_keeps_local_configuration_custody_until_admission() {
 
     let candidate_step = session
         .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&occurrence(2, &[0.016]))
+            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"tick", &[0.016]))
                 .expect("fixed dash tick encodes"),
         )
         .expect("the local dash tick emits one hidden candidate");
@@ -3055,7 +2752,7 @@ fn clause_authored_dash_keeps_local_configuration_custody_until_admission() {
     let held_step_count = session.carrier().unwrap().step_count();
     let blocked = session
         .apply_opaque_input(
-            &encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"input", &[1.0, 0.0]))
                 .expect("post-candidate input encodes"),
         )
         .expect_err("candidate custody blocks further local mutation");
@@ -3100,7 +2797,7 @@ fn clause_authored_dash_keeps_local_configuration_custody_until_admission() {
 
     let local_input = session
         .apply_opaque_input(
-            &encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"input", &[1.0, 0.0]))
                 .expect("successor input encodes"),
         )
         .expect("successor Activation advances local intent");
@@ -3108,8 +2805,8 @@ fn clause_authored_dash_keeps_local_configuration_custody_until_admission() {
     assert_eq!(session.run().unwrap(), successor_run);
     assert_eq!(session.activation().unwrap(), successor_activation);
     assert_eq!(session.world_base(), successor.id);
-    assert_eq!(session.configuration().unwrap()[4].as_number(), Some(1.0));
-    assert_eq!(successor.configuration[4].as_number(), Some(0.0));
+    assert_eq!(session.configuration().unwrap()[arena_slot(&source, b"player-1", b"horizontal-intent", Some(b"x"))].as_number(), Some(1.0));
+    assert_eq!(successor.configuration[arena_slot(&source, b"player-1", b"horizontal-intent", Some(b"x"))].as_number(), Some(0.0));
     assert_eq!(session.carrier().unwrap().state_revision_count(), 2);
     assert!(session.candidate().unwrap().is_none());
     {
@@ -3201,37 +2898,37 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
         .expect("production bridge synthesizes the Activation");
 
     runtime
-        .advance_carrier_occurrence(occurrence(0, &[1.0, 0.0]))
+        .advance_carrier_occurrence(arena_occurrence(WORLD, b"input", &[1.0, 0.0]))
         .expect("opaque input enters with its computed Step");
     runtime
-        .advance_carrier_occurrence(occurrence(2, &[0.25]))
+        .advance_carrier_occurrence(arena_occurrence(WORLD, b"tick", &[0.25]))
         .expect("ground Step enters");
-    assert_eq!(value(runtime.configuration(), 0), 1.25);
-    assert_eq!(value(runtime.configuration(), 2), 5.0);
+    assert_eq!(value(runtime.configuration(), arena_slot(WORLD, b"player-1", b"position", Some(b"x"))), 1.25);
+    assert_eq!(value(runtime.configuration(), arena_slot(WORLD, b"player-1", b"velocity", Some(b"x"))), 5.0);
 
     runtime
-        .advance_carrier_occurrence(occurrence(1, &[]))
+        .advance_carrier_occurrence(arena_occurrence(WORLD, b"jump", &[]))
         .expect("grounded impulse enters");
-    assert_eq!(value(runtime.configuration(), 3), 8.0);
-    assert_eq!(runtime.configuration()[5].as_boolean(), Some(false));
+    assert_eq!(value(runtime.configuration(), arena_slot(WORLD, b"player-1", b"velocity", Some(b"y"))), 8.0);
+    assert_eq!(runtime.configuration()[arena_slot(WORLD, b"player-1", b"grounded", None)].as_boolean(), Some(false));
     let before_rejected = runtime.configuration().to_vec();
     let rejected = runtime
-        .advance_carrier_occurrence(occurrence(1, &[]))
+        .advance_carrier_occurrence(arena_occurrence(WORLD, b"jump", &[]))
         .expect("unmatched occurrence still advances Configuration custody");
     assert!(!rejected.rule_applied);
     assert_eq!(runtime.configuration(), before_rejected);
 
     for _ in 0..6 {
         runtime
-            .advance_carrier_occurrence(occurrence(2, &[0.25]))
+            .advance_carrier_occurrence(arena_occurrence(WORLD, b"tick", &[0.25]))
             .expect("airborne Step enters");
     }
     runtime
-        .advance_carrier_occurrence_and_emit_candidate(occurrence(2, &[0.25]))
+        .advance_carrier_occurrence_and_emit_candidate(arena_occurrence(WORLD, b"tick", &[0.25]))
         .expect("landing Step emits the one candidate");
-    assert_eq!(value(runtime.configuration(), 1), 0.0);
-    assert_eq!(value(runtime.configuration(), 3), 0.0);
-    assert_eq!(runtime.configuration()[5].as_boolean(), Some(true));
+    assert_eq!(value(runtime.configuration(), arena_slot(WORLD, b"player-1", b"position", Some(b"y"))), 0.0);
+    assert_eq!(value(runtime.configuration(), arena_slot(WORLD, b"player-1", b"velocity", Some(b"y"))), 0.0);
+    assert_eq!(runtime.configuration()[arena_slot(WORLD, b"player-1", b"grounded", None)].as_boolean(), Some(true));
     let candidate = runtime.candidate().expect("candidate is retained").clone();
     assert_eq!(candidate.base, facts.initial_state);
     assert!(runtime.judgment().is_none());
@@ -3252,7 +2949,7 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
     assert_eq!(successor.predecessor, facts.initial_state);
     assert_ne!(successor.id, facts.initial_state);
     let observation = runtime
-        .observe_carrier_state(&[0, 1, 3, 5])
+        .observe_carrier_state(&[(b"position".as_slice(), Some(b"x".as_slice())), (b"position", Some(b"y".as_slice())), (b"velocity", Some(b"y".as_slice())), (b"grounded", None)].map(|(relation, field)| arena_slot(WORLD, b"player-1", relation, field) as u16))
         .expect("production bridge synthesizes the admitted render Observation");
     assert_eq!(observation.state, successor.id);
     assert_eq!(observation.value[0].as_number(), Some(10.0));
@@ -3260,7 +2957,7 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
     assert_eq!(observation.value[2].as_number(), Some(0.0));
     assert_eq!(observation.value[3].as_boolean(), Some(true));
     let repeated_observation = runtime
-        .observe_carrier_state(&[0, 1, 3, 5])
+        .observe_carrier_state(&[(b"position".as_slice(), Some(b"x".as_slice())), (b"position", Some(b"y".as_slice())), (b"velocity", Some(b"y".as_slice())), (b"grounded", None)].map(|(relation, field)| arena_slot(WORLD, b"player-1", relation, field) as u16))
         .expect("repeated State projection receives a fresh occurrence identity");
     assert_ne!(repeated_observation.id, observation.id);
     assert_eq!(repeated_observation.state, observation.state);
@@ -3326,10 +3023,10 @@ fn bounded_wasm_bytes_return_only_the_admitted_observation() {
             budget_units: 100,
         },
         occurrences: vec![
-            encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+            encode_executable_occurrence_v1(&arena_occurrence(WORLD, b"input", &[1.0, 0.0]))
                 .expect("opaque occurrence encodes"),
         ],
-        render_slots: vec![4],
+        render_slots: vec![arena_slot(WORLD, b"player-1", b"horizontal-intent", Some(b"x")) as u16],
     };
     let exact_request = encode_wasm_process_request_v1(&request).expect("bounded request encodes");
     assert_eq!(
@@ -3529,7 +3226,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         command(
             0,
             WasmSessionOperationV1::Input(
-                encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0])).unwrap(),
+                encode_executable_occurrence_v1(&arena_occurrence(WORLD, b"input", &[1.0, 0.0])).unwrap(),
             ),
         ),
     );
@@ -3539,7 +3236,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         command(
             1,
             WasmSessionOperationV1::Input(
-                encode_executable_occurrence_v1(&occurrence(2, &[0.25])).unwrap(),
+                encode_executable_occurrence_v1(&arena_occurrence(WORLD, b"tick", &[0.25])).unwrap(),
             ),
         ),
     );
@@ -3549,7 +3246,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         command(
             2,
             WasmSessionOperationV1::Candidate(
-                encode_executable_occurrence_v1(&occurrence(2, &[0.25])).unwrap(),
+                encode_executable_occurrence_v1(&arena_occurrence(WORLD, b"tick", &[0.25])).unwrap(),
             ),
         ),
     );
@@ -3574,7 +3271,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
     let duplicate = encode_wasm_session_command_v1(&command(
         2,
         WasmSessionOperationV1::Input(
-            encode_executable_occurrence_v1(&occurrence(2, &[0.25])).unwrap(),
+            encode_executable_occurrence_v1(&arena_occurrence(WORLD, b"tick", &[0.25])).unwrap(),
         ),
     ))
     .unwrap();
@@ -3754,7 +3451,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         command(
             11,
             WasmSessionOperationV1::Candidate(
-                encode_executable_occurrence_v1(&occurrence(2, &[0.25])).unwrap(),
+                encode_executable_occurrence_v1(&arena_occurrence(WORLD, b"tick", &[0.25])).unwrap(),
             ),
         ),
     );
@@ -3890,8 +3587,8 @@ fn shipped_cwr1_has_external_physical_plan_and_successive_issued_admission() {
         "a source-only handler change changes CPP1 without a Rust semantic edit"
     );
     assert_eq!(
-        changed_plan.program.rules[0].assignments[0],
-        (4, ExecutableExpressionV1::Constant(number(0.5)),)
+        changed_plan.program.rules.iter().find(|rule| rule.entry == arena_entry(changed_source.as_bytes(), b"input")).unwrap().assignments[0],
+        (arena_slot(changed_source.as_bytes(), b"player-1", b"horizontal-intent", Some(b"x")) as u16, ExecutableExpressionV1::Constant(number(0.5)),)
     );
     let exact = encode_wasm_process_request_v1(&request).expect("browser CWR1 fixture encodes");
     let fixture_path = concat!(
@@ -4218,14 +3915,14 @@ fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
         .expect("changed unified gameplay CPP1 decodes");
     let dash_plan = decode_executable_physical_plan_v1(&dash_request.physical_plan_bytes)
         .expect("dash-jump unified gameplay CPP1 decodes");
-    assert!(plan.program.rules.iter().any(|rule| rule.entry == 0));
-    assert!(plan.program.rules.iter().any(|rule| rule.entry == 1));
-    assert!(plan.program.rules.iter().any(|rule| rule.entry == 2));
+    assert!(plan.program.rules.iter().any(|rule| rule.entry == arena_entry(&source, b"input")));
+    assert!(plan.program.rules.iter().any(|rule| rule.entry == arena_entry(&source, b"jump")));
+    assert!(plan.program.rules.iter().any(|rule| rule.entry == arena_entry(&source, b"tick")));
     assert_eq!(
         plan.program
             .rules
             .iter()
-            .find(|rule| rule.entry == 3)
+            .find(|rule| rule.entry == arena_entry(&source, b"collect"))
             .expect("unified gameplay carries the collect transition")
             .assignments[0]
             .1,
@@ -4238,7 +3935,7 @@ fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
             .program
             .rules
             .iter()
-            .find(|rule| rule.entry == 3)
+            .find(|rule| rule.entry == arena_entry(&source, b"collect"))
             .expect("changed unified gameplay carries the collect transition")
             .assignments[0]
             .1,
@@ -4251,17 +3948,17 @@ fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
         .program
         .rules
         .iter()
-        .find(|rule| rule.entry == 1)
+        .find(|rule| rule.entry == arena_entry(&source, b"jump"))
         .expect("dash-jump gameplay carries the source-owned jump transition");
-    assert_eq!(dash_rule.assignments[0].1, ExecutableExpressionV1::Slot(7));
-    assert_eq!(dash_rule.assignments[1].1, ExecutableExpressionV1::Slot(7));
+    assert_eq!(dash_rule.assignments[0].1, ExecutableExpressionV1::Slot(arena_slot(&source, b"jump-arena", b"jump-speed", None) as u16));
+    assert_eq!(dash_rule.assignments[1].1, ExecutableExpressionV1::Slot(arena_slot(&source, b"jump-arena", b"jump-speed", None) as u16));
     assert_ne!(plan.program, dash_plan.program);
     assert_eq!(
-        plan.program.initial_configuration[28],
+        plan.program.initial_configuration[arena_slot(&source, b"coin-1", b"state", None)],
         ExecutableValueV1::symbol(b"active").expect("symbol is bounded")
     );
     assert_eq!(
-        changed_plan.program.initial_configuration[28],
+        changed_plan.program.initial_configuration[arena_slot(&source, b"coin-1", b"state", None)],
         ExecutableValueV1::symbol(b"active").expect("symbol is bounded")
     );
 
@@ -4311,13 +4008,13 @@ fn shipped_coherent_game_cwr1_carries_objective_hazard_reset_and_spring() {
             .expect("coherent game CPP1 has input")
             .tick
             .entries,
-        [2, 3, 4, 5, 6, 7, 9]
+        { let mut reactions = [b"collect".as_slice(), b"spring-contact", b"spring-airborne", b"complete-objective", b"fail-objective", b"finish-reset"].map(|name| arena_entry(&source, name)); reactions.sort(); std::iter::once(arena_entry(&source, b"tick")).chain(reactions).collect::<Vec<_>>() }
     );
     assert_eq!(
-        plan.program.initial_configuration[29],
+        plan.program.initial_configuration[arena_slot(&source, b"game-objective", b"objective-state", None)],
         ExecutableValueV1::symbol(b"playing").expect("playing is bounded")
     );
-    assert!(plan.program.rules.iter().any(|rule| rule.entry == 8));
+    assert!(plan.program.rules.iter().any(|rule| rule.entry == arena_entry(&source, b"reset-objective")));
 
     let changed_objective = std::str::from_utf8(OBJECTIVE)
         .expect("objective source is UTF-8")

@@ -41,6 +41,12 @@ on fail-objective ?objective
   include
     ?objective objective state failed
 
+bind keyboard KeyW down to input with 0.0 1.0
+bind keyboard KeyW up to input with 0.0 0.0
+bind keyboard KeyS down to input with 0.0 -1.0
+bind keyboard KeyS up to input with 0.0 0.0
+bind keyboard KeyR down to reset-objective
+
 on reset-objective ?objective
   when
     ?objective objective state ?state

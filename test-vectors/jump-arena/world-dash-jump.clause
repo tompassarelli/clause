@@ -163,6 +163,12 @@ on input ?player Vec3 { x: ?intent-x, y: 0.0, z: ?intent-z }
   include
     ?player horizontal intent Vec3 { x: ?intent-x, y: 0.0, z: ?intent-z }
 
+bind keyboard KeyA down to input with -1.0 0.0
+bind keyboard KeyA up to input with 0.0 0.0
+bind keyboard KeyD down to input with 1.0 0.0
+bind keyboard KeyD up to input with 0.0 0.0
+bind keyboard Space down to jump
+
 on jump ?player
   when
     ?player velocity Vec3 { x: ?velocity-x, y: ?velocity-y, z: ?velocity-z }

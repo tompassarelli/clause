@@ -1128,7 +1128,7 @@ on tick ?unit ?dt
         .iter()
         .find(|handler| handler.designation == b"tick")
         .expect("the general tick handler is executable");
-    assert_eq!(handler.trigger, CanonicalHandlerTriggerV1::FixedTick);
+    assert_eq!(handler.trigger, CanonicalHandlerTriggerV1::FixedTickRoot);
     assert_eq!(handler.argument_count, 1);
     assert_eq!(handler.rules.len(), 2);
     assert!(handler.rules.iter().all(|rule| matches!(
@@ -1212,8 +1212,6 @@ player-1 recovery clock 8.0
 player-1 recovery rate 1.0
 player-1 heat 3.0
 
-bind keyboard Space down to jump
-
 on count-recovery ?player
   when
     ?player recovery clock ?clock
@@ -1289,21 +1287,18 @@ fn tick_rules_accept_typed_state_equality_guards() {
 
     let compiled =
         compile_source(&source, 42).expect("fixed-tick rules may depend on a typed state equality");
-    let tick = compiled
-        .tick_program
-        .expect("the guarded physics profile remains a checked tick program");
-    assert!(tick.rules.iter().all(|rule| {
-        rule.predicates.iter().any(|predicate| {
-            matches!(
-                predicate,
-                CanonicalTickPredicateV1::EqualState {
-                    relation,
-                    field: Some(field),
-                    expected: CanonicalScalarValueV1::Number(value),
-                    ..
-                } if relation == b"reset gate" && field == b"x" && *value == 0.0f64.to_bits()
-            )
-        })
+    let ticks = compiled.executable_handlers.iter().filter(|h| h.designation == b"tick").collect::<Vec<_>>();
+    let reset = compiled.state_cells.iter().find(|cell| {
+        cell.state.relation_designation == b"reset-gate"
+            && matches!(&cell.state.path, CanonicalStatePathV1::Field { designation, .. } if designation == b"x")
+    }).expect("typed reset-gate field is retained");
+    assert!(ticks.iter().flat_map(|h| &h.rules).all(|rule| {
+        rule.predicates.iter().any(|predicate| matches!(predicate,
+            CanonicalExecutablePredicateV1::Equal(
+                CanonicalExecutableExpressionV1::State(state),
+                CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Number(value))
+            ) if state == &reset.state && *value == 0.0f64.to_bits()
+        ))
     }));
     assert_eq!(
         compiled
@@ -1322,7 +1317,8 @@ fn tick_rules_accept_typed_state_equality_guards() {
 fn jump_shaped_handlers_retain_their_source_designation() {
     let source = std::str::from_utf8(WORLD)
         .expect("canonical arena source is UTF-8")
-        .replacen("on jump ?player", "on dash ?player", 1);
+        .replacen("on jump ?player", "on dash ?player", 1)
+        .replacen("to jump", "to dash", 1);
     let cst = read_canonical_source_v1(source.as_bytes())
         .expect("a source-named jump-shaped handler reads canonically");
     let plan = plan_independent_canonical_source_allocations_v1(
@@ -1340,7 +1336,6 @@ fn jump_shaped_handlers_retain_their_source_designation() {
     )
     .expect("the jump-shaped handler reaches executable lowering");
 
-    assert!(compiled.jump_handler.is_some());
     assert!(compiled.executable_handlers.iter().any(|handler| {
         handler.designation == b"dash"
             && handler.trigger == CanonicalHandlerTriggerV1::External
@@ -1578,60 +1573,54 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
     assert!(cst.source_slice(input.handler_origin).is_some());
     assert!(cst.source_slice(input.initial_assertion_origin).is_some());
 
-    let jump = compiled
-        .jump_handler
-        .expect("the bounded source profile lowers the actual on-jump handler");
-    assert_eq!(jump.initial_velocity, [0.0_f64.to_bits(); 3]);
-    assert!(jump.initial_grounded);
-    assert_eq!(jump.jump_speed, 8.0_f64.to_bits());
-    assert!(jump.required_grounded);
-    assert_eq!(
-        jump.result_velocity,
-        [
-            CanonicalJumpScalarV1::VelocityComponent(0),
-            CanonicalJumpScalarV1::JumpSpeed,
-            CanonicalJumpScalarV1::VelocityComponent(2),
-        ]
-    );
-    assert!(!jump.result_grounded);
-    for origin in [
-        jump.handler_origin,
-        jump.velocity_assertion_origin,
-        jump.grounded_assertion_origin,
-        jump.jump_speed_assertion_origin,
-    ] {
-        assert!(cst.source_slice(origin).is_some());
+    let state = |subject: &[u8], relation: &[u8], field: Option<&[u8]>| {
+        compiled.state_cells.iter().find(|cell| {
+            cell.state.subject == subject && cell.state.relation_designation == relation
+                && match (&cell.state.path, field) {
+                    (CanonicalStatePathV1::Scalar, None) => true,
+                    (CanonicalStatePathV1::Field { designation, .. }, Some(field)) => designation == field,
+                    _ => false,
+                }
+        }).expect("source state survives generic checking")
+    };
+    for relation in [b"position".as_slice(), b"velocity", b"horizontal-intent"] {
+        for field in [b"x".as_slice(), b"y", b"z"] {
+            assert_eq!(state(b"player-1", relation, Some(field)).initial_value,
+                Some(CanonicalScalarValueV1::Number(0.0f64.to_bits())));
+        }
     }
-
-    let tick = compiled
-        .tick_program
-        .expect("the bounded source profile lowers all three on-tick branches");
-    assert_eq!(
-        tick.rules.len(),
-        27,
-        "three transitions each compose two three-case relations"
-    );
-    assert_eq!(tick.initial_position, [0.0_f64.to_bits(); 3]);
-    assert_eq!(tick.initial_velocity, [0.0_f64.to_bits(); 3]);
-    assert_eq!(tick.initial_intent, [0.0_f64.to_bits(); 3]);
-    assert!(tick.initial_grounded);
-    assert_eq!(tick.gravity, (-8.0_f64).to_bits());
-    assert_eq!(tick.move_speed, 5.0_f64.to_bits());
-    assert_eq!(tick.floor_height, 0.0_f64.to_bits());
-    assert_eq!(tick.minimum_x, (-10.0_f64).to_bits());
-    assert_eq!(tick.maximum_x, 10.0_f64.to_bits());
-    assert_eq!(tick.minimum_z, (-10.0_f64).to_bits());
-    assert_eq!(tick.maximum_z, 10.0_f64.to_bits());
-    for origin in
-        tick.assertion_origins
-            .iter()
-            .chain(&tick.law_origins)
-            .chain(&tick.derive_origins)
-            .chain(tick.rules.iter().flat_map(|rule| {
-                std::iter::once(&rule.handler_origin).chain(&rule.include_origins)
-            }))
-    {
-        assert!(cst.source_slice(*origin).is_some());
+    assert_eq!(state(b"player-1", b"grounded", None).initial_value,
+        Some(CanonicalScalarValueV1::Boolean(true)));
+    for (relation, value) in [(b"gravity".as_slice(), -8.0f64), (b"jump-speed", 8.0),
+        (b"move-speed", 5.0), (b"floor-height", 0.0), (b"min-x", -10.0),
+        (b"max-x", 10.0), (b"min-z", -10.0), (b"max-z", 10.0)] {
+        assert_eq!(state(b"jump-arena", relation, None).initial_value,
+            Some(CanonicalScalarValueV1::Number(value.to_bits())));
+    }
+    let jump = compiled.executable_handlers.iter().find(|h| h.designation == b"jump")
+        .expect("actual jump handler uses the general carrier");
+    assert_eq!(jump.rules.len(), 1);
+    let rule = &jump.rules[0];
+    let grounded = &state(b"player-1", b"grounded", None).state;
+    assert!(rule.predicates.contains(&CanonicalExecutablePredicateV1::Equal(
+        CanonicalExecutableExpressionV1::State(grounded.clone()),
+        CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Boolean(true)))));
+    assert_eq!(rule.assignments.len(), 2, "unchanged vector fields require no writes");
+    assert!(rule.assignments.contains(&CanonicalExecutableAssignmentV1 {
+        target: state(b"player-1", b"velocity", Some(b"y")).state.clone(),
+        value: CanonicalExecutableExpressionV1::State(state(b"jump-arena", b"jump-speed", None).state.clone()),
+    }));
+    assert!(rule.assignments.contains(&CanonicalExecutableAssignmentV1 {
+        target: grounded.clone(),
+        value: CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Boolean(false)),
+    }));
+    let ticks = compiled.executable_handlers.iter().filter(|h| h.designation == b"tick").collect::<Vec<_>>();
+    assert_eq!(ticks.len(), 3);
+    assert_eq!(ticks.iter().map(|h| h.rules.len()).sum::<usize>(), 27,
+        "three transitions each compose two three-case relations");
+    for origin in compiled.emissions.iter().map(|e| e.origin)
+        .chain(ticks.iter().flat_map(|h| &h.rules).flat_map(|r| r.law_origins.iter().copied())) {
+        assert!(cst.source_slice(origin).is_some());
     }
 
     let carrier = ProcessCarrier::replay(&compiled.checked_package, &AuthorityStore::new())

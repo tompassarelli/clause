@@ -253,9 +253,14 @@ pub(super) fn state_declaration(
 }
 
 pub(super) fn selectors(line: &LogicalSourceLine) -> Option<Vec<ScalarStateSelectorCst>> {
-    let edge = line.structured.as_ref()?;
-    components(edge)?
-        .into_iter()
+    let components = if let Some(edge) = &line.structured {
+        components(edge)?
+    } else {
+        let (_, _, fields) = split_shape_subject(&line.text)?;
+        parse_general_state_declaration(&line.text, "")?.into_iter()
+            .zip(parse_shape_fields(fields)?.into_iter().map(|(_, value)| value)).collect()
+    };
+    components.into_iter()
         .filter(|(_, value)| !value.starts_with('?'))
         .map(|(source, value)| {
             Some(ScalarStateSelectorCst {

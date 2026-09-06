@@ -2907,3 +2907,35 @@ fn created_referent_physical_input_preserves_full_identity_bytes() {
             .is_err()
     );
 }
+
+#[test]
+fn source_keyboard_arguments_preserve_movement_across_reload() {
+    use clause_runtime::{WasmSessionPhysicalInputV1, WasmSessionTickV1};
+    let mut workbench = ResidentSourceWorkbenchV1::open(WORLD).unwrap();
+    for (iteration, speed) in [5.0, 7.0].into_iter().enumerate() {
+        if iteration == 1 {
+            let changed = std::str::from_utf8(WORLD).unwrap()
+                .replacen("jump-arena move speed 5.0", "jump-arena move speed 7.0", 1);
+            workbench.hot_reload(changed.as_bytes()).unwrap();
+        }
+        let plan = decode_executable_physical_plan_v1(&workbench.generation().cpp1).unwrap();
+        assert_eq!(plan.input.as_ref().unwrap().tick.entries.len(), 1,
+            "the root event evaluates all three branches against one pre-state");
+        let key = plan.input.unwrap().events.into_iter().find(|event| matches!(&event.source,
+            ExecutableInputSourceV1::Keyboard { code, phase: ExecutableKeyPhaseV1::Down } if code == b"KeyD")).unwrap();
+        assert_eq!(key.occurrence.arguments, [ExecutableValueV1::number(1.0).unwrap(), ExecutableValueV1::number(0.0).unwrap()]);
+        workbench.apply_physical_input(workbench.generation().handle, WasmSessionPhysicalInputV1 {
+            input_sequence: 1, source: key.source, value: None,
+        }).unwrap();
+        workbench.tick_to_candidate(WasmSessionTickV1 {
+            configuration_revision: 1, fixed_tick_milliseconds: 16,
+        }).unwrap();
+        let admission = workbench.admit().unwrap();
+        assert_eq!(player_planar_velocity(&admission.projection.exact_term_bytes), (speed, 0.0));
+    }
+    for invalid in ["with 1.0", "with 1.0 0.0 2.0", "with NaN 0.0", "with inf 0.0"] {
+        let rejected = std::str::from_utf8(WORLD).unwrap()
+            .replacen("to input with 1.0 0.0", &format!("to input {invalid}"), 1);
+        assert!(ResidentSourceWorkbenchV1::open(rejected.as_bytes()).is_err());
+    }
+}

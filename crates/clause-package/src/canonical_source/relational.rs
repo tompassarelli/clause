@@ -538,7 +538,7 @@ pub(super) fn checked_handler_with_domains(
         id: formation_id(plan, &source.producer, &head_slot(source.producer.production))?,
         designation: source.designation.clone(),
         trigger: if source.derivation { CanonicalHandlerTriggerV1::RelationClosure }
-            else if source.designation == b"tick" { CanonicalHandlerTriggerV1::FixedTick }
+            else if source.designation == b"tick" { CanonicalHandlerTriggerV1::FixedTickRoot }
             else if !source.arguments.is_empty() || cst.items.iter().any(|item| matches!(&item.kind,
                 CstKind::KeyboardBinding(binding) if binding.handler_designation == source.designation))
                 || (source.predicates.is_empty() && source.boolean_conditions.is_empty()) { CanonicalHandlerTriggerV1::External }

@@ -364,9 +364,16 @@ referents remain distinct. The current implementation also has checked keyboard
 and bounded scalar/Text input bindings; these are input boundaries, not
 alternative relation declarations.
 
-Several zero-input `on` clauses with the same external event name contribute
-to one atomic Step and read the same pre-state. Other handler arities and tick
-scheduling do not acquire that grouping implicitly.
+Keyboard bindings may supply finite numeric arguments in the handler’s declared order:
+
+```clause
+bind keyboard KeyD down to input with 1.0 0.0
+```
+
+The compiler rejects missing or extra arguments and non-finite values. Clauses
+for the same externally supplied event, including a scheduled root event,
+contribute to one atomic Step and read the same pre-state. Automatic reactions
+remain separate scheduled Steps after the root event.
 
 A reusable delta and a program-history candidate use explicit heads:
 

@@ -285,6 +285,8 @@ impl ResidentSourceWorkbenchV1 {
             .cloned()
             .collect::<Vec<_>>();
         bindings.sort_by_key(|binding| (fixed_tick_rank(binding.trigger), binding.handler));
+        let mut entries = BTreeSet::new();
+        bindings.retain(|binding| entries.insert(binding.entry));
         bindings
             .into_iter()
             .map(|binding| {
@@ -1069,6 +1071,8 @@ fn projection_template_for_state_count(
         .cloned()
         .collect::<Vec<_>>();
     tick.sort_by_key(|binding| (fixed_tick_rank(binding.trigger), binding.handler));
+    let mut entries = BTreeSet::new();
+    tick.retain(|binding| entries.insert(binding.entry));
     tick
 }
 
@@ -1175,10 +1179,10 @@ fn bind_source_keyboard_events(
                 )));
             }
             if semantic_matches.iter().any(|(_, meaning)|
-                meaning.trigger != CanonicalHandlerTriggerV1::External || meaning.argument_count != 0)
+                meaning.trigger != CanonicalHandlerTriggerV1::External || usize::from(meaning.argument_count) != source.arguments.len())
             {
                 return Err(ResidentSourceWorkbenchErrorV1(format!(
-                    "source keyboard binding target is not a zero-argument external handler: {}",
+                    "source keyboard binding arguments do not match the external handler: {}",
                     String::from_utf8_lossy(&source.handler_designation)
                 )));
             }
@@ -1200,7 +1204,7 @@ fn bind_source_keyboard_events(
                 },
                 occurrence: ExecutableOccurrenceV1 {
                     entry: *entries.first().expect("exactly one event entry"),
-                    arguments: Vec::new(),
+                    arguments: source.arguments.iter().copied().map(ExecutableValueV1::Number).collect(),
                 },
             })
         })
