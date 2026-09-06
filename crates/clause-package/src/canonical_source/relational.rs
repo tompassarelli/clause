@@ -299,20 +299,8 @@ fn checked_conditions_with_inputs(
                 (a, b, P::LessThanOrEqual as fn(_, _) -> _)
             }
         };
-        let expected = [left, right].into_iter().find_map(|expression| {
-            let CanonicalScalarExpressionV1::Parameter(name) = expression else {
-                return None;
-            };
-            source
-                .parameter_sources
-                .iter()
-                .chain(&source.membership_sources)
-                .find(|parameter| &parameter.parameter == name)
-                .and_then(|parameter| {
-                    resolved_state_relation(cst, plan, &parameter.relation, source.origin).ok()
-                })
-                .map(|relation| relation.value_domain)
-        });
+        let expected = expression_domain(left, &domains)
+            .or_else(|| expression_domain(right, &domains));
         predicates.push(constructor(
             relational_scalar_expression(cst, plan, left, &variables, &domains, expected, source.origin)?,
             relational_scalar_expression(cst, plan, right, &variables, &domains, expected, source.origin)?,
