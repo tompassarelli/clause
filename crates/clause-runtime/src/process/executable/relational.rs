@@ -90,6 +90,7 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
             | E::RelationRemoveRow(a, b)
             | E::Concatenate(a, b)
             | E::StartsWith(a, b)
+            | E::ContainsText(a, b)
             | E::Add(a, b)
             | E::Subtract(a, b)
             | E::Multiply(a, b)

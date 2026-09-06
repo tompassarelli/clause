@@ -789,6 +789,7 @@ pub fn decode_executable_occurrence_v1(
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExecutableExpressionV1 {
+    ContainsText(Box<Self>, Box<Self>),
     TextTransform(CanonicalTextTransformV1, Box<Self>),
     StartsWith(Box<Self>, Box<Self>),
     SquareRoot(Box<Self>),
@@ -1103,6 +1104,10 @@ fn lower_canonical_expression(
         CanonicalExecutableExpressionV1::StartsWith(left, right) => {
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::StartsWith(left, right)
+        }
+        CanonicalExecutableExpressionV1::ContainsText(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::ContainsText(left, right)
         }
         CanonicalExecutableExpressionV1::Constant(value) => {
             ExecutableExpressionV1::Constant(lower_scalar_value(value)?)
@@ -1791,6 +1796,10 @@ fn lower_scalar_expression(
         CanonicalScalarExpressionV1::StartsWith(left, right) => {
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::StartsWith(left, right)
+        }
+        CanonicalScalarExpressionV1::ContainsText(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::ContainsText(left, right)
         }
         CanonicalScalarExpressionV1::Current => ExecutableExpressionV1::Slot(state_slot),
         CanonicalScalarExpressionV1::Parameter(parameter) => ExecutableExpressionV1::Slot(
@@ -6240,6 +6249,7 @@ fn validate_value_expression(
         }
         E::RelationRead(a, b)
         | E::StartsWith(a, b)
+        | E::ContainsText(a, b)
         | E::RelationPresent(a, b)
         | E::RelationRemoveRow(a, b)
         | E::Concatenate(a, b)
@@ -6817,6 +6827,7 @@ fn evaluate(
             let value = evaluate(value, slots, arguments, context)?;
             let value = value.as_text().ok_or(ExecutableErrorV1::TypeMismatch)?;
             let result = match operation {
+                CanonicalTextTransformV1::Lowercase => return ExecutableValueV1::text(&value.to_lowercase()),
                 CanonicalTextTransformV1::Trim => value.trim(),
                 CanonicalTextTransformV1::FirstWord => value.split_whitespace().next().unwrap_or(""),
                 CanonicalTextTransformV1::RemainingWords => {
@@ -6832,6 +6843,13 @@ fn evaluate(
             let value = value.as_text().ok_or(ExecutableErrorV1::TypeMismatch)?;
             let prefix = prefix.as_text().ok_or(ExecutableErrorV1::TypeMismatch)?;
             Ok(ExecutableValueV1::Boolean(value.starts_with(prefix)))
+        }
+        E::ContainsText(value, needle) => {
+            let value = evaluate(value, slots, arguments, context)?;
+            let needle = evaluate(needle, slots, arguments, context)?;
+            let value = value.as_text().ok_or(ExecutableErrorV1::TypeMismatch)?;
+            let needle = needle.as_text().ok_or(ExecutableErrorV1::TypeMismatch)?;
+            Ok(ExecutableValueV1::Boolean(value.contains(needle)))
         }
         E::Concatenate(left, right) => concatenate(left, right, slots, arguments, context),
         E::Add(left, right) => numeric2(left, right, slots, arguments, context, |a, b| a + b),
@@ -7284,12 +7302,14 @@ fn encode_expression(
         }
         E::Concatenate(a, b) => encode_binary(bytes, 16, a, b)?,
         E::StartsWith(a, b) => encode_binary(bytes, 33, a, b)?,
+        E::ContainsText(a, b) => encode_binary(bytes, 35, a, b)?,
         E::TextTransform(operation, value) => {
             bytes.push(32);
             bytes.push(match operation {
                 CanonicalTextTransformV1::Trim => 0,
                 CanonicalTextTransformV1::FirstWord => 1,
                 CanonicalTextTransformV1::RemainingWords => 2,
+                CanonicalTextTransformV1::Lowercase => 3,
             });
             encode_expression(bytes, value)?;
         }
@@ -7611,11 +7631,13 @@ impl<'a> Decoder<'a> {
                     0 => CanonicalTextTransformV1::Trim,
                     1 => CanonicalTextTransformV1::FirstWord,
                     2 => CanonicalTextTransformV1::RemainingWords,
+                    3 => CanonicalTextTransformV1::Lowercase,
                     _ => return Err(ExecutableErrorV1::MalformedProgram),
                 };
                 E::TextTransform(operation, Box::new(self.expression(next)?))
             }
             33 => E::StartsWith(Box::new(self.expression(next)?), Box::new(self.expression(next)?)),
+            35 => E::ContainsText(Box::new(self.expression(next)?), Box::new(self.expression(next)?)),
             31 => E::Conditional(
                 Box::new(self.expression(next)?),
                 Box::new(self.expression(next)?),

@@ -343,6 +343,7 @@ pub struct CanonicalStateCellV1 {
 /// declared argument ordinals local to the handler, never physical slots.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalExecutableExpressionV1 {
+    ContainsText(Box<Self>, Box<Self>),
     TextTransform(CanonicalTextTransformV1, Box<Self>),
     StartsWith(Box<Self>, Box<Self>),
     Equal(Box<Self>, Box<Self>),
@@ -520,6 +521,7 @@ pub struct CanonicalReferentInputBindingV1 {
 /// Total UTF-8 text transformations; word boundaries use Unicode whitespace.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CanonicalTextTransformV1 {
+    Lowercase,
     Trim,
     FirstWord,
     RemainingWords,
@@ -529,6 +531,7 @@ pub enum CanonicalTextTransformV1 {
 /// Physical state coordinates are deliberately supplied only by refinement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalScalarExpressionV1 {
+    ContainsText(Box<Self>, Box<Self>),
     TextTransform(CanonicalTextTransformV1, Box<Self>),
     StartsWith(Box<Self>, Box<Self>),
     Equal(Box<Self>, Box<Self>),
@@ -4566,6 +4569,10 @@ fn canonical_scalar_executable_expression(
             let (left, right) = pair(left, right)?;
             CanonicalExecutableExpressionV1::StartsWith(left, right)
         }
+        CanonicalScalarExpressionV1::ContainsText(left, right) => {
+            let (left, right) = pair(left, right)?;
+            CanonicalExecutableExpressionV1::ContainsText(left, right)
+        }
         CanonicalScalarExpressionV1::Current => {
             CanonicalExecutableExpressionV1::State(current.clone())
         }
@@ -4769,6 +4776,10 @@ fn canonical_general_executable_expression(
         CanonicalScalarExpressionV1::StartsWith(left, right) => {
             let (left, right) = pair(left, right)?;
             Ok(CanonicalExecutableExpressionV1::StartsWith(left, right))
+        }
+        CanonicalScalarExpressionV1::ContainsText(left, right) => {
+            let (left, right) = pair(left, right)?;
+            Ok(CanonicalExecutableExpressionV1::ContainsText(left, right))
         }
         CanonicalScalarExpressionV1::Concatenate(left, right) => {
             let (left, right) = pair(left, right)?;
@@ -5066,6 +5077,10 @@ fn relational_scalar_expression(
         CanonicalScalarExpressionV1::StartsWith(left, right) => {
             let (left, right) = pair(left, right, Some(b"Text"))?;
             CanonicalExecutableExpressionV1::StartsWith(left, right)
+        }
+        CanonicalScalarExpressionV1::ContainsText(left, right) => {
+            let (left, right) = pair(left, right, Some(b"Text"))?;
+            CanonicalExecutableExpressionV1::ContainsText(left, right)
         }
         CanonicalScalarExpressionV1::Current => {
             return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
@@ -9512,6 +9527,7 @@ impl ScalarExpressionParser<'_> {
         self.skip_spaces();
         for (prefix, operation) in [
             (b"trim(".as_slice(), CanonicalTextTransformV1::Trim),
+            (b"lowercase(".as_slice(), CanonicalTextTransformV1::Lowercase),
             (b"first-word(".as_slice(), CanonicalTextTransformV1::FirstWord),
             (b"remaining-words(".as_slice(), CanonicalTextTransformV1::RemainingWords),
         ] {
@@ -9521,6 +9537,15 @@ impl ScalarExpressionParser<'_> {
                 self.take_exact(b")").then_some(())?;
                 return Some(CanonicalScalarExpressionV1::TextTransform(operation, Box::new(value)));
             }
+        }
+        if self.take_exact(b"contains-text(") {
+            let value = self.comparison()?;
+            self.skip_spaces();
+            self.take_exact(b",").then_some(())?;
+            let needle = self.comparison()?;
+            self.skip_spaces();
+            self.take_exact(b")").then_some(())?;
+            return Some(CanonicalScalarExpressionV1::ContainsText(Box::new(value), Box::new(needle)));
         }
         if self.take_exact(b"starts-with(") {
             let value = self.comparison()?;
@@ -9683,6 +9708,7 @@ fn collect_scalar_expression_parameters(
         }
         CanonicalScalarExpressionV1::Equal(left, right)
         | CanonicalScalarExpressionV1::StartsWith(left, right)
+        | CanonicalScalarExpressionV1::ContainsText(left, right)
         | CanonicalScalarExpressionV1::GreaterThan(left, right)
         | CanonicalScalarExpressionV1::LessThanOrEqual(left, right)
         | CanonicalScalarExpressionV1::Concatenate(left, right)
@@ -10294,6 +10320,7 @@ fn tick_guard_literal(expression: CanonicalScalarExpressionV1) -> Option<Canonic
         | CanonicalScalarExpressionV1::SquareRoot(_)
         | CanonicalScalarExpressionV1::TextTransform(..)
         | CanonicalScalarExpressionV1::StartsWith(..)
+        | CanonicalScalarExpressionV1::ContainsText(..)
         | CanonicalScalarExpressionV1::Conditional(..)
         | CanonicalScalarExpressionV1::Current
         | CanonicalScalarExpressionV1::Parameter(_)
@@ -11709,7 +11736,7 @@ fn scalar_expression_matches_kind(
             matches!(initial, CanonicalScalarValueV1::Text(_))
                 && matches(value, initial)
         }
-        CanonicalScalarExpressionV1::StartsWith(left, right) => {
+        CanonicalScalarExpressionV1::StartsWith(left, right) | CanonicalScalarExpressionV1::ContainsText(left, right) => {
             let text = CanonicalScalarValueV1::Text(String::new());
             matches!(initial, CanonicalScalarValueV1::Boolean(_))
                 && matches(left, &text)

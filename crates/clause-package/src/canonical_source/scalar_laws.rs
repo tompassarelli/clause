@@ -426,6 +426,7 @@ fn substitute(
         SquareRoot(value) => SquareRoot(Box::new(substitute(value, bindings))),
         TextTransform(operation, value) => TextTransform(*operation, Box::new(substitute(value, bindings))),
         StartsWith(a, b) => StartsWith(Box::new(substitute(a, bindings)), Box::new(substitute(b, bindings))),
+        ContainsText(a, b) => ContainsText(Box::new(substitute(a, bindings)), Box::new(substitute(b, bindings))),
         Add(a, b) => Add(
             Box::new(substitute(a, bindings)),
             Box::new(substitute(b, bindings)),

@@ -25,6 +25,26 @@ fn text_selectors_match_exact_values_on_declared_and_created_rows() {
 
 const SOURCE: &str = include_str!("../../../test-vectors/authoring/text-operations.clause");
 
+#[test]
+fn text_search_composes_unicode_case_mapping_with_exact_membership() {
+    let source = include_str!("../../../test-vectors/authoring/text-search.clause");
+    let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    for (text, query, expected) in [("Hello 世界", "LO 世", true), ("ÅNGSTRÖM", "ström", true),
+        ("İ", "i\u{307}", true), ("hello", "", true), ("", "world", false), ("hello", "goodbye", false)] {
+        let occurrence = workbench.handler_occurrence(b"search", &[
+            ExecutableValueV1::text(text).unwrap(), ExecutableValueV1::text(query).unwrap(),
+        ]).unwrap();
+        workbench.run_occurrences_to_candidate(&[occurrence]).unwrap();
+        let term = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes).unwrap();
+        let document = field(&term, b"document");
+        assert_eq!(projected_text_value_v1(field(document, b"text")).unwrap(), Some(text.to_lowercase().as_str()));
+        assert_eq!(field(document, b"matches").as_atom().unwrap().canonical_payload(), &[u8::from(expected)]);
+    }
+    for invalid in ["contains-text(?text, true)", "contains-text(2.0, ?query)", "contains-text(?text)", "lowercase(false)"] {
+        assert!(ResidentSourceWorkbenchV1::open(source.replace("contains-text(lowercase(?text), lowercase(?query))", invalid).as_bytes()).is_err(), "{invalid}");
+    }
+}
+
 fn field<'a>(term: &'a Term, key: &[u8]) -> &'a Term {
     let mut current = term;
     loop {

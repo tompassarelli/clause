@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "text-search",
+        title: "Composable text search",
+        summary: "contains-text(text, query) tests exact substring membership, including an empty query. lowercase(text) applies Unicode lowercase mapping, not locale-specific collation or Unicode normalization. Compose them explicitly for case-insensitive search; both inputs remain typed Text.",
+        source: include_str!("../../../test-vectors/authoring/text-search.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "text-selectors",
         title: "Exact text-valued conditions",
         summary: "A focused relation condition matches a Text literal using the same typed row equality as numbers and Booleans. Quoting, Unicode, and escaping have their ordinary Text meaning, including for runtime-created subjects.",
