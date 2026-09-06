@@ -1897,15 +1897,6 @@ const POSITION_RADIUS_NORMALIZED_GRAPH: &str = include_str!(concat!(
     "/../../test-vectors/materialization/position-radius-v1/normalized-graph.json"
 ));
 
-#[derive(Debug, Eq, PartialEq)]
-struct SourceProjection {
-    relations: Vec<String>,
-    laws: Vec<String>,
-    derivations: Vec<String>,
-    type_uses: Vec<String>,
-    operator_uses: Vec<String>,
-}
-
 struct ExpectedSourceBinding {
     source_kind: &'static str,
     local_designation: &'static str,
@@ -1966,87 +1957,6 @@ const UNBOUND_SOURCE_DESIGNATIONS: [(&str, &str); 3] = [
     ("type-use", "nonnegative-q16-16-v1"),
     ("operator-use", "within-radius-v1"),
 ];
-
-fn is_local_designation(value: &str) -> bool {
-    let mut characters = value.chars();
-    characters
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
-        && characters.all(|character| {
-            character.is_ascii_alphanumeric() || character == '_' || character == '-'
-        })
-}
-
-fn one_local_designation(value: &str, line_number: usize) -> Result<String, String> {
-    let mut words = value.split_whitespace();
-    let designation = words
-        .next()
-        .ok_or_else(|| format!("missing Designation at line {line_number}"))?;
-    if words.next().is_some() || !is_local_designation(designation) {
-        return Err(format!("invalid local Designation at line {line_number}"));
-    }
-    Ok(designation.to_owned())
-}
-
-fn parse_source_projection(source: &str) -> Result<SourceProjection, String> {
-    let mut projection = SourceProjection {
-        relations: Vec::new(),
-        laws: Vec::new(),
-        derivations: Vec::new(),
-        type_uses: Vec::new(),
-        operator_uses: Vec::new(),
-    };
-    let mut inside_law_premises = false;
-    for (line_index, line) in source.lines().enumerate() {
-        let line_number = line_index + 1;
-        let authored = line.split_once('#').map_or(line, |(code, _)| code);
-        if authored.contains('/') {
-            return Err(format!("authored slash at line {line_number}"));
-        }
-        let trimmed = authored.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if let Some(value) = trimmed.strip_prefix("relation ") {
-            projection
-                .relations
-                .push(one_local_designation(value, line_number)?);
-        } else if let Some(value) = trimmed.strip_prefix("law ") {
-            projection
-                .laws
-                .push(one_local_designation(value, line_number)?);
-        } else if let Some(value) = trimmed.strip_prefix("derive ") {
-            projection
-                .derivations
-                .push(one_local_designation(value, line_number)?);
-        } else if let Some(value) = trimmed.strip_prefix("has {") {
-            let field = value
-                .strip_suffix('}')
-                .ok_or_else(|| format!("unclosed role declaration at line {line_number}"))?;
-            let (_, value_type) = field
-                .split_once(':')
-                .ok_or_else(|| format!("missing role type at line {line_number}"))?;
-            projection
-                .type_uses
-                .push(one_local_designation(value_type, line_number)?);
-        } else if trimmed == "if" {
-            inside_law_premises = true;
-        } else if trimmed == "then" {
-            inside_law_premises = false;
-        } else if inside_law_premises && !trimmed.starts_with('?') {
-            let operator = trimmed
-                .split_whitespace()
-                .next()
-                .ok_or_else(|| format!("missing operator at line {line_number}"))?;
-            if !is_local_designation(operator) {
-                return Err(format!("invalid local operator at line {line_number}"));
-            }
-            projection.operator_uses.push(operator.to_owned());
-        }
-    }
-    Ok(projection)
-}
-
 fn json_string_field<'a>(
     object: &'a serde_json::Map<String, serde_json::Value>,
     field: &str,
@@ -2058,24 +1968,58 @@ fn json_string_field<'a>(
 }
 
 fn validate_source_context(source: &str, context: &str, graph: &str) -> Result<(), String> {
-    let projection = parse_source_projection(source)?;
-    if projection.relations
+    use clause_package::{CanonicalSourceProductionV1, read_canonical_source_v1};
+
+    let cst = read_canonical_source_v1(source.as_bytes()).map_err(|error| format!("{error:?}"))?;
+    let declarations: Vec<_> = cst.declarations().collect();
+    let designations = |production| {
+        declarations
+            .iter()
+            .filter(|declaration| declaration.production == production)
+            .map(|declaration| declaration.designation)
+            .collect::<Vec<_>>()
+    };
+    let relations = designations(CanonicalSourceProductionV1::Relation);
+    let laws = designations(CanonicalSourceProductionV1::Law);
+    let derivations = designations(CanonicalSourceProductionV1::Derive);
+    let type_uses: Vec<_> = declarations
+        .iter()
+        .flat_map(|declaration| declaration.bindings.iter().map(|binding| binding.domain))
+        .collect();
+    // These generic-law names are unresolved source evidence, not Operator identities.
+    let unresolved_operator_names: Vec<_> = declarations
+        .iter()
+        .flat_map(|declaration| &declaration.general_premises)
+        .filter_map(|premise| premise.tokens.first().copied())
+        .filter(|token| !token.starts_with(b"?"))
+        .collect();
+    if relations
         != [
-            "observer-position-v1",
-            "target-position-v1",
-            "proximity-radius-v1",
+            b"observer-position-v1".as_slice(),
+            b"target-position-v1".as_slice(),
+            b"proximity-radius-v1".as_slice(),
         ]
-        || projection.laws != ["radius-proximity-law-v1"]
-        || projection.derivations != ["radius-proximity-law-v1"]
-        || projection.type_uses != ["point2-v1", "point2-v1", "nonnegative-q16-16-v1"]
-        || projection.operator_uses != ["within-radius-v1"]
+        || laws != [b"radius-proximity-law-v1".as_slice()]
+        || derivations != [b"radius-proximity-law-v1".as_slice()]
+        || type_uses
+            != [
+                b"Observer".as_slice(),
+                b"Space".as_slice(),
+                b"point2-v1".as_slice(),
+                b"Target".as_slice(),
+                b"Space".as_slice(),
+                b"point2-v1".as_slice(),
+                b"Observer".as_slice(),
+                b"Space".as_slice(),
+                b"nonnegative-q16-16-v1".as_slice(),
+            ]
+        || unresolved_operator_names != [b"within-radius-v1".as_slice()]
     {
         return Err("source declaration/use closure changed".to_owned());
     }
-    if projection
-        .derivations
+    if derivations
         .iter()
-        .any(|derivation| !projection.laws.contains(derivation))
+        .any(|derivation| !laws.contains(derivation))
     {
         return Err("derive target is not a declared law".to_owned());
     }
