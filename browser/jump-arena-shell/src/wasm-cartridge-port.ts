@@ -38,6 +38,8 @@ const cwr1_max_bytes = 4 * 1024 * 1024;
 
 const cwr1_hex_max_source_units = 3 * cwr1_max_bytes;
 
+const cet1_max_bytes = 16 * 1024 * 1024;
+
 const cwo1_max_bytes = 64 * 1024;
 
 const cwo1_prefix_bytes = 4 + 32 + 32;
@@ -2910,7 +2912,7 @@ export function editSourceSession(
       throw new Error("source edit requires a fresh captured generation");
     }
     if (!is_source_edit_module(module)) throw new Error("Wasm runtime lacks checked source edit API");
-    if (!observeSourceTransferPhase("witness-validation", () => exact_byte_array_p(witness, cwr1_max_bytes))) throw new Error("source edit witness exceeds bound");
+    if (!observeSourceTransferPhase("witness-validation", () => exact_byte_array_p(witness, cet1_max_bytes))) throw new Error("source edit witness exceeds bound");
     const cartridge = parse_persistent_cartridge_bang(request);
     const status = observeSourceTransferPhase("bulk-call", () => module.clause_session_v1_source_edit_bulk(
       previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value),
