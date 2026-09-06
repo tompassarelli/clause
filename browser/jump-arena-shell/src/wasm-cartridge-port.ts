@@ -46,11 +46,13 @@ const cwo1_identity_bytes = 32;
 
 const cwo1_max_values = 256;
 
-const cse1_max_bytes = 64 * 1024;
+const cse1_max_bytes = 1024 * 1024;
 
-const cse1_projected_term_max_properties = cse1_max_bytes;
+const cse1_field_max_bytes = 64 * 1024;
 
-const cse1_projected_term_json_max_source_units = 4 * cse1_max_bytes + 1;
+const cse1_projected_term_max_properties = cse1_field_max_bytes;
+
+const cse1_projected_term_json_max_source_units = 4 * cse1_field_max_bytes + 1;
 
 const session_open_max_bytes = 4 * 1024 * 1024;
 
@@ -68,7 +70,7 @@ const canonical_term_triple_path_min_bytes =
   1 + 2 * canonical_term_atom_min_bytes;
 
 const cse1_projected_term_max_depth = Math.trunc(
-  (cse1_max_bytes - 2 * identity_bytes - canonical_term_atom_min_bytes) /
+  (cse1_field_max_bytes - 2 * identity_bytes - canonical_term_atom_min_bytes) /
     canonical_term_triple_path_min_bytes,
 );
 
@@ -1313,7 +1315,7 @@ function decode_cse1_event(bytes: unknown): Cse1Event {
                         const term_record = parse_blob(
                           bytes,
                           observation_offset + identity_bytes,
-                          cse1_max_bytes,
+                          cse1_field_max_bytes,
                           "CSE1 projected Term",
                         );
                         if (!equivalent(term_record.next, bytes.length)) {
@@ -1381,7 +1383,7 @@ function decode_cse1_event(bytes: unknown): Cse1Event {
                       const diagnostic = parse_blob(
                         bytes,
                         21,
-                        cse1_max_bytes,
+                        cse1_field_max_bytes,
                         "CSE1 candidate rejection diagnostic",
                       );
                       if (!equivalent(diagnostic.next, bytes.length)) {
@@ -1466,19 +1468,19 @@ function decode_cse1_event(bytes: unknown): Cse1Event {
                           const action = parse_blob(
                             bytes,
                             369,
-                            cse1_max_bytes,
+                            cse1_field_max_bytes,
                             "CSE1 effect action",
                           );
                           const resource = parse_blob(
                             bytes,
                             action.next,
-                            cse1_max_bytes,
+                            cse1_field_max_bytes,
                             "CSE1 effect resource",
                           );
                           const payload = parse_blob(
                             bytes,
                             resource.next,
-                            cse1_max_bytes,
+                            cse1_field_max_bytes,
                             "CSE1 effect payload",
                           );
                           const count_end = require_range(
@@ -1570,19 +1572,19 @@ function decode_cse1_event(bytes: unknown): Cse1Event {
                                 const action = parse_blob(
                                   bytes,
                                   117,
-                                  cse1_max_bytes,
+                                  cse1_field_max_bytes,
                                   "CSE1 attempted action",
                                 );
                                 const resource = parse_blob(
                                   bytes,
                                   action.next,
-                                  cse1_max_bytes,
+                                  cse1_field_max_bytes,
                                   "CSE1 attempted resource",
                                 );
                                 const payload = parse_blob(
                                   bytes,
                                   resource.next,
-                                  cse1_max_bytes,
+                                  cse1_field_max_bytes,
                                   "CSE1 attempted payload",
                                 );
                                 const count_end = require_range(
@@ -2112,7 +2114,7 @@ function decode_term_node(
         })();
 }
 
-function decode_canonical_term(bytes: unknown, maximumBytes = cse1_max_bytes): TermNode {
+function decode_canonical_term(bytes: unknown, maximumBytes = cse1_field_max_bytes): TermNode {
   const envelope_source = workbench["workbench-byte-envelope-source"](bytes);
   const source = envelope_source === null ? bytes : envelope_source;
   if (

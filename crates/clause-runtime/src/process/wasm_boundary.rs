@@ -20,7 +20,7 @@ const MAX_RENDER_SLOTS: usize = 256;
 pub(super) const MAX_EVIDENCE_BYTES: usize = 64 * 1024;
 
 pub const WASM_PROCESS_REQUEST_LIMIT_V1: usize = 4 * 1024 * 1024;
-pub const WASM_PROCESS_RESPONSE_LIMIT_V1: usize = 64 * 1024;
+pub const WASM_PROCESS_RESPONSE_LIMIT_V1: usize = 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
