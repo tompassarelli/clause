@@ -112,10 +112,16 @@ blocked completion, retracted dependent support after `Resolve`, extended a
 duration, completed all five tasks, retained their identities, and reported no
 page errors.
 
-Scheduling delivery remains incomplete until it records independently authored
-fact and edit-touch counts, exposes explanation and bounded hypothetical
-queries, and measures the warm source-save-to-visible-result latency. The
-language and performance goals remain incomplete with it.
+The scheduling application now uses one retained session for execution,
+explanation, bounded hypothetical queries, and identity-preserving checked
+edits. Its 24 independently authored initial domain assertions are 2 blocker
+reasons, 15 task scalar attributes, 5 prerequisites, and 2 direct obstructions;
+derived rows, schemas, and rules are not counted. An ordinary duration-rule
+change touches one scalar-expression source span. The measured same-page warm
+source-save-to-visible samples were 206.1, 210.2, and 212.6 ms. Adoption also
+observed a 273.4 ms first valid edit, so this application slice is delivered
+without claiming the 250 ms performance target. The broader language and
+performance goals remain incomplete.
 
 ## Remaining language path
 
