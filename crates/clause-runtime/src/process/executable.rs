@@ -728,6 +728,7 @@ pub fn executable_configuration_term_v1(
     scope: clause_package::TermScope,
     values: &[ExecutableSlotV1],
 ) -> Result<Term, ExecutableErrorV1> {
+    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ConfigurationEncoding);
     let mut bytes = Vec::new();
     encode_slots(&mut bytes, values)?;
     Term::atom(
@@ -3134,6 +3135,12 @@ struct PreparedCarrierSettlementV1 {
     successor: StateRevision,
 }
 
+struct PreparedExecutableStepV1 {
+    next_configuration: Vec<ExecutableSlotV1>,
+    bridge_step: ExecutableStepV1,
+    trace: ExecutableEvaluationTraceV1,
+}
+
 #[derive(Clone, Copy, Debug)]
 enum CheckerOriginV1 {
     Root(RootTrigger),
@@ -3511,14 +3518,14 @@ impl ExecutableProcessRuntimeV1 {
         &mut self,
         occurrence: ExecutableOccurrenceV1,
     ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
-        self.advance_carrier_occurrence_inner(occurrence, false)
+        self.advance_carrier_occurrence_inner(occurrence, false, None)
     }
 
     pub fn advance_carrier_occurrence_and_emit_candidate(
         &mut self,
         occurrence: ExecutableOccurrenceV1,
     ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
-        self.advance_carrier_occurrence_inner(occurrence, true)
+        self.advance_carrier_occurrence_inner(occurrence, true, None)
     }
 
     /// Emit the one Mode-declared external-effect intent at a semantic Step.
@@ -4334,6 +4341,7 @@ impl ExecutableProcessRuntimeV1 {
         &mut self,
         fixed_tick_milliseconds: u32,
     ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
+        let _profile = source_profile_scope_v1(SourceProfilePhaseV1::TickDispatch);
         if fixed_tick_milliseconds == 0 {
             return Err(ExecutableCarrierErrorV1::Executable(
                 ExecutableErrorV1::MalformedInputConfiguration,
@@ -4359,14 +4367,41 @@ impl ExecutableProcessRuntimeV1 {
                 entry: *entry,
                 arguments: vec![argument.clone()],
             };
-            if self.occurrence_changes_configuration(&occurrence)? {
-                self.advance_carrier_occurrence(occurrence)?;
+            let prepared = {
+                let _profile = source_profile_scope_v1(SourceProfilePhaseV1::OccurrenceProbe);
+                let (step_ordinal, _) = stage_runtime_ordinal(self.identity_ordinals.next_step)
+                    .map_err(ExecutableCarrierErrorV1::Executable)?;
+                let (configuration_ordinal, _) =
+                    stage_runtime_ordinal(self.identity_ordinals.next_configuration)
+                        .map_err(ExecutableCarrierErrorV1::Executable)?;
+                let mut trace = ExecutableEvaluationTraceV1::default();
+                let (next_configuration, bridge_step) = self
+                    .prepare_step_traced(
+                        occurrence.clone(),
+                        step_ordinal,
+                        configuration_ordinal,
+                        &self.configuration,
+                        Some(&mut trace),
+                    )
+                    .map_err(ExecutableCarrierErrorV1::Executable)?;
+                PreparedExecutableStepV1 {
+                    next_configuration,
+                    bridge_step,
+                    trace,
+                }
+            };
+            if prepared.next_configuration != self.configuration {
+                let _profile = source_profile_scope_v1(SourceProfilePhaseV1::OccurrenceAdvance);
+                self.advance_carrier_occurrence_inner(occurrence, false, Some(prepared))?;
             }
         }
-        self.advance_carrier_occurrence_and_emit_candidate(ExecutableOccurrenceV1 {
-            entry: *last,
-            arguments: vec![argument],
-        })
+        {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::OccurrenceAdvance);
+            self.advance_carrier_occurrence_and_emit_candidate(ExecutableOccurrenceV1 {
+                entry: *last,
+                arguments: vec![argument],
+            })
+        }
     }
 
     /// Issue one exact, single-use Admission authorization occurrence under
@@ -4435,6 +4470,7 @@ impl ExecutableProcessRuntimeV1 {
         &mut self,
         occurrence: ExecutableOccurrenceV1,
         emit_candidate: bool,
+        prepared: Option<PreparedExecutableStepV1>,
     ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
         if self.suspended_continuation.is_some() {
             return Err(ExecutableCarrierErrorV1::AlreadySuspended);
@@ -4468,16 +4504,29 @@ impl ExecutableProcessRuntimeV1 {
             )
             .map_err(ExecutableCarrierErrorV1::Executable)?,
         );
-        let mut trace = ExecutableEvaluationTraceV1::default();
-        let (next_configuration, mut bridge_step) = self
-            .prepare_step_traced(
-                occurrence,
-                step_ordinal,
-                configuration_ordinal,
-                &self.configuration,
-                Some(&mut trace),
-            )
-            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let PreparedExecutableStepV1 {
+            next_configuration,
+            mut bridge_step,
+            trace,
+        } = if let Some(prepared) = prepared {
+            prepared
+        } else {
+            let mut trace = ExecutableEvaluationTraceV1::default();
+            let (next_configuration, bridge_step) = self
+                .prepare_step_traced(
+                    occurrence,
+                    step_ordinal,
+                    configuration_ordinal,
+                    &self.configuration,
+                    Some(&mut trace),
+                )
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+            PreparedExecutableStepV1 {
+                next_configuration,
+                bridge_step,
+                trace,
+            }
+        };
         bridge_step.input_observation = Some(occurrence_id);
         let execution = self
             .carrier_execution
@@ -4556,16 +4605,20 @@ impl ExecutableProcessRuntimeV1 {
                     stage_runtime_ordinal(next_checker_ordinal)
                         .map_err(ExecutableCarrierErrorV1::Executable)?;
                 next_checker_ordinal = after_checker_ordinal;
-                let (checker_records, formation, _) = self.prepare_formation_checker(
-                    checker_mode,
-                    facts,
-                    &self.configuration,
-                    &self.configuration,
-                    CheckerOriginV1::Root(runtime_root_trigger(execution.epoch_origin)?),
-                    execution.state_base_support,
-                    checker_ordinal,
-                    facts.budget_units,
-                )?;
+                let (checker_records, formation, _) = {
+                    let _profile =
+                        source_profile_scope_v1(SourceProfilePhaseV1::FormationCheck);
+                    self.prepare_formation_checker(
+                        checker_mode,
+                        facts,
+                        &self.configuration,
+                        &self.configuration,
+                        CheckerOriginV1::Root(runtime_root_trigger(execution.epoch_origin)?),
+                        execution.state_base_support,
+                        checker_ordinal,
+                        facts.budget_units,
+                    )?
+                };
                 ingress.extend(checker_records);
                 activation_prerequisite = Some(activation_formation_prerequisite(
                     self.carrier.carrier().constitution(),
@@ -4610,16 +4663,19 @@ impl ExecutableProcessRuntimeV1 {
             } else {
                 CheckerOriginV1::Root(runtime_root_trigger(execution.epoch_origin)?)
             };
-            let (checker_records, formation, checker_step) = self.prepare_formation_checker(
-                checker_mode,
-                facts,
-                &self.configuration,
-                &next_configuration,
-                checker_origin,
-                SupportSource::Observation(occurrence_id),
-                checker_ordinal,
-                remaining_budget,
-            )?;
+            let (checker_records, formation, checker_step) = {
+                let _profile = source_profile_scope_v1(SourceProfilePhaseV1::FormationCheck);
+                self.prepare_formation_checker(
+                    checker_mode,
+                    facts,
+                    &self.configuration,
+                    &next_configuration,
+                    checker_origin,
+                    SupportSource::Observation(occurrence_id),
+                    checker_ordinal,
+                    remaining_budget,
+                )?
+            };
             ingress.extend(checker_records);
             if execution.state_started {
                 candidate_checker_step = Some(checker_step);
@@ -4728,9 +4784,12 @@ impl ExecutableProcessRuntimeV1 {
             outcome: StepOutcomeProposalV2::Progress,
         };
         ingress.push(ProcessRecordV2::Steps(vec![step]));
-        self.carrier
-            .apply_ingress(&ingress)
-            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::CarrierIngress);
+            self.carrier
+                .apply_ingress(&ingress)
+                .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        }
 
         self.retain_executed_event(
             &bridge_step,
@@ -4764,21 +4823,6 @@ impl ExecutableProcessRuntimeV1 {
             .expect("accepted Step remains retained"))
     }
 
-    fn occurrence_changes_configuration(
-        &self,
-        occurrence: &ExecutableOccurrenceV1,
-    ) -> Result<bool, ExecutableCarrierErrorV1> {
-        let (step_ordinal, _) = stage_runtime_ordinal(self.identity_ordinals.next_step)
-            .map_err(ExecutableCarrierErrorV1::Executable)?;
-        let (configuration_ordinal, _) =
-            stage_runtime_ordinal(self.identity_ordinals.next_configuration)
-                .map_err(ExecutableCarrierErrorV1::Executable)?;
-        let (next, _) = self
-            .prepare_step(occurrence.clone(), step_ordinal, configuration_ordinal)
-            .map_err(ExecutableCarrierErrorV1::Executable)?;
-        Ok(next != self.configuration)
-    }
-
     pub fn advance(
         &mut self,
         occurrence: ExecutableOccurrenceV1,
@@ -4807,21 +4851,6 @@ impl ExecutableProcessRuntimeV1 {
         Ok(self.last_step.as_ref().expect("Step was just installed"))
     }
 
-    fn prepare_step(
-        &self,
-        occurrence: ExecutableOccurrenceV1,
-        step_ordinal: u64,
-        configuration_ordinal: u64,
-    ) -> Result<(Vec<ExecutableSlotV1>, ExecutableStepV1), ExecutableErrorV1> {
-        self.prepare_step_traced(
-            occurrence,
-            step_ordinal,
-            configuration_ordinal,
-            &self.configuration,
-            None,
-        )
-    }
-
     fn prepare_step_traced(
         &self,
         occurrence: ExecutableOccurrenceV1,
@@ -4830,6 +4859,7 @@ impl ExecutableProcessRuntimeV1 {
         configuration: &[ExecutableSlotV1],
         mut trace: Option<&mut ExecutableEvaluationTraceV1>,
     ) -> Result<(Vec<ExecutableSlotV1>, ExecutableStepV1), ExecutableErrorV1> {
+        let _profile = source_profile_scope_v1(SourceProfilePhaseV1::StepPreparation);
         let evaluation = EvaluationContextV1 {
             allocation_root: self.allocation.root,
             step_ordinal,
@@ -4841,6 +4871,7 @@ impl ExecutableProcessRuntimeV1 {
         // observe their closure, not the retained closure of the old world.
         let closed;
         let configuration = if self.program.rules.iter().any(closure::is_derivation) {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::DerivationClosure);
             closed = closure::close(&self.program, configuration, evaluation, None)?;
             closed.as_slice()
         } else { configuration };
@@ -4865,6 +4896,7 @@ impl ExecutableProcessRuntimeV1 {
                     .iter()
                     .all(|slot| configuration[usize::from(*slot)].value().is_none());
             let matches = if structural_match {
+                let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RuleMatching);
                 relational::match_rule(
                     &rule.predicates,
                     configuration,
@@ -4933,11 +4965,21 @@ impl ExecutableProcessRuntimeV1 {
                 selected.push((rule_index, rule, matched.bindings, trace_index));
             }
         }
-        let mut next = configuration.to_vec();
+        let state_effects_profile = source_profile_scope_v1(SourceProfilePhaseV1::StateEffects);
+        let mut next = {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ConfigurationClone);
+            configuration.to_vec()
+        };
         let mut contributions = BTreeMap::<u16, Vec<f64>>::new();
         let mut row_effects = relational::RowEffects::default();
+        let effect_evaluation_profile =
+            source_profile_scope_v1(SourceProfilePhaseV1::EffectEvaluation);
         for (rule_index, rule, bindings, trace_index) in &selected {
-            let identity = relational::occurrence_identity(evaluation, *rule_index, bindings)?;
+            let identity = {
+                let _profile =
+                    source_profile_scope_v1(SourceProfilePhaseV1::OccurrenceIdentity);
+                relational::occurrence_identity(evaluation, *rule_index, bindings)?
+            };
             let evaluation = EvaluationContextV1 {
                 bindings: Some(bindings),
                 relational_occurrence: (!bindings.is_empty()).then_some(&identity),
@@ -4947,27 +4989,45 @@ impl ExecutableProcessRuntimeV1 {
                 if let ExecutableExpressionV1::RelationEffects(effects) = expression {
                     for (effect_index, effect) in effects.iter().enumerate() {
                         let (mode, subject, value) = effect.parts();
-                        let subject = evaluate_with_reads(
-                            subject,
-                            configuration,
-                            &occurrence.arguments,
-                            evaluation,
-                        )?;
-                        let mut value = evaluate_with_reads(
-                            value,
-                            configuration,
-                            &occurrence.arguments,
-                            evaluation,
-                        )?;
-                        row_effects.push(
-                            *slot,
-                            mode,
-                            subject.value.clone(),
-                            value.value.clone(),
-                            configuration,
-                        )?;
+                        let subject = {
+                            let _profile = source_profile_scope_v1(
+                                SourceProfilePhaseV1::EffectSubjectEvaluation,
+                            );
+                            evaluate_with_reads(
+                                subject,
+                                configuration,
+                                &occurrence.arguments,
+                                evaluation,
+                            )?
+                        };
+                        let mut value = {
+                            let _profile = source_profile_scope_v1(
+                                SourceProfilePhaseV1::EffectValueEvaluation,
+                            );
+                            evaluate_with_reads(
+                                value,
+                                configuration,
+                                &occurrence.arguments,
+                                evaluation,
+                            )?
+                        };
+                        {
+                            let _profile = source_profile_scope_v1(
+                                SourceProfilePhaseV1::RowEffectCollection,
+                            );
+                            row_effects.push(
+                                *slot,
+                                mode,
+                                subject.value.clone(),
+                                value.value.clone(),
+                                configuration,
+                            )?;
+                        }
                         value.reads.extend(subject.reads);
                         if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
+                            let _profile = source_profile_scope_v1(
+                                SourceProfilePhaseV1::EffectTraceRetention,
+                            );
                             trace.effect(
                                 *index,
                                 *slot,
@@ -4983,14 +5043,22 @@ impl ExecutableProcessRuntimeV1 {
                     continue;
                 }
                 if let ExecutableExpressionV1::Accumulate(delta) = expression {
-                    let evaluated = evaluate_with_reads(
-                        delta,
-                        configuration,
-                        &occurrence.arguments,
-                        evaluation,
-                    )?;
+                    let evaluated = {
+                        let _profile = source_profile_scope_v1(
+                            SourceProfilePhaseV1::EffectValueEvaluation,
+                        );
+                        evaluate_with_reads(
+                            delta,
+                            configuration,
+                            &occurrence.arguments,
+                            evaluation,
+                        )?
+                    };
                     let delta = number(evaluated.value.clone())?;
                     if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
+                        let _profile = source_profile_scope_v1(
+                            SourceProfilePhaseV1::EffectTraceRetention,
+                        );
                         trace.effect(*index, *slot, true, None, Some(evaluated.retain(
                             ExecutableExpressionReferenceV1::new(&self.program, *rule_index, ExpressionCoordinate::Assignment(assignment)),
                         )));
@@ -4998,14 +5066,21 @@ impl ExecutableProcessRuntimeV1 {
                     contributions.entry(*slot).or_default().push(delta);
                     continue;
                 }
-                let evaluated = evaluate_with_reads(
-                    expression,
-                    configuration,
-                    &occurrence.arguments,
-                    evaluation,
-                )?;
+                let evaluated = {
+                    let _profile = source_profile_scope_v1(
+                        SourceProfilePhaseV1::EffectValueEvaluation,
+                    );
+                    evaluate_with_reads(
+                        expression,
+                        configuration,
+                        &occurrence.arguments,
+                        evaluation,
+                    )?
+                };
                 let value = evaluated.value.clone();
                 if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
+                    let _profile =
+                        source_profile_scope_v1(SourceProfilePhaseV1::EffectTraceRetention);
                     trace.effect(*index, *slot, false, None, Some(evaluated.retain(
                         ExecutableExpressionReferenceV1::new(&self.program, *rule_index, ExpressionCoordinate::Assignment(assignment)),
                     )));
@@ -5017,6 +5092,8 @@ impl ExecutableProcessRuntimeV1 {
             }
             for slot in &rule.removals {
                 if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
+                    let _profile =
+                        source_profile_scope_v1(SourceProfilePhaseV1::EffectTraceRetention);
                     trace.effect(*index, *slot, false, None, None);
                 }
                 let target = next
@@ -5025,6 +5102,7 @@ impl ExecutableProcessRuntimeV1 {
                 *target = ExecutableSlotV1::Absent(target.kind());
             }
         }
+        drop(effect_evaluation_profile);
         for (slot, mut deltas) in contributions {
             // Canonical numeric ordering makes the result independent of rule
             // discovery order. The numeric domain rejects non-finite results.
@@ -5041,8 +5119,13 @@ impl ExecutableProcessRuntimeV1 {
             }
             next[usize::from(slot)] = ExecutableValueV1::number(value)?.into();
         }
-        row_effects.apply(&mut next)?;
+        {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RowEffectsApply);
+            row_effects.apply(&mut next)?;
+        }
+        drop(state_effects_profile);
         if self.program.rules.iter().any(closure::is_derivation) {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::DerivationClosure);
             next = closure::close(&self.program, &next, evaluation, trace.map(|trace| (&self.program, trace)))?;
         }
         relational::validate_contracts(&next)?;
@@ -6691,7 +6774,14 @@ fn evaluate(
     use ExecutableExpressionV1 as E;
     match expression {
         E::Constant(value) => Ok(value.clone()),
-        E::Sum { inputs, predicates, value } => relational::sum(inputs, predicates, value, slots, arguments, context),
+        E::Sum {
+            inputs,
+            predicates,
+            value,
+        } => {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumEvaluation);
+            relational::sum(inputs, predicates, value, slots, arguments, context)
+        }
         E::Slot(slot) => {
             let value = slots
                 .get(usize::from(*slot))

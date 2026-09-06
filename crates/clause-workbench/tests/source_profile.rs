@@ -1,6 +1,7 @@
 use clause_runtime::{
     SourceProfilePhaseV1 as Phase, begin_executable_source_profile_v1 as begin,
-    finish_executable_source_profile_v1 as finish, source_profile_scope_v1 as scope,
+    WasmSessionTickV1, finish_executable_source_profile_v1 as finish,
+    source_profile_scope_v1 as scope,
 };
 use clause_workbench::ResidentSourceWorkbenchV1;
 
@@ -26,6 +27,35 @@ fn profile_is_opt_in_nested_bounded_and_never_resets_a_live_observation() {
             >= report.phases[Phase::Lowering as usize].inclusive_milliseconds
     );
     assert!(finish().is_none());
+}
+
+#[test]
+fn profiled_real_tick_reports_candidate_ownership_boundaries() {
+    let source = include_bytes!("../../../test-vectors/authoring/live-encounter.clause");
+    let mut workbench = ResidentSourceWorkbenchV1::open(source).unwrap();
+    assert!(begin());
+    workbench
+        .tick_to_candidate(WasmSessionTickV1 {
+            configuration_revision: 1,
+            fixed_tick_milliseconds: 16,
+        })
+        .unwrap();
+    let report = finish().unwrap();
+    assert!(!report.truncated);
+    assert_eq!(report.phases[Phase::CandidateExecution as usize].calls, 1);
+    assert_eq!(report.phases[Phase::TickDispatch as usize].calls, 1);
+    assert!(report.phases[Phase::OccurrenceProbe as usize].calls > 0);
+    assert!(report.phases[Phase::OccurrenceAdvance as usize].calls > 0);
+    assert!(report.phases[Phase::StepPreparation as usize].calls > 0);
+    assert_eq!(
+        report.phases[Phase::StepPreparation as usize].calls,
+        report.phases[Phase::OccurrenceProbe as usize].calls + 1,
+    );
+    assert!(report.phases[Phase::ConfigurationClone as usize].calls > 0);
+    assert!(report.phases[Phase::EffectEvaluation as usize].calls > 0);
+    assert!(report.phases[Phase::RowEffectsApply as usize].calls > 0);
+    assert!(report.phases[Phase::FormationCheck as usize].calls > 0);
+    assert!(report.phases[Phase::CarrierIngress as usize].calls > 0);
 }
 
 #[test]

@@ -825,6 +825,8 @@ fn execute_operation(
             }
         }
         WasmSessionOperationV1::TickCandidate(tick) => {
+            let _profile =
+                super::source_profile_scope_v1(super::SourceProfilePhaseV1::CandidateExecution);
             match session.apply_fixed_tick_and_emit_candidate(tick.fixed_tick_milliseconds) {
                 Ok(step) => {
                     let candidate = session
