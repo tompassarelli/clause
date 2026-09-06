@@ -16,6 +16,18 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "optional-derived-formation",
+        title: "Reusable optional structured relations",
+        summary: "Positive laws may derive a cardinality-maybe value, including a structured value. Queries consume the same current selection, liveness and health definition. Equal proofs share one value; conflicting conclusions reject, and withdrawn premises remove their consequences.",
+        source: include_str!("../../../test-vectors/authoring/optional-derived-formation.clause"),
+    },
+    AuthoringExampleV1 {
+        slug: "nested-readiness",
+        title: "Checked laws inside checked laws",
+        summary: "An acyclic scalar law may call another typed scalar law in its premises. Both execution and feedback consume that definition. Nested laws retain their source origins, and bounded expansion rejects recursion or exhaustion rather than guessing a result.",
+        source: include_str!("../../../test-vectors/authoring/nested-readiness.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "text-search",
         title: "Composable text search",
         summary: "contains-text(text, query) tests exact substring membership, including an empty query. lowercase(text) applies Unicode lowercase mapping, not locale-specific collation or Unicode normalization. Compose them explicitly for case-insensitive search; both inputs remain typed Text.",

@@ -1,0 +1,93 @@
+F64
+Bool
+Item
+Report
+
+shape Point
+  x: F64
+  z: F64
+
+relation selected
+  reads {item: Item} selected {value: Bool}
+  subject item
+  mode given item yields value: one
+relation alive
+  reads {item: Item} alive {value: Bool}
+  subject item
+  mode given item yields value: one
+relation health
+  reads {item: Item} health {value: F64}
+  subject item
+  mode given item yields value: one
+relation offset
+  reads {item: Item} offset {value: Point}
+  subject item
+  mode given item yields value: one
+relation formation
+  reads {item: Item} formation {value: Point}
+  subject item
+  mode given item yields value: maybe
+relation total
+  reads {report: Report} total {value: F64}
+  subject report
+  mode given report yields value: one
+
+law selected-living-formation
+  if
+    ?item selected true
+    ?item alive true
+    ?item health ?health
+    ?health > 0.0
+    ?item offset ?offset
+  then
+    ?item formation ?offset
+derive selected-living-formation
+
+first
+  member of: Item
+second
+  member of: Item
+report
+  member of: Report
+first selected true
+first alive true
+first health 1.0
+first offset Point { x: 2.0, z: 3.0 }
+second selected true
+second alive true
+second health 1.0
+second offset Point { x: 2.0, z: 3.0 }
+report total 0.0
+
+on measure ?report
+  when
+    ?report total ?prior
+    sum ?x where { ?item formation Point { x: ?x, z: ?z } } as ?total
+  withdraw
+    ?report total ?prior
+  include
+    ?report total ?total
+
+on select ?item ?selected
+  when
+    ?item selected ?prior
+  withdraw
+    ?item selected ?prior
+  include
+    ?item selected ?selected
+
+on vitality ?item ?health
+  when
+    ?item health ?prior
+  withdraw
+    ?item health ?prior
+  include
+    ?item health ?health
+
+on living ?item ?alive
+  when
+    ?item alive ?prior
+  withdraw
+    ?item alive ?prior
+  include
+    ?item alive ?alive

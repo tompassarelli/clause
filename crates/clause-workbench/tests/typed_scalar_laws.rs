@@ -138,3 +138,28 @@ on spawn ?device
     assert!(messages.rows().values().flatten().any(|value| *value == ExecutableValueV1::text("Ready").unwrap()));
     assert!(messages.rows().values().flatten().any(|value| *value == ExecutableValueV1::text("Disabled").unwrap()));
 }
+
+const NESTED: &str = include_str!("../../../test-vectors/authoring/nested-readiness.clause");
+
+#[test]
+fn nested_scalar_laws_share_typed_readiness_between_display_and_execution() {
+    let mut w = ResidentSourceWorkbenchV1::open(NESTED.as_bytes()).unwrap();
+    assert_eq!(message(&run(&mut w, b"inspect")), "Ready");
+    assert_eq!(charge(&run(&mut w, b"use")), 0.0);
+    assert_eq!(message(&run(&mut w, b"inspect")), "Empty");
+    assert_eq!(charge(&run(&mut w, b"use")), 0.0);
+    let disabled = NESTED.replace("device enabled true", "device enabled false");
+    let mut w = ResidentSourceWorkbenchV1::open(disabled.as_bytes()).unwrap();
+    assert_eq!(message(&run(&mut w, b"inspect")), "Disabled");
+    assert_eq!(charge(&run(&mut w, b"use")), 1.0);
+}
+
+#[test]
+fn nested_scalar_laws_reject_recursive_and_mistyped_premises() {
+    for source in [
+        NESTED.replace("?enabled enabled with charge ?charge reports ?result", "device enabled ?enabled charge ?charge reports ?result"),
+        NESTED.replace("?enabled enabled with charge ?charge reports ?result", "?charge enabled with charge ?charge reports ?result"),
+    ] {
+        assert!(ResidentSourceWorkbenchV1::open(source.as_bytes()).is_err());
+    }
+}
