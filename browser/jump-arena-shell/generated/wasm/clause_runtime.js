@@ -191,6 +191,21 @@ export function clause_session_v1_open_bulk(request) {
 }
 
 /**
+ * @param {number} slot
+ * @param {number} generation
+ * @returns {Uint8Array}
+ */
+export function clause_session_v1_project_bulk(slot, generation) {
+    const ret = wasm.clause_session_v1_project_bulk(slot, generation);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v1;
+}
+
+/**
  * @returns {boolean}
  */
 export function clause_session_v1_reclaim_retired() {
@@ -239,6 +254,30 @@ export function clause_session_v1_source_edit_bulk(slot, generation, sequence, o
     return ret >>> 0;
 }
 
+/**
+ * @returns {boolean}
+ */
+export function clause_source_profile_v1_begin() {
+    const ret = wasm.clause_source_profile_v1_begin();
+    return ret !== 0;
+}
+
+/**
+ * @returns {string}
+ */
+export function clause_source_profile_v1_finish() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.clause_source_profile_v1_finish();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -249,6 +288,10 @@ function __wbg_get_imports() {
         __wbg_getRandomValues_1c61fac11405ffdc: function() { return handleError(function (arg0, arg1) {
             globalThis.crypto.getRandomValues(getArrayU8FromWasm0(arg0, arg1));
         }, arguments); },
+        __wbg_now_1297d7753a3cfbf5: function() {
+            const ret = performance.now();
+            return ret;
+        },
         __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;
             const offset = table.grow(4);

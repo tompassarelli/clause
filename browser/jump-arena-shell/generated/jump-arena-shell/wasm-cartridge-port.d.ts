@@ -124,12 +124,15 @@ export type Cse1Event = (Cse1EventBase & Readonly<{
     kind: "effect-authorization";
     authorizationId: ExactBytes;
     intentId: ExactBytes;
+    admissionId: ExactBytes;
+    activationId: ExactBytes;
     stateRevisionCount: number;
 }>) | (Cse1EventBase & Readonly<{
     kind: "effect-attempt";
     attemptId: ExactBytes;
     intentId: ExactBytes;
     authorizationId: ExactBytes;
+    activationId: ExactBytes;
     actionBytes: ExactBytes;
     resourceBytes: ExactBytes;
     payloadBytes: ExactBytes;
@@ -160,8 +163,10 @@ export type ProjectedReferent = Readonly<{
         value: readonly number[];
     }>;
 }>;
+declare function checked_referent(value: unknown): ProjectedReferent;
 export type ProjectedValue = number | boolean | string | readonly ProjectedValue[] | ProjectedObject;
 declare function decode_cwr1_hex(source: unknown): ExactBytes;
+declare function decode_cet1_hex(source: unknown): ExactBytes;
 declare function ExactProcessRequest(bytes: ExactBytes): ExactProcessRequest;
 declare function exactprocessrequest_bytes(r: ExactProcessRequest): ExactBytes;
 declare function ExactProcessObservation(bytes: ExactBytes): ExactProcessObservation;
@@ -173,16 +178,16 @@ declare function cwo1observation_values(r: Cwo1Observation): readonly (number | 
 declare function exact_byte_array_p(bytes: unknown, maximum: number): bytes is ExactBytes;
 declare function process_status(status: unknown): number;
 declare function byte_at(bytes: CanonicalBytes, index: number): number;
-declare function little_u16(bytes: ExactBytes, offset: number): number;
-declare function little_u32(bytes: ExactBytes, offset: number): number;
+declare function little_u16(bytes: CanonicalBytes, offset: number): number;
+declare function little_u32(bytes: CanonicalBytes, offset: number): number;
 declare function little_safe_u64(bytes: ExactBytes, offset: number): number;
 declare function append_u32_bang(bytes: number[], value: number): number;
 declare function append_u64_bang(bytes: number[], value: number): number;
 declare function append_blob_bang(bytes: number[], value: ExactBytes): void;
 declare function require_range(bytes: CanonicalBytes, offset: number, length: number, label: string): number;
-declare function frozen_byte_range(bytes: ExactBytes, start: number, end: number): ExactBytes;
+declare function frozen_byte_range(bytes: CanonicalBytes, start: number, end: number): ExactBytes;
 declare function decode_cwo1_observation(incoming: unknown): Cwo1Observation;
-declare function parse_blob(bytes: ExactBytes, offset: number, maximum: number, label: string): ParsedBlob;
+declare function parse_blob(bytes: CanonicalBytes, offset: number, maximum: number, label: string): ParsedBlob;
 declare function process_request_occurrences_bang(request: unknown): readonly ExactBytes[];
 declare function decode_projected_term_frame(bytes: unknown): ProjectedValue;
 declare function advance_session_occurrence_bang(module: unknown, incoming_session: unknown, ordinal: number): Extract<Cse1Event, {
@@ -216,21 +221,42 @@ declare function create_wasm_cartridge_port_bang(module: unknown, policy: workbe
 /** Apply compiler-owned CET1 to this exact live Wasm session. No source parsing,
  * identity inference, native shadow-state import, or automatic Admission. */
 export declare function editSourceSession(module: unknown, incomingSession: unknown, generation: number, request: ExactProcessRequest, witness: ExactBytes, policy: workbench.WorkbenchPolicy): workbench.SessionCompletion;
+/** Read the package-declared projection of the current accepted world without
+ * executing an input or creating a semantic event. */
+export declare function projectSession(module: unknown, incomingSession: unknown): ProjectedValue;
 export declare function explainSession(module: unknown, incomingSession: unknown, entry: number): ProjectedValue;
 export declare function sourceContinuity(module: unknown, incomingSession: unknown): ProjectedValue;
-/** Read-only opaque CIQ1 request: all search and semantic evaluation occurs
+/** Read-only opaque CIQ1/CIQ2 request: all search and semantic evaluation occurs
  * inside the live Wasm runtime against a retained actual event. */
 export declare function interveneSession(module: unknown, incomingSession: unknown, query: ExactBytes): ProjectedValue;
-export interface FiniteScalarChange {
+export { checked_referent as checkedProjectedReferent };
+export interface InterventionCoordinate {
     readonly slot: number;
+    readonly subject?: ProjectedReferent;
+}
+export interface FiniteScalarChange extends InterventionCoordinate {
     readonly value: boolean | number;
 }
+export type FiniteScalarDesired = boolean | (InterventionCoordinate & ({
+    readonly greaterThan: number;
+} | {
+    readonly equals: boolean | number;
+}));
+export interface ExplainedRelationRow {
+    readonly slot: number;
+    readonly subject: ProjectedReferent;
+    readonly source: ProjectedObject;
+    readonly before: ProjectedValue | undefined;
+    readonly after: ProjectedValue | undefined;
+}
+/** Decode exact runtime coordinates; ordinal page keys are not row identities. */
+export declare function explanationRelationRows(explanation: ProjectedValue): readonly ExplainedRelationRow[];
+/** Read one runtime diagnostic index entry from its fixed 64-value pages. */
+export declare function projectedDiagnosticIndexValue(index: ProjectedValue, position: number): ProjectedValue | undefined;
+export declare function projectedRelationRowValue(table: ProjectedValue, subject: ProjectedReferent): ProjectedValue | undefined;
 /** Passive typed serializer for a finite question supplied by the caller.
  * CPP1 tags encode the shared normalized predicate; no local evaluation. */
-export declare function finiteScalarInterventionQuery(event: string, allowed: readonly FiniteScalarChange[], maximumEvaluations: number, desired: {
-    readonly slot: number;
-    readonly greaterThan: number;
-} | boolean): ExactBytes;
+export declare function finiteScalarInterventionQuery(event: string, allowed: readonly FiniteScalarChange[], maximumEvaluations: number, desired: FiniteScalarDesired): ExactBytes;
 declare const create_wasm_cartridge_port: typeof create_wasm_cartridge_port_bang;
 export { Cwo1Observation as "->Cwo1Observation" };
 export { ExactProcessObservation as "->ExactProcessObservation" };
@@ -252,6 +278,7 @@ export { cwo1observation_observationId as "cwo1observation-observationId" };
 export { cwo1observation_stateRevisionId as "cwo1observation-stateRevisionId" };
 export { cwo1observation_values as "cwo1observation-values" };
 export { decode_cwo1_observation as "decode-cwo1-observation" };
+export { decode_cet1_hex as "decode-cet1-hex" };
 export { decode_cwr1_hex as "decode-cwr1-hex" };
 export { decode_projected_term_frame as "decode-projected-term-frame" };
 export { emit_effect_intent_bang as "emit-effect-intent!" };

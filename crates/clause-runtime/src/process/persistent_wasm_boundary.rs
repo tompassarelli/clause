@@ -232,12 +232,15 @@ pub enum WasmSessionEventKindV1 {
     EffectAuthorizationIssued {
         authorization: IssuedEffectAuthorizationOccurrenceId,
         intent: EffectIntentId,
+        admission: AdmissionOccurrenceId,
+        activation: ActivationId,
         state_revision_count: u32,
     },
     EffectAttemptBegun {
         attempt: EffectAttemptId,
         intent: EffectIntentId,
         authorization: IssuedEffectAuthorizationOccurrenceId,
+        activation: ActivationId,
         action_bytes: Vec<u8>,
         resource_bytes: Vec<u8>,
         payload_bytes: Vec<u8>,
@@ -908,6 +911,8 @@ fn execute_operation(
                 Ok(authorization) => WasmSessionEventKindV1::EffectAuthorizationIssued {
                     authorization: authorization.id,
                     intent: authorization.intent,
+                    admission: authorization.admission,
+                    activation: authorization.activation,
                     state_revision_count: state_revision_count(session)
                         .expect("effect authorization retains its carrier"),
                 },
@@ -920,6 +925,7 @@ fn execute_operation(
                     attempt: attempt.id,
                     intent: attempt.intent,
                     authorization: attempt.authorization,
+                    activation: attempt.activation,
                     action_bytes: canonical_term_bytes(&attempt.action)
                         .expect("checked effect action remains canonical"),
                     resource_bytes: canonical_term_bytes(&attempt.resource)
@@ -1689,16 +1695,27 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
         WasmSessionEventKindV1::EffectAuthorizationIssued {
             authorization,
             intent,
+            admission,
+            activation,
             state_revision_count,
         } => {
             bytes.push(12);
-            put_ids(&mut bytes, &[authorization.as_bytes(), intent.as_bytes()]);
+            put_ids(
+                &mut bytes,
+                &[
+                    authorization.as_bytes(),
+                    intent.as_bytes(),
+                    admission.as_bytes(),
+                    activation.as_bytes(),
+                ],
+            );
             bytes.extend_from_slice(&state_revision_count.to_le_bytes());
         }
         WasmSessionEventKindV1::EffectAttemptBegun {
             attempt,
             intent,
             authorization,
+            activation,
             action_bytes,
             resource_bytes,
             payload_bytes,
@@ -1711,6 +1728,7 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
                     attempt.as_bytes(),
                     intent.as_bytes(),
                     authorization.as_bytes(),
+                    activation.as_bytes(),
                 ],
             );
             put_blob(&mut bytes, action_bytes)
@@ -1870,12 +1888,15 @@ pub fn decode_wasm_session_event_v1(
         12 => WasmSessionEventKindV1::EffectAuthorizationIssued {
             authorization: IssuedEffectAuthorizationOccurrenceId::from_bytes(d.identity()?),
             intent: EffectIntentId::from_bytes(d.identity()?),
+            admission: AdmissionOccurrenceId::from_bytes(d.identity()?),
+            activation: ActivationId::from_bytes(d.identity()?),
             state_revision_count: d.u32()?,
         },
         13 => WasmSessionEventKindV1::EffectAttemptBegun {
             attempt: EffectAttemptId::from_bytes(d.identity()?),
             intent: EffectIntentId::from_bytes(d.identity()?),
             authorization: IssuedEffectAuthorizationOccurrenceId::from_bytes(d.identity()?),
+            activation: ActivationId::from_bytes(d.identity()?),
             action_bytes: d.blob(WASM_SESSION_EVENT_FIELD_LIMIT_V1)?.to_vec(),
             resource_bytes: d.blob(WASM_SESSION_EVENT_FIELD_LIMIT_V1)?.to_vec(),
             payload_bytes: d.blob(WASM_SESSION_EVENT_FIELD_LIMIT_V1)?.to_vec(),

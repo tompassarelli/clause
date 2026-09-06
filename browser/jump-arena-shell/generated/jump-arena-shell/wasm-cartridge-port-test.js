@@ -119,11 +119,11 @@ function allocation_epoch_bang() {
     bytes.splice(0, 4, 82, 65, 69, 49);
     return bytes;
 }
-function minimal_cwr1_bang() {
+function minimal_cwr1_bang(physical_plan = [8], occurrences = [[1], [2]]) {
     const bytes = [67, 87, 82, 49];
     append_blob_bang(bytes, [1]);
     append_u32_bang(bytes, 1);
-    append_blob_bang(bytes, [8]);
+    append_blob_bang(bytes, physical_plan);
     append_blob_bang(bytes, allocation_epoch_bang());
     [1, 2, 3, 4, 5, 6, 7, 8, 9].forEach((tag) => {
         identity(tag).forEach((byte) => {
@@ -140,9 +140,8 @@ function minimal_cwr1_bang() {
     });
     append_blob_bang(bytes, [11]);
     append_u64_bang(bytes, 100);
-    bytes.push(2, 0);
-    append_blob_bang(bytes, [1]);
-    append_blob_bang(bytes, [2]);
+    bytes.push(occurrences.length % 256, Math.trunc(occurrences.length / 256));
+    occurrences.forEach((occurrence) => append_blob_bang(bytes, occurrence));
     bytes.push(0, 0);
     return bytes;
 }
@@ -154,6 +153,39 @@ function cse_header_bang(sequence, tag) {
     bytes.push(tag);
     return bytes;
 }
+test.test("cartridge byte custody survives mutation of the producer's array", () => {
+    const source = minimal_cwr1_bang();
+    const original = source.slice();
+    const actual = [];
+    const expected = [];
+    const port = wasm["create-wasm-cartridge-port"](module_for_bang([opened_event_bang()], actual), policy());
+    const reference = wasm["create-wasm-cartridge-port"](module_for_bang([opened_event_bang()], expected), policy());
+    const accepted = acceptPackage(port, wasm["->ExactProcessRequest"](source));
+    source.fill(255);
+    startSession(port, accepted.acceptedPackage);
+    startSession(reference, acceptPackage(reference, wasm["->ExactProcessRequest"](original)).acceptedPackage);
+    expect(actual).toEqual(expected);
+    expect(actual).toHaveLength(1);
+});
+test.test("cartridge byte custody rejects malformed octets and skipped-blob bounds", () => {
+    const port = wasm["create-wasm-cartridge-port"](module_for_bang([], []), policy());
+    const invalid = [];
+    for (const value of [NaN, 256, -1, 0.5]) {
+        const source = minimal_cwr1_bang();
+        source[9] = value;
+        invalid.push(source);
+    }
+    const sparse = minimal_cwr1_bang();
+    delete sparse[9];
+    invalid.push(sparse);
+    const oversized = minimal_cwr1_bang();
+    oversized.splice(4, 4, 255, 255, 255, 255);
+    invalid.push(oversized);
+    invalid.push(minimal_cwr1_bang().slice(0, 8));
+    for (const source of invalid) {
+        port.acceptPackage(wasm["->ExactProcessRequest"](source), result => expect(result._tag).toBe("PackageRejected"));
+    }
+});
 function put_identities_bang(bytes, tags) {
     tags.forEach((tag) => {
         identity(tag).forEach((byte) => {
@@ -395,6 +427,36 @@ function projectedString(value, ...path) {
     }
     return result;
 }
+test["test"]("projected relation contracts retain required participation", () => {
+    const decode = (contract, values = [2]) => {
+        const payload = [6];
+        append_u32_bang(payload, 1);
+        payload.push(0, 0, contract, 1, 0);
+        append_u32_bang(payload, 1);
+        payload.push(0);
+        append_u32_bang(payload, 2);
+        payload.push(values.length, 0);
+        for (const value of values) {
+            const bytes = new ArrayBuffer(8);
+            new DataView(bytes).setFloat64(0, value, true);
+            payload.push(0, ...new Uint8Array(bytes));
+        }
+        return wasm["decode-projected-term-frame"](projected_atom("clause/process-projected-relation-table-v1", payload));
+    };
+    for (const contract of [0, 1, 2, 3]) {
+        const table = decode(contract);
+        expect(table).toEqual({
+            kind: "relation-table", subjectDomain: 1, valueKind: 0,
+            cardinality: contract === 3 ? 0 : contract, total: contract === 3,
+            rows: [{ subject: { kind: "referent", domain: 1,
+                        identity: { kind: "declared", value: 2 } }, values: [2] }],
+        });
+        expect(Object.isFrozen(table)).toBe(true);
+    }
+    expect(() => decode(4)).toThrow("invalid projected relation cardinality");
+    expect(() => decode(3, [2, 3])).toThrow("invalid projected row cardinality");
+    expect(() => decode(3, [])).toThrow("invalid projected row cardinality");
+});
 test["test"]("projected Text realizes exact UTF-8", () => {
     const text = wasm["decode-projected-term-frame"](projected_atom("clause/process-projected-text-v1", [
         78, 111, 114, 116, 104, 32, 240, 159, 154, 128,
@@ -487,6 +549,20 @@ test["test"]("one persistent session sequences physical input candidate issuance
     }
     test["expect"](concatenate(after_dispose.reason)).toBe("Wasm session is disposed");
 });
+test["test"]("persistent session open and command requests retain distinct byte envelopes", () => {
+    const one_mib = 1024 * 1024;
+    const requests = [];
+    const module = module_for_bang([opened_event_bang()], requests);
+    const port = wasm["create-wasm-cartridge-port"](module, policy());
+    const request = wasm["->ExactProcessRequest"](minimal_cwr1_bang(new Array(one_mib).fill(8), [new Array(one_mib).fill(1)]));
+    const accepted = acceptPackage(port, request);
+    const started = startSession(port, accepted.acceptedPackage);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].length).toBeGreaterThan(one_mib);
+    expect(requests[0].length).toBeLessThanOrEqual(4 * one_mib);
+    expect(() => wasm["advance-session-occurrence!"](module, started.session, 0)).toThrow("persistent session request must carry bounded exact bytes");
+    expect(requests).toHaveLength(1);
+});
 test["test"]("persistent CWI1 commands retain continuation custody and exact Admission identities", () => {
     const requests = [];
     const module = module_for_bang([
@@ -538,6 +614,9 @@ test["test"]("CWR1 hex transport is exact and bounded", () => {
             test["expect"](throws_p_bang(() => wasm["decode-cwr1-hex"](source)) ? "true" : "false").toBe("true");
         });
     })();
+});
+test["test"]("CET1 hex transport is exact", () => {
+    test["expect"](json_string(wasm["decode-cet1-hex"]("43 45\n54\t31"))).toBe("[67,69,84,49]");
 });
 test["test"]("real Wasm lowers physical input and exposes only the admitted arena frame", () => Promise.all([
     file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(),
@@ -844,7 +923,7 @@ test["test"]("real Wasm hot-reloads Clause dash jump through Admission and passi
     test["expect"](concatenate(controller.dispose())).toBe("true");
     return null;
 }));
-test["test"]("real Wasm transports one source-owned ongoing effect lifecycle", () => Promise.all([
+test["test"]("real Wasm refuses an effect before intent admission", () => Promise.all([
     file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(),
     file("./fixtures/wasm-ongoing-effect-v1/ongoing-effect-v1.cwr1.hex").text(),
 ]).then((assets) => {
@@ -864,27 +943,8 @@ test["test"]("real Wasm transports one source-owned ongoing effect lifecycle", (
     if (queried.kind !== "effect-intent") {
         throw new Error("emitted effect intent was not queryable");
     }
-    const issued = wasm["issue-effect-authorization!"](module, session, intent.intentId);
-    const attempt = wasm["begin-effect-attempt!"](module, session, issued.authorizationId);
-    const settled = wasm["settle-effect-attempt!"](module, session, attempt.attemptId, 202, [97, 99, 99, 101, 112, 116, 101, 100]);
-    const state_count = concatenate(absent.stateRevisionCount);
-    test["expect"](concatenate(absent.kind)).toBe("effect-intent-absent");
     test["expect"](json_string(queried.intentId)).toBe(json_string(intent.intentId));
-    test["expect"](json_string(attempt.actionBytes)).toBe(json_string(intent.actionBytes));
-    test["expect"](json_string(attempt.resourceBytes)).toBe(json_string(intent.resourceBytes));
-    test["expect"](json_string(attempt.payloadBytes)).toBe(json_string(intent.payloadBytes));
-    test["expect"](concatenate(settled.disposition)).toBe("receipt-observed");
-    test["expect"](settled.receiptId == null ? "false" : "true").toBe("true");
-    test["expect"](settled.observationId == null ? "false" : "true").toBe("true");
-    test["expect"](concatenate(settled.stateRevisionCount)).toBe(state_count);
-    const second_intent = wasm["emit-effect-intent!"](module, session);
-    const second_issued = wasm["issue-effect-authorization!"](module, session, second_intent.intentId);
-    const second_attempt = wasm["begin-effect-attempt!"](module, session, second_issued.authorizationId);
-    const no_receipt = wasm["settle-effect-attempt!"](module, session, second_attempt.attemptId, null, null);
-    test["expect"](concatenate(no_receipt.disposition)).toBe("no-receipt");
-    test["expect"](no_receipt.receiptId == null ? "true" : "false").toBe("true");
-    test["expect"](no_receipt.observationId == null ? "true" : "false").toBe("true");
-    test["expect"](concatenate(no_receipt.stateRevisionCount)).toBe(state_count);
+    test["expect"](() => wasm["issue-effect-authorization!"](module, session, intent.intentId)).toThrow();
     port.disposeSession(session);
     return null;
 }));

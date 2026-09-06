@@ -388,6 +388,8 @@ pub struct CandidateObligation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CandidateDeltaV2 {
+    /// Exact emitted intents proposed for admission with this successor.
+    pub effect_intents: Vec<EffectIntentId>,
     pub id: CandidateDeltaId,
     pub base: StateRevisionId,
     pub delta: DomainBoundTermV2,
@@ -659,6 +661,9 @@ pub fn validate_support_uses(supports: &[SupportUse]) -> Result<(), ProvenanceEr
 
 pub fn validate_candidate_delta(candidate: &CandidateDeltaV2) -> Result<(), ProvenanceError> {
     validate_support_uses(&candidate.evidence)?;
+    if !candidate.effect_intents.windows(2).all(|pair| pair[0] < pair[1]) {
+        return Err(ProvenanceError::NonCanonicalOrder("candidate effect intents"));
+    }
     validate_length(
         "candidate obligations",
         candidate.obligations.len(),

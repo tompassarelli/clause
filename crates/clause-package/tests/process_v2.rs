@@ -631,6 +631,7 @@ fn rejection_fixture() -> (
         semantics: scope().semantics,
     };
     let candidate = CandidateDeltaV2 {
+        effect_intents: vec![],
         id: delta,
         base: base.id,
         delta: domain_bound("delta/candidate", 99),
@@ -1656,6 +1657,7 @@ fn build_core_package_from_snapshot(
     );
     state_admit_step.observed_state = Some(context.initial_state);
     state_admit_step.candidate_delta = Some(CandidateDeltaV2 {
+        effect_intents: vec![],
         id: delta_admit,
         base: context.initial_state,
         delta: domain_bound("delta/admit", 84),
@@ -1683,6 +1685,7 @@ fn build_core_package_from_snapshot(
     );
     state_reject_step.observed_state = Some(context.initial_state);
     state_reject_step.candidate_delta = Some(CandidateDeltaV2 {
+        effect_intents: vec![],
         id: delta_reject,
         base: context.initial_state,
         delta: domain_bound("delta/reject", 85),

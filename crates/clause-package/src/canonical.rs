@@ -1699,6 +1699,7 @@ impl Wire for SupportSource {
 wire_struct!(SupportUse { slot, role, source });
 wire_struct!(CandidateObligation { id, requirement });
 wire_struct!(CandidateDeltaV2 {
+    effect_intents,
     id,
     base,
     delta,
@@ -2375,6 +2376,8 @@ wire_struct!(EffectIntentOccurrenceV1 {
     payload,
 });
 wire_struct!(IssuedEffectAuthorizationV1 {
+    admission,
+    activation,
     id,
     intent,
     capability,
@@ -2384,6 +2387,7 @@ wire_struct!(IssuedEffectAuthorizationV1 {
     payload,
 });
 wire_struct!(EffectAttemptOccurrenceV1 {
+    activation,
     id,
     intent,
     authorization,
