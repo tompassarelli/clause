@@ -842,6 +842,31 @@ pub struct ProcessCarrier {
     accepted_ingress_bytes: usize,
 }
 
+/// Recorded current Admission frontier selected from a trusted Store. This is
+/// not an Admission request or a proof reconstructed from incomplete history.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordedAdmittedFrontierV1 {
+    pub(crate) package: ProcessPackageId,
+    pub(crate) state: StateRevision,
+    pub(crate) decision: Option<StateAdmissionDecisionV2>,
+    pub(crate) permission_uses: Vec<RecordedBoundaryUseV1>,
+    pub(crate) applied_base_records: u64,
+    pub(crate) accepted_records: u64,
+    pub(crate) accepted_bytes: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RecordedBoundaryUseV1 {
+    pub(crate) boundary: BoundaryRef,
+    pub(crate) permission: BoundaryPermissionLocalId,
+    pub(crate) count: u32,
+}
+
+impl RecordedAdmittedFrontierV1 {
+    pub fn state(&self) -> &StateRevision { &self.state }
+    pub fn decision(&self) -> Option<&StateAdmissionDecisionV2> { self.decision.as_ref() }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct RecordBatchCardinality {
     records: usize,
@@ -1099,6 +1124,94 @@ impl ProcessCarrier {
             .get(&causal)
             .map_or(0, BTreeSet::len);
         self.resident_ingress_record_count = 1;
+        Ok(())
+    }
+
+    /// Record only the current state, its Admission, and monotonic ingress
+    /// accounting. The runtime must first establish an idle admitted frontier.
+    pub fn record_admitted_frontier(
+        &self,
+        state: StateRevisionId,
+    ) -> Result<RecordedAdmittedFrontierV1, ProcessError> {
+        let state = self.states.get(&state).ok_or(ProcessError::UnknownStateRevision(state))?;
+        let decision = match state.cause {
+            StateRevisionCause::SessionStart(_) => None,
+            StateRevisionCause::Admission { occurrence, .. } => Some(
+                self.decision_by_occurrence(occurrence)
+                    .ok_or(ProcessError::UnknownAdmission(occurrence))?.clone()),
+        };
+        Ok(RecordedAdmittedFrontierV1 {
+            package: self.package,
+            state: state.clone(),
+            decision,
+            permission_uses: self.boundary_permission_uses.iter().map(|((boundary, permission), count)|
+                RecordedBoundaryUseV1 { boundary: *boundary, permission: *permission, count: *count }).collect(),
+            applied_base_records: self.applied_base_record_count as u64,
+            accepted_records: self.accepted_ingress_record_count as u64,
+            accepted_bytes: self.accepted_ingress_bytes as u64,
+        })
+    }
+
+    /// Restore a previously admitted frontier from the caller's trusted Store.
+    /// Decoding alone never grants authority. The selected Store is responsible
+    /// for checkpoint provenance; old proofs need not remain resident.
+    pub fn restore_admitted_frontier(
+        &mut self,
+        frontier: RecordedAdmittedFrontierV1,
+        authority: &AuthorityStore,
+    ) -> Result<(), ProcessError> {
+        let rejected = || ProcessError::AuthorityPinMismatch;
+        let state = &frontier.state;
+        if frontier.package != self.package || self.accepted_ingress_record_count != 0 {
+            return Err(ProcessError::PackageBindingMismatch);
+        }
+        self.validate_state_payload_binding(state)?;
+        let anchor = authority.runtime_session(state.session).ok_or_else(rejected)?;
+        if state.policy != anchor.policy || state.semantics != anchor.semantics
+            || state.derived_id() != state.id {
+            return Err(rejected());
+        }
+        match (&frontier.decision, state.cause) {
+            (None, StateRevisionCause::SessionStart(start))
+                if state.id == anchor.initial_state_id() && start == anchor.start => {},
+            (Some(decision), StateRevisionCause::Admission { occurrence, .. })
+                if decision.occurrence == occurrence
+                    && matches!(&decision.outcome, StateAdmissionOutcomeV2::Admit(value) if value == state)
+                    && authority.external_provenance_is_anchored(decision.provenance.boundary,
+                        decision.provenance.evidence, decision.provenance.permission) => {},
+            _ => return Err(rejected()),
+        }
+        let applied = usize::try_from(frontier.applied_base_records).map_err(|_| rejected())?;
+        let records = usize::try_from(frontier.accepted_records).map_err(|_| rejected())?;
+        let bytes = usize::try_from(frontier.accepted_bytes).map_err(|_| rejected())?;
+        if applied > self.base_record_count || !is_strictly_sorted_unique_by(
+            &frontier.permission_uses, |entry| (entry.boundary, entry.permission)) {
+            return Err(rejected());
+        }
+        for entry in &frontier.permission_uses {
+            let permission = authority.boundary_permission(entry.boundary, entry.permission)
+                .ok_or_else(rejected)?;
+            let maximum = match permission.replay {
+                BoundaryReplayPolicyV2::OneShot => Some(1),
+                BoundaryReplayPolicyV2::Repeatable { maximum_occurrences } => maximum_occurrences,
+            };
+            if maximum.is_some_and(|maximum| entry.count > maximum) { return Err(rejected()); }
+        }
+        self.states.clear();
+        self.states.insert(state.id, state.clone());
+        if let Some(decision) = frontier.decision {
+            let causal = CausalRef::Admission(decision.occurrence);
+            self.causal_predecessors.insert(causal, decision.provenance.causes.iter().copied().collect());
+            self.causal_edge_count = decision.provenance.causes.len();
+            self.decisions_by_occurrence.insert(decision.occurrence, decision.delta);
+            self.decisions.insert(decision.delta, decision);
+        }
+        self.boundary_permission_uses = frontier.permission_uses.into_iter()
+            .map(|entry| ((entry.boundary, entry.permission), entry.count)).collect();
+        self.applied_base_record_count = applied;
+        self.resident_ingress_record_count = usize::from(frontier.accepted_records != 0);
+        self.accepted_ingress_record_count = records;
+        self.accepted_ingress_bytes = bytes;
         Ok(())
     }
 

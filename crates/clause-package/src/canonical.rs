@@ -2539,6 +2539,31 @@ wire_struct!(ProcessPackageV2 {
     records,
 });
 
+wire_struct!(RecordedBoundaryUseV1 { boundary, permission, count });
+wire_struct!(RecordedAdmittedFrontierV1 {
+    package, state, decision, permission_uses, applied_base_records, accepted_records, accepted_bytes,
+});
+
+/// Canonical bytes of a recorded frontier, not new Admission authority.
+pub fn encode_recorded_admitted_frontier_v1(value: &RecordedAdmittedFrontierV1) -> Result<Vec<u8>, CanonicalEncodeError> {
+    encode_wire(value)
+}
+
+pub fn decode_recorded_admitted_frontier_v1(bytes: &[u8]) -> Result<RecordedAdmittedFrontierV1, CanonicalDecodeError> {
+    if bytes.len() > MAX_CANONICAL_BYTES {
+        return Err(CanonicalDecodeError::InputTooLong { length: bytes.len(), maximum: MAX_CANONICAL_BYTES });
+    }
+    let mut cursor = Cursor::new(bytes);
+    let value = RecordedAdmittedFrontierV1::decode(&mut cursor)?;
+    if cursor.remaining() != 0 {
+        return Err(CanonicalDecodeError::TrailingBytes { offset: cursor.offset(), remaining: cursor.remaining() });
+    }
+    if encode_wire(&value).map_err(CanonicalDecodeError::NonCanonical)? != bytes {
+        return Err(CanonicalDecodeError::NonCanonical(CanonicalEncodeError::NonCanonicalOrder("admitted frontier")));
+    }
+    Ok(value)
+}
+
 /// One strictly decoded process-v2 package. The candidate cannot be extracted
 /// by value; checking must consume this exact byte/value binding.
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
+mod checkpoint;
+
 use clause_package::{
     CandidateDeltaId, CanonicalDeclaredFrontendV1, CanonicalHandlerTriggerV1,
     CanonicalKeyPhaseV1, CanonicalKeyboardBindingV1, CanonicalReferentInputBindingV1,
@@ -130,6 +132,15 @@ impl ResidentSourceWorkbenchV1 {
         declared_frontend_source: &[u8],
         trace_retention: clause_runtime::WasmSessionTraceRetentionV1,
     ) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
+        Self::open_with_checkpoint(exact_source, declared_frontend_source, trace_retention, None)
+    }
+
+    fn open_with_checkpoint(
+        exact_source: &[u8],
+        declared_frontend_source: &[u8],
+        trace_retention: clause_runtime::WasmSessionTraceRetentionV1,
+        checkpoint: Option<(u64, &[u8])>,
+    ) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
         let declared_frontend = CanonicalDeclaredFrontendV1::read(declared_frontend_source)
             .map_err(|error| debug_error("declared frontend", error))?;
         let coherent_template =
@@ -188,7 +199,13 @@ impl ResidentSourceWorkbenchV1 {
             last_source_edit: None,
             declared_frontend,
         };
-        workbench.install_source(exact_source)?;
+        if let Some((change, bytes)) = checkpoint {
+            workbench.next_change = change.checked_sub(1)
+                .ok_or_else(|| ResidentSourceWorkbenchErrorV1("invalid checkpoint source root".into()))?;
+            workbench.install_source_inner(exact_source, None, Some(bytes))?;
+        } else {
+            workbench.install_source(exact_source)?;
+        }
         Ok(workbench)
     }
 
@@ -621,7 +638,16 @@ impl ResidentSourceWorkbenchV1 {
     fn install_source_with_edit(
         &mut self,
         exact_source: &[u8],
+        edit: Option<clause_runtime::ExecutableSourceEditV1>,
+    ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
+        self.install_source_inner(exact_source, edit, None)
+    }
+
+    fn install_source_inner(
+        &mut self,
+        exact_source: &[u8],
         mut edit: Option<clause_runtime::ExecutableSourceEditV1>,
+        checkpoint: Option<&[u8]>,
     ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
         let next_change = self.next_change.checked_add(1).ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("source change sequence exhausted".into())
@@ -869,7 +895,9 @@ impl ResidentSourceWorkbenchV1 {
             clause_runtime::encode_executable_source_edit_v1(edit)
                 .map_err(|error| boxed_error("source edit encode", error))
         }).transpose()?;
-        let opened = if let Some(witness) = &source_edit {
+        let opened = if let Some(checkpoint) = checkpoint {
+            self.boundary.reopen_admitted(&exact_open, checkpoint)?
+        } else if let Some(witness) = &source_edit {
             self.boundary.open_source_edit(self.generation.handle, self.sequence, &exact_open, witness)?
         } else { self.boundary.open(&exact_open)? };
         let WasmSessionEventKindV1::Opened {
@@ -897,7 +925,7 @@ impl ResidentSourceWorkbenchV1 {
         };
         self.package = package_id;
         self.session = session;
-        self.sequence = 0;
+        self.sequence = opened.accepted_sequence;
         self.pending = None;
         self.last_projection = None;
         self.last_source_edit = source_edit;

@@ -3,6 +3,32 @@
 This bounded surface is driven by the live encounter, not a general editor or
 general counterfactual solver. Native and Wasm use the same normalized evaluator.
 
+## Admitted-world checkpoint and reopen
+
+`ResidentSourceWorkbenchV1::checkpoint_admitted()` returns bounded checkpoint
+bytes. `ResidentSourceWorkbenchV1::reopen(exact_source, checkpoint)` restores
+that exact source generation and admitted world, including created Referents,
+Text, runtime allocation epoch and cursors, source continuity, remaining budget,
+and command-window position. Source handlers are re-derived through the compiler
+and the exact original package/physical-plan/authority binding must match before
+any stored world is installed. No inputs or host effects are replayed.
+
+The checkpoint records the current StateRevision and its Admission frontier,
+not unbounded completed execution history. Pending candidates, unfinished local
+steps, suspensions and unsettled effects reject checkpointing. Initial idle
+worlds can also be checkpointed. Reopening retains the original trace-retention
+policy; `open_continuous` therefore remains continuous after reopening. Completed
+event explanations and historical queries are not retained by this format.
+
+This is import from the caller's **trusted local Store**, not admission of
+arbitrary uploaded bytes. The caller owns private-file selection, atomic writes,
+and single-writer custody; reopening the same checkpoint concurrently does not
+create independent allocation roots. The SHA-256 digest detects corruption, not
+forgery. Corruption, truncation, source mismatch and changed compiled bindings
+reject without deleting data or silently opening a fresh world. There is no
+cross-compiler checkpoint migration path in this first format. Runtime frontier
+bytes are bounded at 16 MiB and the complete boundary checkpoint at 32 MiB.
+
 ## Explicit edit
 
 `ResidentSourceWorkbenchV1::scalar_effects()` offers exact artifact-scoped

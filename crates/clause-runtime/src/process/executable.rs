@@ -30,6 +30,7 @@ const MAX_INPUT_CODE_BYTES: usize = 64;
 
 mod live_source;
 pub use live_source::*;
+mod checkpoint;
 mod explanation;
 pub use explanation::*;
 mod relational;
@@ -5943,6 +5944,10 @@ pub enum ExecutableCarrierErrorV1 {
     UnknownActiveEffectAttempt,
     HistoryCompactionUnavailable,
     UnsupportedSurface,
+}
+
+impl From<ExecutableErrorV1> for ExecutableCarrierErrorV1 {
+    fn from(error: ExecutableErrorV1) -> Self { Self::Executable(error) }
 }
 
 impl fmt::Display for ExecutableCarrierErrorV1 {

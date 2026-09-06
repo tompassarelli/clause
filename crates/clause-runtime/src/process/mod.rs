@@ -114,6 +114,13 @@ impl ProcessRuntime {
         self.carrier.compact_to_admitted_frontier(state, admission)
     }
 
+    pub(crate) fn restore_admitted_frontier(
+        &mut self,
+        frontier: clause_package::RecordedAdmittedFrontierV1,
+    ) -> Result<(), ProcessError> {
+        self.carrier.restore_admitted_frontier(frontier, &self.authority)
+    }
+
     pub(crate) fn unique_revision_state_admission_authorization(
         &self,
         revision: clause_package::ProgramRevisionId,

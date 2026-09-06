@@ -152,6 +152,42 @@ impl PersistentProcessSessionV1 {
         })
     }
 
+    /// Encode only an idle admitted world and its exact allocation frontier.
+    /// Pending local work, candidates, continuations and effects must settle first.
+    pub fn checkpoint_admitted(&self) -> Result<Vec<u8>, PersistentProcessSessionErrorV1> {
+        Ok(self.runtime()?.checkpoint_admitted()?)
+    }
+
+    /// Reopen an exact recorded frontier from a trusted local Store. No input,
+    /// effect, judgment or Admission is executed by this physical restoration.
+    pub fn reopen_admitted(
+        package: CheckedProcessPackage,
+        authority: AuthorityStore,
+        application: ApplicationId,
+        physical_plan: ExecutablePhysicalPlanV1,
+        facts: ExecutableAuthorityFactsV1,
+        checkpoint: &[u8],
+    ) -> Result<Self, PersistentProcessSessionErrorV1> {
+        let runtime = ExecutableProcessRuntimeV1::reopen_admitted(
+            package, authority, application, physical_plan, facts, checkpoint)?;
+        let current = runtime.authority_facts().ok_or(ExecutableCarrierErrorV1::NotStarted)?;
+        let frontier = runtime.carrier().carrier().state_revision(current.initial_state)
+            .ok_or(ExecutableCarrierErrorV1::HistoryCompactionUnavailable)?;
+        let last_admitted = match frontier.cause {
+            clause_package::StateRevisionCause::SessionStart(_) => None,
+            clause_package::StateRevisionCause::Admission { occurrence, .. } => Some(ExecutableStateRevisionV1 {
+                id: frontier.id,
+                predecessor: frontier.predecessor.ok_or(ExecutableCarrierErrorV1::HistoryCompactionUnavailable)?,
+                admission: occurrence,
+                configuration: runtime.configuration().to_vec(),
+            }),
+        };
+        let accepted_projection = runtime.current_projection_term()?;
+        let allocation = runtime.allocation();
+        Ok(Self { runtime: Some(runtime), session: facts.session, program_revision: facts.program_revision,
+            world_base: current.initial_state, allocation, last_admitted, accepted_projection })
+    }
+
     /// Decode and execute one construct-blind occurrence without requesting
     /// Admission. Its entered Observation and local Step are committed only if
     /// their complete carrier batch succeeds.

@@ -2,6 +2,9 @@
 
 use clause_package::*;
 
+mod checkpoint;
+pub use checkpoint::wasm_session_checkpoint_context_v1;
+
 use super::wasm_boundary::{
     Decoder, MAX_EVIDENCE_BYTES, decode_wasm_authority_input_v1, encode_wasm_authority_input_v1,
     establish_persistent_authority, put_blob,
@@ -268,6 +271,7 @@ pub struct WasmSessionEventV1 {
 }
 
 struct LiveSessionV1 {
+    exact_open: Vec<u8>,
     session: PersistentProcessSessionV1,
     sequence: u64,
     command_window_start: u64,
@@ -531,6 +535,7 @@ impl WasmPersistentSessionBoundaryV1 {
             },
         };
         let replacement = LiveSessionV1 {
+            exact_open: bytes.to_vec(),
             session,
             sequence: 0,
             command_window_start: 0,
