@@ -240,8 +240,29 @@ true
 "player"
 (3.0, 4.0)
 [3.0, 4.0]
-Vec2 { x: 3.0, y: 4.0 }
 ```
+
+A role whose declared range is a structured contract receives its value through
+ordinary field edges. The range selects the field grammar before those children
+are read; no repeated constructor or field Referent is introduced:
+
+```clause
+position
+  domain: Particle
+  range: Vec2
+  cardinality: one
+
+particle
+  position:
+    x: 3.0
+    y: 4.0
+```
+
+The same field tree matches values in conditions and withdrawals and constructs
+them in inclusions. A whole-value binding may be copied or replaced by fields;
+field bindings may be used in a whole-value replacement. Field names, order,
+completeness, and value types are checked against the one declared contract.
+Fields retain their own source origins; they are not newly allocated Referents.
 
 Declared readings may form nested expressions such as:
 

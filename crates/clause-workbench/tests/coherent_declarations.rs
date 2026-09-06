@@ -108,7 +108,7 @@ fn one_binding_contract_checks_runs_prints_and_edits_structured_state() {
 fn declared_focus_changes_contracts_patterns_and_printing_together() {
     let declared = std::str::from_utf8(DECLARED_FOCUSED_FRONTEND_SOURCE_V1).unwrap()
         .replace("    : ?object", "    means: ?object");
-    let grouped = SOURCE.replace("first charge 9.0", "(charge: 9.0):\n  first first")
+    let grouped = SOURCE.replace("  charge: 9.0", "\n(charge: 9.0):\n  first first")
         .replace("?amount ?minimum ?maximum ?result", "?amount ?amount ?minimum ?maximum ?result");
     let native = read_canonical_source_v1(grouped.as_bytes()).unwrap();
     let equal = native.applications().iter().filter(|a| a.subject == b"first" && a.role == b"charge").collect::<Vec<_>>();
@@ -121,7 +121,12 @@ fn declared_focus_changes_contracts_patterns_and_printing_together() {
     assert_eq!(native.declarations().find(|d| d.designation == b"limited").unwrap().bindings.len(), 4);
     assert!(read_canonical_source_v1(b"charge: 9.0\n  first\n").is_err());
     let source = grouped.lines().map(|line| {
-        if line.starts_with(' ') { line.replace(": ", " means ") } else { line.to_owned() }
+        if line.starts_with(' ') {
+            let trimmed = line.trim();
+            if trimmed.ends_with(':') && !trimmed.starts_with(['?', '(']) {
+                format!("{} means", line.trim_end_matches(':'))
+            } else { line.replace(": ", " means ") }
+        } else { line.to_owned() }
     }).collect::<Vec<_>>().join("\n").replace("(charge: 9.0):", "(charge means 9.0):") + "\n";
     assert!(ResidentSourceWorkbenchV1::open(source.as_bytes()).is_err());
     let frontend = CanonicalDeclaredFrontendV1::read(declared.as_bytes()).unwrap();
@@ -152,7 +157,7 @@ fn declaration_constraints_reject_missing_mistyped_and_duplicate_bindings() {
         SOURCE.replace("  y: F64", "  y: F64\n  y: F64"),
         SOURCE.replace("y: 3.0", "y: true"),
         SOURCE.replace("given amount minimum maximum", "given amount minimum"),
-        SOURCE.replace("?charge ?limited", "?charge ?position"),
+        SOURCE.replace("?charge ?limited", "?charge ?destination"),
         SOURCE.replace("(shape: F64):", "shape: F64"),
     ] {
         assert_ne!(invalid, SOURCE);

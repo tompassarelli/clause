@@ -28,6 +28,7 @@ struct DeclaredMatch {
     reading: usize,
     bindings: BTreeMap<Vec<u8>, String>,
     focused: bool,
+    complete_prefix: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -159,7 +160,7 @@ impl CanonicalDeclaredFrontendV1 {
         Ok(CanonicalFocusedEdgeV1 {
             subject: subject.to_vec(),
             relation,
-            object: object.as_bytes().to_vec(),
+            object: CanonicalFocusedObjectV1::Source(object.as_bytes().to_vec()),
             source: canonical.into_bytes(),
             origin,
         })
@@ -180,6 +181,7 @@ impl CanonicalDeclaredFrontendV1 {
         let matched = DeclaredMatch {
             reading,
             focused: false,
+            complete_prefix: false,
             bindings: [
                 (declared.relation.clone(), relation_value.to_owned()),
                 (declared.object.clone(), object_value.to_owned()),
@@ -189,7 +191,7 @@ impl CanonicalDeclaredFrontendV1 {
         Ok(CanonicalFocusedEdgeV1 {
             subject: subject.to_vec(),
             relation: application_role_bytes(relation_value, origin)?,
-            object: object_value.as_bytes().to_vec(),
+            object: CanonicalFocusedObjectV1::Source(object_value.as_bytes().to_vec()),
             source: self.render(&matched).into_bytes(),
             origin,
         })
@@ -239,6 +241,17 @@ impl CanonicalDeclaredFrontendV1 {
         let tokens = input_tokens(source)?;
         let mut matches = Vec::new();
         for (reading, declared) in self.readings.iter().enumerate() {
+            if matches!(surface, DeclaredSurface::Prefix) {
+                let mut candidates = Vec::new();
+                match_parts(source, &tokens, declared.object_prefix_pattern(), 0, 0,
+                    &mut BTreeMap::new(), &mut candidates);
+                if !candidates.is_empty() {
+                    matches.extend(candidates.into_iter().map(|bindings| DeclaredMatch {
+                        reading, bindings, focused: false, complete_prefix: true,
+                    }));
+                    continue;
+                }
+            }
             let pattern = match surface {
                 DeclaredSurface::Edge => declared.pattern.as_slice(),
                 DeclaredSurface::Focused => {
@@ -264,6 +277,7 @@ impl CanonicalDeclaredFrontendV1 {
                 candidates
                     .into_iter()
                     .map(|bindings| DeclaredMatch { reading, bindings,
+                        complete_prefix: false,
                         focused: matches!(surface, DeclaredSurface::Focused) }),
             );
         }
@@ -278,11 +292,19 @@ impl CanonicalDeclaredFrontendV1 {
 
     fn render_prefix(&self, matched: &DeclaredMatch) -> String {
         let reading = &self.readings[matched.reading];
-        render_parts(reading.prefix_pattern(), &matched.bindings)
+        render_parts(if matched.complete_prefix { reading.object_prefix_pattern() }
+            else { reading.prefix_pattern() }, &matched.bindings)
     }
 }
 
 impl DeclaredReading {
+    fn object_prefix_pattern(&self) -> &[RelationReadingPartCst] {
+        let object = self.pattern.iter().position(|part|
+            matches!(part, RelationReadingPartCst::Role(role) if role == &self.object))
+            .expect("a checked Reading contains its object role");
+        &self.pattern[..object]
+    }
+
     fn prefix_pattern(&self) -> &[RelationReadingPartCst] {
         let object = self
             .pattern

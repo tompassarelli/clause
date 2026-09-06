@@ -53,17 +53,29 @@ charge
   range: F64
   cardinality: one
 
-first position Point { x: 2.0, y: 3.0 }
-first destination Point { x: 8.0, y: 9.0 }
-first charge 9.0
-second position Point { x: 4.0, y: 5.0 }
-second destination Point { x: 0.0, y: 0.0 }
-second charge -4.0
+first
+  position:
+    x: 2.0
+    y: 3.0
+  destination:
+    x: 8.0
+    y: 9.0
+  charge: 9.0
+second
+  position:
+    x: 4.0
+    y: 5.0
+  destination:
+    x: 0.0
+    y: 0.0
+  charge: -4.0
 
 on settle ?item
   when
     ?item:
-      position: ?position
+      position:
+        x: ?x
+        y: ?y
       destination: ?destination
       charge: ?charge
     (shape: F64):
@@ -75,5 +87,7 @@ on settle ?item
       charge: ?charge
   include
     ?item:
-      destination: ?position
+      destination:
+        x: ?x
+        y: ?y
       charge: ?limited

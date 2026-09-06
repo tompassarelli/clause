@@ -52,6 +52,7 @@ pub(super) fn clauses(
     lines: &[LogicalSourceLine],
     indent: usize,
     frontend: &CanonicalDeclaredFrontendV1,
+    environment: &ScalarLawEnvironment,
 ) -> Result<Vec<LogicalSourceLine>, CanonicalSourceErrorV1> {
     let mut result = Vec::new();
     let mut cursor = 0;
@@ -72,10 +73,11 @@ pub(super) fn clauses(
                     text: format!("{} {} {}",
                         std::str::from_utf8(&edge.subject).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
                         std::str::from_utf8(&edge.relation).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
-                        std::str::from_utf8(&edge.object).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
+                        std::str::from_utf8(edge.object.source(edge.origin)?).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
                     ),
                     origin: edge.origin,
                     indent,
+                    structured: None,
                 });
             }
         } else if end == cursor + 1 {
@@ -94,10 +96,20 @@ pub(super) fn clauses(
                 &focus,
                 subject,
                 frontend,
+                environment,
             )? {
+                if matches!(edge.object, CanonicalFocusedObjectV1::Fields { .. }) {
+                    result.push(LogicalSourceLine {
+                        text: structured_values::designation(&edge),
+                        origin: edge.origin,
+                        indent,
+                        structured: Some(edge),
+                    });
+                    continue;
+                }
                 let relation = std::str::from_utf8(&edge.relation)
                     .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
-                let object = std::str::from_utf8(&edge.object)
+                let object = std::str::from_utf8(edge.object.source(edge.origin)?)
                     .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
                 let subject = std::str::from_utf8(&edge.subject)
                     .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
@@ -105,6 +117,7 @@ pub(super) fn clauses(
                     text: format!("{subject} {relation} {object}"),
                     origin: edge.origin,
                     indent,
+                    structured: None,
                 });
             }
         }
@@ -116,6 +129,7 @@ pub(super) fn clauses(
 pub(super) fn handler_lines(
     lines: Vec<LogicalSourceLine>,
     frontend: &CanonicalDeclaredFrontendV1,
+    environment: &ScalarLawEnvironment,
 ) -> Result<Vec<LogicalSourceLine>, CanonicalSourceErrorV1> {
     let lines = lines
         .into_iter()
@@ -143,7 +157,7 @@ pub(super) fn handler_lines(
             section.text.as_str(),
             "if" | "then" | "when" | "withdraw" | "include" | "accumulate"
         ) {
-            result.extend(clauses(body, 4, frontend)?);
+            result.extend(clauses(body, 4, frontend, environment)?);
         } else {
             result.extend_from_slice(body);
         }

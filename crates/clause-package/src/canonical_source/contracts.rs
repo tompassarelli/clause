@@ -14,13 +14,12 @@ pub(super) fn read(
         {
             continue;
         }
-        let origin = line_origin(artifact, block[0]);
         let edges = if let Some(edges) = patterns::edge_focus(&logical_source_lines(artifact, block)?
             .into_iter().filter(|line| !line.text.is_empty()).collect::<Vec<_>>(), frontend)? {
             edges
-        } else if let Some(focus) = parse_subject_focus(artifact, block, origin, frontend)? {
-            focus.edges
-        } else { continue };
+        } else {
+            descriptor_edges(artifact, block, frontend)?
+        };
         for edge in edges {
             let application = declared_application(&edge)?;
             if !matches!(application.role.as_slice(), b"domain" | b"range" | b"cardinality") { continue; }
@@ -91,4 +90,37 @@ pub(super) fn read(
         });
     }
     Ok(contracts)
+}
+
+// Resolve role ranges before interpreting contextual object children. This
+// query reads only descriptor edges; the complete reader checks every other
+// edge once the resulting range environment is available.
+fn descriptor_edges(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+    frontend: &CanonicalDeclaredFrontendV1,
+) -> Result<Vec<CanonicalFocusedEdgeV1>, CanonicalSourceErrorV1> {
+    let head = block[0];
+    if head.text.contains(char::is_whitespace) || head.text.contains(':') {
+        return Ok(vec![]);
+    }
+    let subject = designation_bytes(head.text, line_origin(artifact, head))?;
+    let lines = logical_source_lines(artifact, &block[1..])?;
+    let mut edges = Vec::new();
+    for (index, line) in lines.iter().enumerate().filter(|(_, line)| line.indent == 2) {
+        if let Ok(edge) = frontend.edge(&subject, &line.text, line.origin) {
+            if matches!(edge.relation.as_slice(), b"domain" | b"range" | b"cardinality") {
+                edges.push(edge);
+            }
+        } else if let Ok((reading, role, _)) = frontend.prefix(&line.text, line.origin)
+            && matches!(role.as_slice(), b"domain" | b"range" | b"cardinality") {
+            for object in lines[index + 1..].iter().take_while(|line| line.indent > 2) {
+                if object.indent != 4 { return Err(CanonicalSourceErrorV1::UnexpectedIndentation { origin: object.origin }); }
+                edges.push(frontend.edge_from_values(reading, &subject,
+                    std::str::from_utf8(&role).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
+                    &object.text, object.origin)?);
+            }
+        }
+    }
+    Ok(edges)
 }

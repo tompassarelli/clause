@@ -14,13 +14,14 @@ pub(super) fn is_structural(cst: &CanonicalSourceCstV1, domain: &[u8]) -> bool {
 
 pub(super) fn creation_domain(
     parameter: &[u8],
-    includes: &[(String, CanonicalSourceOriginV1)],
+    includes: &[LogicalSourceLine],
     environment: &ScalarLawEnvironment,
     origin: CanonicalSourceOriginV1,
 ) -> Result<Vec<u8>, CanonicalSourceErrorV1> {
     let mut domains = BTreeSet::new();
-    for (source, source_origin) in includes {
-        let Some(insertions) = parse_general_insertion(source, "") else { continue };
+    for source in includes {
+        let source_origin = &source.origin;
+        let Some(insertions) = structured_values::insertion(source, "") else { continue };
         for insertion in insertions {
             let relations = environment.relations.iter().filter(|relation|
                 relation.surface == insertion.target.relation).collect::<Vec<_>>();

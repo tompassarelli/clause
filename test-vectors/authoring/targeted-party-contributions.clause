@@ -103,7 +103,11 @@ player chosen target first
 encounter encounter state active
 
 first selected true
-first combat position Vec3 { x: -1.0, y: 0.0, z: 0.0 }
+first
+  combat position:
+    x: -1.0
+    y: 0.0
+    z: 0.0
 first vitality 100.0
 first hostile false
 first attack damage 10.0
@@ -111,14 +115,22 @@ first attack range 5.0
 first action cooldown 0.0
 
 second selected true
-second combat position Vec3 { x: 1.0, y: 0.0, z: 0.0 }
+second
+  combat position:
+    x: 1.0
+    y: 0.0
+    z: 0.0
 second vitality 100.0
 second hostile false
 second attack damage 10.0
 second attack range 5.0
 second action cooldown 0.0
 
-cinder combat position Vec3 { x: 0.0, y: 0.0, z: 2.0 }
+cinder
+  combat position:
+    x: 0.0
+    y: 0.0
+    z: 2.0
 cinder vitality 100.0
 cinder hostile true
 
@@ -138,12 +150,20 @@ on attack ?unit
   when
     encounter encounter state active
     ?unit selected true
-    ?unit combat position Vec3 { x: ?unit-x, y: ?unit-y, z: ?unit-z }
+    ?unit
+      combat position:
+        x: ?unit-x
+        y: ?unit-y
+        z: ?unit-z
     ?unit attack damage ?damage
     ?unit attack range ?range
     ?unit action cooldown ?cooldown
     player chosen target ?target
-    ?target combat position Vec3 { x: ?target-x, y: ?target-y, z: ?target-z }
+    ?target
+      combat position:
+        x: ?target-x
+        y: ?target-y
+        z: ?target-z
     ?target vitality ?health
     ?target hostile true
     ?cooldown <= 0.0

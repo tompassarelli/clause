@@ -27,6 +27,7 @@ mod contracts;
 mod conformance;
 mod patterns;
 mod structured_bindings;
+mod structured_values;
 mod declared_frontend;
 pub use live_edit::*;
 pub use declared_frontend::{CanonicalDeclaredFrontendV1, DECLARED_FOCUSED_FRONTEND_SOURCE_V1};
@@ -691,9 +692,37 @@ pub struct CanonicalSourceVocabularyV1 {
 pub struct CanonicalFocusedEdgeV1 {
     pub subject: Vec<u8>,
     pub relation: Vec<u8>,
-    pub object: Vec<u8>,
+    pub object: CanonicalFocusedObjectV1,
     pub source: Vec<u8>,
     pub origin: CanonicalSourceOriginV1,
+}
+
+/// A focused object is either source for one value/pattern or the fields of
+/// the structure selected by its declared range. Fields introduce no Referent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CanonicalFocusedObjectV1 {
+    Source(Vec<u8>),
+    Fields {
+        shape: Vec<u8>,
+        fields: Vec<CanonicalFocusedFieldV1>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalFocusedFieldV1 {
+    pub name: Vec<u8>,
+    pub value: CanonicalFocusedObjectV1,
+    pub source: Vec<u8>,
+    pub origin: CanonicalSourceOriginV1,
+}
+
+impl CanonicalFocusedObjectV1 {
+    fn source(&self, origin: CanonicalSourceOriginV1) -> Result<&[u8], CanonicalSourceErrorV1> {
+        match self {
+            Self::Source(source) => Ok(source),
+            Self::Fields { .. } => Err(CanonicalSourceErrorV1::InvalidApplication { origin }),
+        }
+    }
 }
 
 /// One source-owned application with every semantic position explicit.
@@ -1055,6 +1084,7 @@ struct LogicalSourceLine {
     text: String,
     origin: CanonicalSourceOriginV1,
     indent: usize,
+    structured: Option<CanonicalFocusedEdgeV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -1691,7 +1721,7 @@ pub fn read_canonical_source_with_declared_frontend_v1(
             });
             continue;
         }
-        if let Some(focus) = parse_subject_focus(artifact, block, origin, frontend)? {
+        if let Some(focus) = parse_subject_focus(artifact, block, origin, frontend, &scalar_laws)? {
             subject_focuses.push(focus);
         }
         items.extend(parse_items(artifact, block, origin, &scalar_laws, frontend)?);
@@ -7499,6 +7529,7 @@ fn logical_source_lines(
                 text: trimmed.to_owned(),
                 origin: line_origin(artifact, line),
                 indent: line.indent,
+                structured: None,
             });
             cursor += 1;
             continue;
@@ -7560,6 +7591,7 @@ fn logical_source_lines(
                 end: closing.end as u64,
             },
             indent: line.indent,
+            structured: None,
         });
         cursor = closing_index + 1;
     }
@@ -7574,7 +7606,13 @@ fn parse_item(
     frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<CstItem, CanonicalSourceErrorV1> {
     if block[0].text.starts_with("on ") || block[0].text.starts_with("law ") {
-        let logical = patterns::handler_lines(logical_source_lines(artifact, block)?, frontend)?;
+        let logical = patterns::handler_lines(logical_source_lines(artifact, block)?, frontend, scalar_laws)?;
+        if logical.iter().any(|line| line.structured.is_some()) {
+            return Ok(CstItem { origin, kind: CstKind::GeneralHandler(
+                parse_general_handler(artifact, block, origin, scalar_laws, frontend)?
+                    .ok_or(CanonicalSourceErrorV1::InvalidGeneralHandler { origin })?
+            ) });
+        }
         let text = logical.iter().map(|line|
             format!("{}{}", " ".repeat(line.indent), line.text)
         ).collect::<Vec<_>>();
@@ -7845,7 +7883,7 @@ fn parse_items(
     scalar_laws: &ScalarLawEnvironment,
     frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<Vec<CstItem>, CanonicalSourceErrorV1> {
-    let Some(focus) = parse_subject_focus(artifact, block, origin, frontend)? else {
+    let Some(focus) = parse_subject_focus(artifact, block, origin, frontend, scalar_laws)? else {
         return parse_item(artifact, block, origin, scalar_laws, frontend).map(|item| vec![item]);
     };
 
@@ -7859,6 +7897,10 @@ fn parse_items(
         },
     }];
     for edge in focus.edges {
+        if let Some(assertion) = structured_values::assertion(&edge)? {
+            items.push(CstItem { origin: edge.origin, kind: CstKind::ShapeAssertion(assertion) });
+            continue;
+        }
         items.push(CstItem {
             origin: edge.origin,
             kind: CstKind::Application(declared_application(&edge)?),
@@ -8041,6 +8083,7 @@ fn parse_subject_focus(
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
     frontend: &CanonicalDeclaredFrontendV1,
+    environment: &ScalarLawEnvironment,
 ) -> Result<Option<CanonicalSubjectFocusV1>, CanonicalSourceErrorV1> {
     let children = logical_source_lines(artifact, &block[1..])?
         .into_iter().filter(|line| !line.text.is_empty()).collect::<Vec<_>>();
@@ -8064,6 +8107,7 @@ fn parse_subject_focus(
         &subject,
         application_designation_bytes,
         frontend,
+        environment,
     )?;
     Ok(Some(CanonicalSubjectFocusV1 {
         subject,
@@ -8078,6 +8122,7 @@ fn parse_focused_edges(
     subject: &[u8],
     nested_subject: fn(&str, CanonicalSourceOriginV1) -> Result<Vec<u8>, CanonicalSourceErrorV1>,
     frontend: &CanonicalDeclaredFrontendV1,
+    environment: &ScalarLawEnvironment,
 ) -> Result<Vec<CanonicalFocusedEdgeV1>, CanonicalSourceErrorV1> {
     let expected_indent =
         parent_indent
@@ -8106,6 +8151,19 @@ fn parse_focused_edges(
             edges.push(frontend.edge(subject, source, origin)?);
         } else {
             let (reading, role, _) = frontend.prefix(source, origin)?;
+            if let Some(shape) = structured_values::range(environment, &role, origin)? {
+                let object = structured_values::read(
+                    environment, shape, &lines[descendants_start..descendants_end],
+                    line.indent + 2, frontend, origin,
+                )?;
+                edges.push(CanonicalFocusedEdgeV1 {
+                    subject: subject.to_vec(), relation: role, object,
+                    source: source.as_bytes().to_vec(),
+                    origin: CanonicalSourceOriginV1 { end: lines[descendants_end - 1].origin.end, ..origin },
+                });
+                cursor = descendants_end;
+                continue;
+            }
             let object_indent = line
                 .indent
                 .checked_add(2)
@@ -8146,6 +8204,7 @@ fn parse_focused_edges(
                         &focus,
                         nested_subject,
                         frontend,
+                        environment,
                     )?);
                 }
                 object_cursor = object_descendants_end;
@@ -8163,7 +8222,7 @@ fn declared_application(
         std::str::from_utf8(&edge.relation).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
         edge.origin,
     )?;
-    let object = std::str::from_utf8(&edge.object)
+    let object = std::str::from_utf8(edge.object.source(edge.origin)?)
         .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
     let object = parse_application_object(object, edge.origin)?;
     Ok(ApplicationCst {
@@ -8786,7 +8845,7 @@ fn parse_general_handler(
         return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
     }
 
-    let logical = patterns::handler_lines(logical_source_lines(artifact, block)?, frontend)?;
+    let logical = patterns::handler_lines(logical_source_lines(artifact, block)?, frontend, scalar_laws)?;
     let mut section = String::new();
     let mut when = Vec::new();
     let mut create = Vec::<(Vec<u8>, Option<Vec<u8>>)>::new();
@@ -8844,7 +8903,7 @@ fn parse_general_handler(
                 };
                 let edge = frontend.edge(&parameter, trimmed, line.origin)?;
                 let CanonicalScalarValueV1::Symbol(domain) = parse_application_object(
-                    std::str::from_utf8(&edge.object)
+                    std::str::from_utf8(edge.object.source(edge.origin)?)
                         .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
                     line.origin,
                 )? else {
@@ -8861,7 +8920,7 @@ fn parse_general_handler(
         if line.indent != 4 {
             return Ok(None);
         }
-        let entry = (trimmed.to_owned(), line.origin);
+        let entry = line.clone();
         match section.as_str() {
             "when" => when.push(entry),
             "withdraw" => withdraw.push(entry),
@@ -8908,47 +8967,56 @@ fn parse_general_handler(
     let mut predicates = Vec::new();
     let mut boolean_conditions = Vec::new();
     let mut binding_constraints = Vec::new();
-    for (condition, condition_origin) in &when {
-        if let Some(constraint) = parse_binding_constraint(condition, *condition_origin)? {
-            binding_constraints.push(constraint);
-            continue;
-        }
-        if condition.starts_with("sum ") {
-            let sum = parse_general_sum(condition, *condition_origin, scalar_laws)?;
-            if seen_arguments.contains(&sum.parameter)
-                || sums.insert(sum.parameter.clone(), sum).is_some()
-            {
-                return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+    for clause in &when {
+        let condition = &clause.text;
+        let condition_origin = clause.origin;
+        if clause.structured.is_none() {
+            if let Some(constraint) = parse_binding_constraint(condition, condition_origin)? {
+                binding_constraints.push(constraint);
+                continue;
             }
-            continue;
-        }
-        if let Some(predicate) = parse_scalar_predicate(condition, "") {
-            predicates.push(predicate);
-            continue;
-        }
-        if let Some(condition) = parse_boolean_relation_use(condition, *condition_origin) {
-            boolean_conditions.push(condition);
-            continue;
-        }
-        if let Some(binding) = scalar_laws.binding(condition, *condition_origin)? {
-            if seen_arguments.contains(&binding.parameter)
-                || parameter_sources.contains_key(&binding.parameter)
-                || scalar_bindings
-                    .insert(binding.parameter.clone(), binding)
-                    .is_some()
-            {
-                return Ok(None);
+            if condition.starts_with("sum ") {
+                let sum = parse_general_sum(condition, condition_origin, scalar_laws)?;
+                if seen_arguments.contains(&sum.parameter)
+                    || sums.insert(sum.parameter.clone(), sum).is_some()
+                {
+                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+                }
+                continue;
             }
-            continue;
+            if let Some(predicate) = parse_scalar_predicate(condition, "") {
+                predicates.push(predicate);
+                continue;
+            }
+            if let Some(condition) = parse_boolean_relation_use(condition, condition_origin) {
+                boolean_conditions.push(condition);
+                continue;
+            }
+            if let Some(binding) = scalar_laws.binding(condition, condition_origin)? {
+                if seen_arguments.contains(&binding.parameter)
+                    || parameter_sources.contains_key(&binding.parameter)
+                    || scalar_bindings
+                        .insert(binding.parameter.clone(), binding)
+                        .is_some()
+                {
+                    return Ok(None);
+                }
+                continue;
+            }
+            if let Some(selector) = parse_scalar_state_selector(condition, condition_origin) {
+                selectors.push(selector);
+                continue;
+            }
         }
-        if let Some(selector) = parse_scalar_state_selector(condition, *condition_origin) {
-            selectors.push(selector);
-            continue;
-        }
-        let Some(sources) = parse_general_state_declaration(condition, subject) else {
+        let Some(sources) = structured_values::state_declaration(clause, subject) else {
             return Ok(None);
         };
+        if clause.structured.is_some() {
+            selectors.extend(structured_values::selectors(clause)
+                .ok_or(CanonicalSourceErrorV1::InvalidGeneralHandler { origin: clause.origin })?);
+        }
         for mut source in sources {
+            if source.parameter.is_empty() { continue; }
             if seen_arguments.contains(&source.parameter) {
                 membership_sources.push(source);
                 continue;
@@ -8980,16 +9048,16 @@ fn parse_general_handler(
     let mut required_sources = Vec::new();
     let mut used_includes = BTreeSet::new();
     let mut matched_withdrawals = BTreeSet::new();
-    for (withdraw_index, (withdraw, _)) in withdraw.iter().enumerate() {
-        if !when.iter().any(|(condition, _)| condition == withdraw) {
+    for (withdraw_index, withdraw) in withdraw.iter().enumerate() {
+        if !when.iter().any(|condition| condition.text == withdraw.text) {
             return Ok(None);
         }
         let matching = include
             .iter()
             .enumerate()
             .filter(|(include_index, _)| !used_includes.contains(include_index))
-            .filter_map(|(include_index, (include, _))| {
-                parse_general_assignments(withdraw, include, subject)
+            .filter_map(|(include_index, include)| {
+                structured_values::replacement(withdraw, include, subject)
                     .map(|replacement| (include_index, replacement))
             })
             .collect::<Vec<_>>();
@@ -9036,28 +9104,28 @@ fn parse_general_handler(
         used_includes.insert(*include_index);
         matched_withdrawals.insert(withdraw_index);
     }
-    for (include_index, (include, _)) in include.iter().enumerate() {
+    for (include_index, include) in include.iter().enumerate() {
         if used_includes.contains(&include_index) {
             continue;
         }
-        let Some(mut inserted) = parse_general_insertion(include, subject) else {
+        let Some(mut inserted) = structured_values::insertion(include, subject) else {
             return Ok(None);
         };
         insertions.append(&mut inserted);
     }
-    for (withdraw_index, (withdraw, _)) in withdraw.iter().enumerate() {
+    for (withdraw_index, withdraw) in withdraw.iter().enumerate() {
         if matched_withdrawals.contains(&withdraw_index) {
             continue;
         }
-        let Some(mut removed) = parse_general_state_declaration(withdraw, subject) else {
+        let Some(mut removed) = structured_values::state_declaration(withdraw, subject) else {
             return Ok(None);
         };
         removals.append(&mut removed);
     }
     let accumulations = accumulate
         .iter()
-        .map(|(line, _)| {
-            parse_general_insertion(line, subject)
+        .map(|line| {
+            structured_values::insertion(line, subject)
                 .ok_or(CanonicalSourceErrorV1::InvalidGeneralHandler { origin })
         })
         .collect::<Result<Vec<_>, _>>()?
@@ -9066,14 +9134,14 @@ fn parse_general_handler(
         .collect::<Vec<_>>();
     let mut includes = include
         .iter()
-        .map(|(include, origin)| HandlerIncludeCst {
-            origin: *origin,
-            local: include.as_bytes().to_vec(),
+        .map(|include| HandlerIncludeCst {
+            origin: include.origin,
+            local: include.text.as_bytes().to_vec(),
         })
         .collect::<Vec<_>>();
-    includes.extend(accumulate.iter().map(|(line, origin)| HandlerIncludeCst {
-        origin: *origin,
-        local: format!("accumulate {line}").into_bytes(),
+    includes.extend(accumulate.iter().map(|line| HandlerIncludeCst {
+        origin: line.origin,
+        local: format!("accumulate {}", line.text).into_bytes(),
     }));
     if assignments.is_empty()
         && insertions.is_empty()
@@ -9139,9 +9207,8 @@ fn parse_general_handler(
             &handler_semantic_producer_from_logical(&logical),
         ) },
         designation: designation.as_bytes().to_vec(),
-        premises: when.iter().map(|(source, origin)| {
-            Ok((declared_frontend::input_tokens(source)?.into_iter()
-                .map(|token| source.as_bytes()[token.start..token.end].to_vec()).collect(), *origin))
+        premises: when.iter().map(|line| {
+            Ok((structured_values::premise_tokens(line)?, line.origin))
         }).collect::<Result<_, CanonicalSourceErrorV1>>()?,
         binding_constraints,
         subject: subject.as_bytes().to_vec(),
@@ -11023,7 +11090,7 @@ fn parse_declaration(
             let name = denotation_designation_bytes(
                 std::str::from_utf8(&edge.relation).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?, origin)?;
             let domain = application_designation_bytes(
-                std::str::from_utf8(&edge.object).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?, origin)?;
+                std::str::from_utf8(edge.object.source(origin)?).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?, origin)?;
             fields.push(ShapeField {
                 name,
                 domain,
@@ -11037,7 +11104,7 @@ fn parse_declaration(
                 .map(|value| denotation_designation_bytes(value, origin)).transpose()?
         } else { None };
         let logical = logical_source_lines(artifact, &lines[cursor..end])?;
-        for clause in patterns::clauses(&logical, 2, frontend)? {
+        for clause in patterns::clauses(&logical, 2, frontend, &ScalarLawEnvironment::default())? {
             if let Some(constraint) = parse_binding_constraint(&clause.text, clause.origin)? {
                 let name = constraint.parameter[1..].to_vec();
                 if let Some(previous) = roles.iter().find(|role: &&RelationRoleCst| role.name == name) {

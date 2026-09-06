@@ -350,7 +350,11 @@ victory
 defeat
   member of: EncounterState
 
-player-1 order target Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+player-1
+  order target:
+    x: 0.0
+    y: 0.0
+    z: 0.0
 player-1 chosen target cinder-1
 encounter encounter state ready
 ready state name "Ready"
@@ -373,9 +377,21 @@ ranger-class class role "Ranged pressure"
 warrior-1 actor name "Aldric"
 warrior-1 presentation kind "Warrior"
 warrior-1 unit class warrior-class
-warrior-1 actor position Vec3 { x: -2.0, y: 0.0, z: 1.0 }
-warrior-1 unit destination Vec3 { x: -2.0, y: 0.0, z: 1.0 }
-warrior-1 formation offset Vec3 { x: -2.0, y: 0.0, z: -1.0 }
+warrior-1
+  actor position:
+    x: -2.0
+    y: 0.0
+    z: 1.0
+warrior-1
+  unit destination:
+    x: -2.0
+    y: 0.0
+    z: 1.0
+warrior-1
+  formation offset:
+    x: -2.0
+    y: 0.0
+    z: -1.0
 warrior-1 movement speed 5.0
 warrior-1 selected true
 warrior-1 moving false
@@ -395,9 +411,21 @@ warrior-1 action period 0.8
 artificer-1 actor name "Cora"
 artificer-1 presentation kind "Artificer"
 artificer-1 unit class artificer-class
-artificer-1 actor position Vec3 { x: 0.0, y: 0.0, z: 1.0 }
-artificer-1 unit destination Vec3 { x: 0.0, y: 0.0, z: 1.0 }
-artificer-1 formation offset Vec3 { x: 0.0, y: 0.0, z: -1.0 }
+artificer-1
+  actor position:
+    x: 0.0
+    y: 0.0
+    z: 1.0
+artificer-1
+  unit destination:
+    x: 0.0
+    y: 0.0
+    z: 1.0
+artificer-1
+  formation offset:
+    x: 0.0
+    y: 0.0
+    z: -1.0
 artificer-1 movement speed 4.3
 artificer-1 selected true
 artificer-1 moving false
@@ -417,9 +445,21 @@ artificer-1 action period 0.8
 rogue-1 actor name "Vey"
 rogue-1 presentation kind "Rogue"
 rogue-1 unit class rogue-class
-rogue-1 actor position Vec3 { x: 2.0, y: 0.0, z: 1.0 }
-rogue-1 unit destination Vec3 { x: 2.0, y: 0.0, z: 1.0 }
-rogue-1 formation offset Vec3 { x: 2.0, y: 0.0, z: -1.0 }
+rogue-1
+  actor position:
+    x: 2.0
+    y: 0.0
+    z: 1.0
+rogue-1
+  unit destination:
+    x: 2.0
+    y: 0.0
+    z: 1.0
+rogue-1
+  formation offset:
+    x: 2.0
+    y: 0.0
+    z: -1.0
 rogue-1 movement speed 5.7
 rogue-1 selected true
 rogue-1 moving false
@@ -439,9 +479,21 @@ rogue-1 action period 0.8
 priest-1 actor name "Mara"
 priest-1 presentation kind "Priest"
 priest-1 unit class priest-class
-priest-1 actor position Vec3 { x: -1.0, y: 0.0, z: 3.0 }
-priest-1 unit destination Vec3 { x: -1.0, y: 0.0, z: 3.0 }
-priest-1 formation offset Vec3 { x: -1.0, y: 0.0, z: 1.0 }
+priest-1
+  actor position:
+    x: -1.0
+    y: 0.0
+    z: 3.0
+priest-1
+  unit destination:
+    x: -1.0
+    y: 0.0
+    z: 3.0
+priest-1
+  formation offset:
+    x: -1.0
+    y: 0.0
+    z: 1.0
 priest-1 movement speed 4.2
 priest-1 selected true
 priest-1 moving false
@@ -461,9 +513,21 @@ priest-1 action period 0.8
 ranger-1 actor name "Rowan"
 ranger-1 presentation kind "Ranger"
 ranger-1 unit class ranger-class
-ranger-1 actor position Vec3 { x: 1.0, y: 0.0, z: 3.0 }
-ranger-1 unit destination Vec3 { x: 1.0, y: 0.0, z: 3.0 }
-ranger-1 formation offset Vec3 { x: 1.0, y: 0.0, z: 1.0 }
+ranger-1
+  actor position:
+    x: 1.0
+    y: 0.0
+    z: 3.0
+ranger-1
+  unit destination:
+    x: 1.0
+    y: 0.0
+    z: 3.0
+ranger-1
+  formation offset:
+    x: 1.0
+    y: 0.0
+    z: 1.0
 ranger-1 movement speed 4.8
 ranger-1 selected true
 ranger-1 moving false
@@ -482,7 +546,11 @@ ranger-1 action period 0.8
 
 cinder-1 actor name "Cinder Wraith"
 cinder-1 presentation kind "Cinder"
-cinder-1 actor position Vec3 { x: 0.0, y: 0.0, z: 6.0 }
+cinder-1
+  actor position:
+    x: 0.0
+    y: 0.0
+    z: 6.0
 cinder-1 hostile true
 cinder-1 vitality 100.0
 cinder-1 maximum vitality 100.0
@@ -498,7 +566,11 @@ cinder-1 enemy burn duration 2.5
 
 cinder-2 actor name "Ash Stalker"
 cinder-2 presentation kind "Cinder"
-cinder-2 actor position Vec3 { x: 3.0, y: 0.0, z: 7.0 }
+cinder-2
+  actor position:
+    x: 3.0
+    y: 0.0
+    z: 7.0
 cinder-2 hostile true
 cinder-2 vitality 100.0
 cinder-2 maximum vitality 100.0
@@ -514,7 +586,11 @@ cinder-2 enemy burn duration 2.0
 
 moonwell actor name "Moonwell"
 moonwell presentation kind "Moonwell"
-moonwell actor position Vec3 { x: 0.0, y: 0.0, z: 4.0 }
+moonwell
+  actor position:
+    x: 0.0
+    y: 0.0
+    z: 4.0
 moonwell hostile false
 moonwell vitality 110.0
 moonwell maximum vitality 150.0
@@ -536,18 +612,42 @@ bind keyboard Ward down to raise-ward
 
 on observe-order-x ?controller ?x
   when
-    ?controller order target Vec3 { x: ?prior-x, y: ?y, z: ?z }
+    ?controller
+      order target:
+        x: ?prior-x
+        y: ?y
+        z: ?z
   withdraw
-    ?controller order target Vec3 { x: ?prior-x, y: ?y, z: ?z }
+    ?controller
+      order target:
+        x: ?prior-x
+        y: ?y
+        z: ?z
   include
-    ?controller order target Vec3 { x: ?x, y: ?y, z: ?z }
+    ?controller
+      order target:
+        x: ?x
+        y: ?y
+        z: ?z
 on observe-order-z ?controller ?z
   when
-    ?controller order target Vec3 { x: ?x, y: ?y, z: ?prior-z }
+    ?controller
+      order target:
+        x: ?x
+        y: ?y
+        z: ?prior-z
   withdraw
-    ?controller order target Vec3 { x: ?x, y: ?y, z: ?prior-z }
+    ?controller
+      order target:
+        x: ?x
+        y: ?y
+        z: ?prior-z
   include
-    ?controller order target Vec3 { x: ?x, y: ?y, z: ?z }
+    ?controller
+      order target:
+        x: ?x
+        y: ?y
+        z: ?z
 on clear-selection ?unit
   when
     ?unit selected ?was-selected
@@ -588,19 +688,31 @@ on begin-encounter ?encounter
     ?encounter encounter state active
 on issue-move ?unit
   when
-    player-1 order target Vec3 { x: ?target-x, y: ?target-y, z: ?target-z }
+    player-1
+      order target:
+        x: ?target-x
+        y: ?target-y
+        z: ?target-z
     ?unit selected true
     ?unit vitality ?health
     ?unit alive true
     ?health > 0.0
-    ?unit formation offset Vec3 { x: ?offset-x, y: ?offset-y, z: ?offset-z }
+    ?unit
+      formation offset:
+        x: ?offset-x
+        y: ?offset-y
+        z: ?offset-z
     ?unit unit destination ?prior-destination
     ?unit moving ?was-moving
   withdraw
     ?unit unit destination ?prior-destination
     ?unit moving ?was-moving
   include
-    ?unit unit destination Vec3 { x: ?target-x + ?offset-x, y: 0.0, z: ?target-z + ?offset-z }
+    ?unit
+      unit destination:
+        x: ?target-x + ?offset-x
+        y: 0.0
+        z: ?target-z + ?offset-z
     ?unit moving true
 
 on party-attack ?unit
@@ -609,13 +721,21 @@ on party-attack ?unit
     ?unit selected true
     ?unit vitality ?unit-health
     ?unit alive true
-    ?unit actor position Vec3 { x: ?unit-x, y: ?unit-y, z: ?unit-z }
+    ?unit
+      actor position:
+        x: ?unit-x
+        y: ?unit-y
+        z: ?unit-z
     ?unit attack damage ?damage
     ?unit attack range ?range
     ?unit action cooldown ?cooldown
     ?unit action period ?period
     player-1 chosen target ?target
-    ?target actor position Vec3 { x: ?target-x, y: ?target-y, z: ?target-z }
+    ?target
+      actor position:
+        x: ?target-x
+        y: ?target-y
+        z: ?target-z
     ?target vitality ?health
     ?target hostile true
     ?health > 0.0
@@ -634,13 +754,21 @@ on party-heal ?unit
     ?unit selected true
     ?unit vitality ?unit-health
     ?unit alive true
-    ?unit actor position Vec3 { x: ?unit-x, y: ?unit-y, z: ?unit-z }
+    ?unit
+      actor position:
+        x: ?unit-x
+        y: ?unit-y
+        z: ?unit-z
     ?unit healing power ?healing
     ?unit attack range ?range
     ?unit action cooldown ?cooldown
     ?unit action period ?period
     player-1 chosen target ?target
-    ?target actor position Vec3 { x: ?target-x, y: ?target-y, z: ?target-z }
+    ?target
+      actor position:
+        x: ?target-x
+        y: ?target-y
+        z: ?target-z
     ?target vitality ?health
     ?target maximum vitality ?maximum
     ?target hostile false
@@ -663,13 +791,21 @@ on raise-ward ?unit
     ?unit selected true
     ?unit vitality ?unit-health
     ?unit alive true
-    ?unit actor position Vec3 { x: ?unit-x, y: ?unit-y, z: ?unit-z }
+    ?unit
+      actor position:
+        x: ?unit-x
+        y: ?unit-y
+        z: ?unit-z
     ?unit ward duration ?duration
     ?unit attack range ?range
     ?unit action cooldown ?cooldown
     ?unit action period ?period
     player-1 chosen target ?target
-    ?target actor position Vec3 { x: ?target-x, y: ?target-y, z: ?target-z }
+    ?target
+      actor position:
+        x: ?target-x
+        y: ?target-y
+        z: ?target-z
     ?target ward remaining ?prior
     ?target hostile false
     ?target alive true
@@ -687,8 +823,16 @@ on raise-ward ?unit
 on tick ?unit ?dt
   when
     ?dt > 0.0
-    ?unit actor position Vec3 { x: ?x, y: ?y, z: ?z }
-    ?unit unit destination Vec3 { x: ?destination-x, y: ?destination-y, z: ?destination-z }
+    ?unit
+      actor position:
+        x: ?x
+        y: ?y
+        z: ?z
+    ?unit
+      unit destination:
+        x: ?destination-x
+        y: ?destination-y
+        z: ?destination-z
     ?unit movement speed ?speed
     ?unit alive true
     ?unit moving ?is-moving
@@ -697,13 +841,29 @@ on tick ?unit ?dt
     (?destination-x - ?x) clamped between 0.0 - (?speed * ?dt) and ?speed * ?dt as ?step-x
     (?destination-z - ?z) clamped between 0.0 - (?speed * ?dt) and ?speed * ?dt as ?step-z
   withdraw
-    ?unit actor position Vec3 { x: ?x, y: ?y, z: ?z }
+    ?unit
+      actor position:
+        x: ?x
+        y: ?y
+        z: ?z
   include
-    ?unit actor position Vec3 { x: ?x + ?step-x, y: 0.0, z: ?z + ?step-z }
+    ?unit
+      actor position:
+        x: ?x + ?step-x
+        y: 0.0
+        z: ?z + ?step-z
 on tick ?unit ?dt
   when
-    ?unit actor position Vec3 { x: ?x, y: ?y, z: ?z }
-    ?unit unit destination Vec3 { x: ?destination-x, y: ?destination-y, z: ?destination-z }
+    ?unit
+      actor position:
+        x: ?x
+        y: ?y
+        z: ?z
+    ?unit
+      unit destination:
+        x: ?destination-x
+        y: ?destination-y
+        z: ?destination-z
     ?unit moving ?is-moving
     ?is-moving = true
     (?destination-x - ?x) * (?destination-x - ?x) + (?destination-z - ?z) * (?destination-z - ?z) <= 0.0001
@@ -770,7 +930,11 @@ on tick ?actor ?dt
 on tick ?enemy ?dt
   when
     encounter encounter state active
-    ?enemy actor position Vec3 { x: ?enemy-x, y: ?enemy-y, z: ?enemy-z }
+    ?enemy
+      actor position:
+        x: ?enemy-x
+        y: ?enemy-y
+        z: ?enemy-z
     ?enemy enemy target ?target
     ?enemy enemy damage ?incoming
     ?enemy enemy range ?range
@@ -779,7 +943,11 @@ on tick ?enemy ?dt
     ?enemy enemy burn duration ?burn-duration
     ?enemy vitality ?enemy-health
     ?enemy alive true
-    ?target actor position Vec3 { x: ?target-x, y: ?target-y, z: ?target-z }
+    ?target
+      actor position:
+        x: ?target-x
+        y: ?target-y
+        z: ?target-z
     ?target vitality ?target-health
     ?target alive true
     ?target ward remaining ?ward

@@ -31,8 +31,16 @@ fn sources() -> [String; 2] {
     ?new
       member of: Actor
   include
-    ?new actor position Vec3 { x: 0.0, y: 0.0, z: -5.0 }
-    ?new journey destination Vec3 { x: 0.0, y: 0.0, z: 27.0 }
+    ?new
+      actor position:
+        x: 0.0
+        y: 0.0
+        z: -5.0
+    ?new
+      journey destination:
+        x: 0.0
+        y: 0.0
+        z: 27.0
     ?new journey speed ?speed
 "#)]
 }
@@ -55,8 +63,16 @@ fn declared_subject_equality_does_not_match_a_different_actor() {
     for source in sources() {
         let source = format!("{source}\n{}", r#"other
   member of: Actor
-other actor position Vec3 { x: 0.0, y: 0.0, z: -5.0 }
-other journey destination Vec3 { x: 0.0, y: 0.0, z: 27.0 }
+other
+  actor position:
+    x: 0.0
+    y: 0.0
+    z: -5.0
+other
+  journey destination:
+    x: 0.0
+    y: 0.0
+    z: 27.0
 other journey speed 1.75
 "#);
         let frame = tick(&source);

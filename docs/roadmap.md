@@ -39,14 +39,15 @@ edge grammar drives constraints, facts, patterns, and printing, including a
 changed-grammar checked live edit. A four-binding scalar law and structured
 state journey exercises execution, re-reading, and identity continuity.
 The grouping delimiter, declaration discovery and conformance interpretation,
-record construction/patterns, scalar expressions, laws, handlers, and lowering
+structured grammar selection, scalar expressions, laws, handlers, and lowering
 still contain host bootstrap cases; this does not complete the frontend below.
-In the coherent-declarations specimen, replacing `first position Point { x:
-2.0, y: 3.0 }` with subject focus `first`, then `position:`, then field edges
-`x: 2.0` and `y: 3.0` is still rejected by the reader. The next owning seam is
-contextual structured objects and patterns: the existing role range must select
-the field contract, and those fields must reach typed construction/matching
-without a parallel record reader or a rewrite into brace source.
+Contextual structured objects use subject focus `first`, then `position:`, then
+ordinary `x: 2.0` and `y: 3.0` field edges. The role range selects the existing
+field contract. One typed field CST reaches initial values, matching, and atomic
+replacement directly, without rewriting into brace source. Whole-value copies,
+field expressions, and runtime-created rows use the same checked structure.
+Nested record lowering and generic structured event arguments remain unfinished;
+the historical jump-arena input header still uses its specialized Vec3 carrier.
 Custom focused grammars read, print, execute, reload, and perform checked scalar
 edits. Edit witnesses carry the exact selected frontend through package and
 runtime checking.

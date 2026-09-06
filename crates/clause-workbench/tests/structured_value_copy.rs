@@ -32,7 +32,7 @@ fn whole_structure_and_scalar_updates_share_one_prestate() {
                 .replace("  withdraw\n", "  withdraw\n    ?item position ?position\n")
                 .replace(
                     "  include\n",
-                    "  include\n    ?item position Point { x: 12.0, y: 13.0 }\n",
+                    "  include\n    ?item\n      position:\n        x: 12.0\n        y: 13.0\n",
                 )
         } else {
             SOURCE.to_owned()
@@ -78,8 +78,13 @@ fn whole_structure_copy_includes_runtime_created_rows() {
     ?new
       member of: Item
   include
-    ?new position Point { x: 5.0, y: 6.0 }
-    ?new destination Point { x: 0.0, y: 0.0 }
+    ?new
+      position:
+        x: 5.0
+        y: 6.0
+      destination:
+        x: 0.0
+        y: 0.0
     ?new moving true
 "#
     );
@@ -119,10 +124,9 @@ fn whole_structure_copy_preserves_nominal_types() {
             "OtherPoint:\n  x: F64\n  y: F64\n\nposition:\n",
         )
         .replace(
-            "    destination: Point",
-            "    destination: OtherPoint",
-        )
-        .replace("item destination Point", "item destination OtherPoint");
+            "?destination shape Point",
+            "?destination shape OtherPoint",
+        );
     assert!(ResidentSourceWorkbenchV1::open(wrong_shape.as_bytes()).is_err());
     let numeric = SOURCE.replace(
         "?item destination ?position\n",

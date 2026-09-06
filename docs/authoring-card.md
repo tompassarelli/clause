@@ -12,7 +12,7 @@ Live source tooling offers an explicit checked scalar-effect replacement, not ar
 
 ## Bindings, focus, and structured values
 
-Ordinary conformance premises constrain the same bindings in declarations, laws, and handlers. Shared-edge focus states a common constraint once and keeps the Reading clean; executable direction remains a separate Mode. A four-binding numeric law and typed record copy share one atomic transition, and checked scalar-effect edits retain the live state identities.
+Ordinary conformance premises constrain the same bindings in declarations, laws, and handlers. Shared-edge focus states a common constraint once and keeps the Reading clean; executable direction remains a separate Mode. A role's declared range selects ordinary field edges for values and patterns, with no repeated constructor or field Referents. A four-binding numeric law and typed field replacement share one atomic transition; checked scalar-effect edits retain the live state identities.
 
 Catalog ID: `coherent-declarations`
 
@@ -72,17 +72,29 @@ charge
   range: F64
   cardinality: one
 
-first position Point { x: 2.0, y: 3.0 }
-first destination Point { x: 8.0, y: 9.0 }
-first charge 9.0
-second position Point { x: 4.0, y: 5.0 }
-second destination Point { x: 0.0, y: 0.0 }
-second charge -4.0
+first
+  position:
+    x: 2.0
+    y: 3.0
+  destination:
+    x: 8.0
+    y: 9.0
+  charge: 9.0
+second
+  position:
+    x: 4.0
+    y: 5.0
+  destination:
+    x: 0.0
+    y: 0.0
+  charge: -4.0
 
 on settle ?item
   when
     ?item:
-      position: ?position
+      position:
+        x: ?x
+        y: ?y
       destination: ?destination
       charge: ?charge
     (shape: F64):
@@ -94,7 +106,9 @@ on settle ?item
       charge: ?charge
   include
     ?item:
-      destination: ?position
+      destination:
+        x: ?x
+        y: ?y
       charge: ?limited
 ```
 
@@ -656,8 +670,14 @@ mode moving given item yields moving: one
 
 item
   member of: Item
-item position Point { x: 2.0, y: 3.0 }
-item destination Point { x: 8.0, y: 9.0 }
+item
+  position:
+    x: 2.0
+    y: 3.0
+item
+  destination:
+    x: 8.0
+    y: 9.0
 item moving true
 
 on stop ?item
@@ -884,20 +904,36 @@ mode empowered given player yields empowered: one
 
 player-1
   member of: Player
-player-1 velocity Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+player-1
+  velocity:
+    x: 0.0
+    y: 0.0
+    z: 0.0
 player-1 empowered true
 
 bind keyboard KeyQ down to planar-burst
 
 on planar-burst ?player
   when
-    ?player velocity Vec3 { x: ?velocity-x, y: ?velocity-y, z: ?velocity-z }
+    ?player
+      velocity:
+        x: ?velocity-x
+        y: ?velocity-y
+        z: ?velocity-z
     ?player empowered ?was-empowered
     ?was-empowered = true
   withdraw
-    ?player velocity Vec3 { x: ?velocity-x, y: ?velocity-y, z: ?velocity-z }
+    ?player
+      velocity:
+        x: ?velocity-x
+        y: ?velocity-y
+        z: ?velocity-z
   include
-    ?player velocity Vec3 { x: ?velocity-x + 3.0, y: ?velocity-y, z: ?velocity-z - 2.0 }
+    ?player
+      velocity:
+        x: ?velocity-x + 3.0
+        y: ?velocity-y
+        z: ?velocity-z - 2.0
 ```
 
 ## Scalar input transition

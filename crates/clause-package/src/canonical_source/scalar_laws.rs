@@ -78,6 +78,7 @@ impl ScalarLawEnvironment {
             let logical = patterns::handler_lines(
                 logical_source_lines(artifact, block)?,
                 frontend,
+                &environment,
             )?;
             let mut section = "";
             let mut predicates = Vec::new();
