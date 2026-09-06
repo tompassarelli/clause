@@ -726,6 +726,31 @@ pub struct CanonicalSubjectFocusV1 {
     pub edges: Vec<CanonicalFocusedEdgeV1>,
 }
 
+/// A parsed binding constraint, independent of its executable Modes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CanonicalBindingConstraintV1<'a> {
+    pub name: &'a [u8],
+    pub domain: &'a [u8],
+    pub origin: CanonicalSourceOriginV1,
+}
+
+/// Tokens in a parsed general-law premise; operator resolution is separate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalSourceClauseV1<'a> {
+    pub tokens: Vec<&'a [u8]>,
+    pub origin: CanonicalSourceOriginV1,
+}
+
+/// Declaration observations share the compiler's parsed source and origins.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalSourceDeclarationV1<'a> {
+    pub production: CanonicalSourceProductionV1,
+    pub designation: &'a [u8],
+    pub origin: CanonicalSourceOriginV1,
+    pub bindings: Vec<CanonicalBindingConstraintV1<'a>>,
+    pub general_premises: Vec<CanonicalSourceClauseV1<'a>>,
+}
+
 impl CanonicalSourceCstV1 {
     #[must_use]
     pub const fn artifact(&self) -> CanonicalSourceArtifactIdV1 {
@@ -765,6 +790,41 @@ impl CanonicalSourceCstV1 {
     #[must_use]
     pub fn subject_focuses(&self) -> &[CanonicalSubjectFocusV1] {
         &self.subject_focuses
+    }
+
+    pub fn declarations(&self) -> impl Iterator<Item = CanonicalSourceDeclarationV1<'_>> {
+        self.items.iter().filter_map(|item| {
+            let (production, designation, bindings) = match &item.kind {
+                CstKind::Relation(relation) => (
+                    CanonicalSourceProductionV1::Relation,
+                    relation.designation.as_slice(),
+                    relation.roles.iter().map(|role| CanonicalBindingConstraintV1 {
+                        name: &role.name, domain: &role.domain, origin: role.origin,
+                    }).collect(),
+                ),
+                CstKind::Shape { designation, fields } => (
+                    CanonicalSourceProductionV1::Shape,
+                    designation.as_slice(),
+                    fields.iter().map(|field| CanonicalBindingConstraintV1 {
+                        name: &field.name, domain: &field.domain, origin: field.origin,
+                    }).collect(),
+                ),
+                CstKind::ScalarLaw(law) => (CanonicalSourceProductionV1::Law, law.designation.as_slice(), Vec::new()),
+                CstKind::BooleanLaw(law) => (CanonicalSourceProductionV1::Law, law.designation.as_slice(), Vec::new()),
+                CstKind::GeneralHandler(law) if law.derivation => (CanonicalSourceProductionV1::Law, law.designation.as_slice(), Vec::new()),
+                CstKind::ScalarDerive(derive) => (CanonicalSourceProductionV1::Derive, derive.designation.as_slice(), Vec::new()),
+                CstKind::BooleanDerive(derive) => (CanonicalSourceProductionV1::Derive, derive.designation.as_slice(), Vec::new()),
+                _ => return None,
+            };
+            let general_premises = match &item.kind {
+                CstKind::GeneralHandler(law) if law.derivation => law.premises.iter()
+                    .map(|(tokens, origin)| CanonicalSourceClauseV1 {
+                        tokens: tokens.iter().map(Vec::as_slice).collect(), origin: *origin,
+                    }).collect(),
+                _ => Vec::new(),
+            };
+            Some(CanonicalSourceDeclarationV1 { production, designation, origin: item.origin, bindings, general_premises })
+        })
     }
 }
 
@@ -835,12 +895,6 @@ pub enum CanonicalSourceErrorV1 {
         designation: Vec<u8>,
     },
     UnknownModeCapability {
-        designation: Vec<u8>,
-    },
-    MissingRelationReads {
-        designation: Vec<u8>,
-    },
-    MissingRelationMode {
         designation: Vec<u8>,
     },
     UnknownSubjectRole {
@@ -1173,6 +1227,7 @@ struct GeneralHandlerCst {
     origin: CanonicalSourceOriginV1,
     producer: CanonicalSemanticProducerV1,
     designation: Vec<u8>,
+    premises: Vec<(Vec<Vec<u8>>, CanonicalSourceOriginV1)>,
     subject: Vec<u8>,
     arguments: Vec<GeneralHandlerArgumentCst>,
     creations: Vec<GeneralReferentCreationCst>,
@@ -1440,12 +1495,9 @@ struct RelationCst {
     modes: Vec<RelationModeCst>,
 }
 
-// Declaration rationale: authors retain one role-to-domain constraint per
-// named binding, one ordinary flat or focused example when a Reading is
-// needed, explicit Modes, and the ordered fields that determine record
-// representation. The `relation`/brace template and `shape` classification
-// carried no further fact. The forcing case is a four-role Reading plus a
-// structured value copied through focused and flat state clauses.
+// Binding domains, Reading focus, Mode direction, and ordered record fields
+// are independent facts. A focused scalar Reading remains a scalar relation;
+// a Mode's result guarantee does not impose a structural property on subjects.
 
 #[derive(Clone, Debug)]
 enum RelationReadingPartCst {
@@ -1889,6 +1941,15 @@ fn allocation_requests(
     let tick = tick_program_parts(cst)?;
     let relational_handlers = relational_handler_origins(cst);
     for item in &cst.items {
+        if let Some(subject) = assertion_subject(&item.kind)
+            && requested_referents.insert(subject.to_vec())
+        {
+            requested.push(AllocationRequest {
+                producer: semantic_producer(CanonicalSourceProductionV1::Referent, subject),
+                slot: head_slot(CanonicalSourceProductionV1::Referent),
+                domain: AllocationDomain::Formation,
+            });
+        }
         match &item.kind {
             CstKind::Referent { designation, .. } => {
                 if !requested_referents.insert(designation.clone()) {
@@ -6462,6 +6523,20 @@ pub fn elaborate_canonical_source_package_v1(
     let mut application_repetitions = BTreeMap::<(Vec<u8>, Vec<u8>), u64>::new();
     let mut initial_assertion_repetitions = BTreeMap::new();
     for item in &cst.items {
+        if let Some(subject) = assertion_subject(&item.kind)
+            && emitted_referents.insert(subject.to_vec())
+        {
+            let producer = semantic_producer(CanonicalSourceProductionV1::Referent, subject);
+            let slot = head_slot(CanonicalSourceProductionV1::Referent);
+            formations.push(source_formation(
+                scope,
+                formation_id(plan, &producer, &slot)?,
+                cst.source_slice(item.origin).expect("owned assertion origin"),
+                item.origin,
+                "referent",
+            )?);
+            emissions.push(emission(plan, producer, slot, item.origin));
+        }
         match &item.kind {
             CstKind::Referent { designation, .. } => {
                 if !emitted_referents.insert(designation.clone()) {
@@ -9020,6 +9095,10 @@ fn parse_general_handler(
             &handler_semantic_producer_from_logical(&logical),
         ) },
         designation: designation.as_bytes().to_vec(),
+        premises: when.iter().map(|(source, origin)| {
+            Ok((declared_frontend::input_tokens(source)?.into_iter()
+                .map(|token| source.as_bytes()[token.start..token.end].to_vec()).collect(), *origin))
+        }).collect::<Result<_, CanonicalSourceErrorV1>>()?,
         subject: subject.as_bytes().to_vec(),
         arguments,
         creations,
@@ -12158,10 +12237,26 @@ fn retain_supported_boolean_derive_pairs(items: &mut [CstItem]) {
     }
 }
 
+fn assertion_subject(kind: &CstKind) -> Option<&Vec<u8>> {
+    match kind {
+        CstKind::VectorAssertion(assertion) => Some(&assertion.subject),
+        CstKind::ShapeAssertion(assertion) => Some(&assertion.subject),
+        CstKind::BooleanAssertion(assertion) => Some(&assertion.subject),
+        CstKind::NumberAssertion(assertion) => Some(&assertion.subject),
+        CstKind::SymbolAssertion(assertion) => Some(&assertion.subject),
+        CstKind::TextAssertion(assertion) => Some(&assertion.subject),
+        _ => None,
+    }
+}
+
 fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSourceErrorV1> {
     let mut seen = BTreeMap::<Vec<u8>, (bool, bool)>::new();
     for (designation, declaration, referent_use) in
-        items.iter().filter_map(|item| match &item.kind {
+        items.iter().filter_map(|item| {
+            if let Some(subject) = assertion_subject(&item.kind) {
+                return Some((subject, false, true));
+            }
+            match &item.kind {
             CstKind::Referent {
                 designation,
                 declaration,
@@ -12192,7 +12287,7 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
             | CstKind::SymbolAssertion(_)
             | CstKind::TextAssertion(_)
             | CstKind::Unsupported(_) => None,
-        })
+        }})
     {
         if let Some((prior_declaration, prior_referent_use)) = seen.get_mut(designation) {
             let shares_referent_identity = (declaration || referent_use)

@@ -1,11 +1,12 @@
-use std::time::Instant;
+use std::{collections::BTreeMap, time::Instant};
 
 use clause_package::{
-    CanonicalDeclaredFrontendV1, DECLARED_FOCUSED_FRONTEND_SOURCE_V1, Term,
+    CanonicalDeclaredFrontendV1, CanonicalStatePathV1, DECLARED_FOCUSED_FRONTEND_SOURCE_V1, Term,
     print_canonical_source_v1, read_canonical_source_v1,
     read_canonical_source_with_declared_frontend_v1,
 };
 use clause_workbench::ResidentSourceWorkbenchV1;
+use clause_runtime::{ExecutableReferentIdentityV1, projected_referent_value_v1};
 
 const SOURCE: &str = include_str!("../../../test-vectors/authoring/coherent-declarations.clause");
 
@@ -20,6 +21,17 @@ fn field<'a>(term: &'a Term, key: &[u8]) -> &'a Term {
 
 fn number(term: &Term) -> f64 {
     f64::from_le_bytes(term.as_atom().unwrap().canonical_payload().try_into().unwrap())
+}
+
+fn values(term: &Term) -> Vec<&Term> {
+    let mut values = Vec::new();
+    let mut current = term;
+    while let Some(triple) = current.as_triple() {
+        let [_, value, rest] = triple.slots();
+        values.push(value);
+        current = rest;
+    }
+    values
 }
 
 fn settle(w: &mut ResidentSourceWorkbenchV1) -> Term {
@@ -51,8 +63,41 @@ fn one_binding_contract_checks_runs_prints_and_edits_structured_state() {
     let started = Instant::now();
     w.edit_scalar_effect(w.generation().handle, &effect, b"?limited / 2.0").unwrap();
     let edit = started.elapsed();
-    assert_eq!(w.state_bindings().unwrap(), bindings);
-    assert_eq!(w.project_current_world().unwrap(), after);
+    let continuity = w.source_continuity().unwrap();
+    let retained = values(field(&continuity, b"formations"))
+        .into_iter()
+        .flat_map(values)
+        .map(|mapping| (number(field(mapping, b"old")) as u32, number(field(mapping, b"new")) as u32))
+        .collect::<BTreeMap<_, _>>();
+    let current = w.state_bindings().unwrap();
+    assert_eq!(current.len(), bindings.len());
+    for prior in &bindings {
+        let successor = current.iter().find(|next| {
+            next.state.assertion.get() == retained[&prior.state.assertion.get()]
+                && match (&prior.state.path, &next.state.path) {
+                    (CanonicalStatePathV1::Field { formation: old, .. }, CanonicalStatePathV1::Field { formation: new, .. }) =>
+                        new.get() == retained[&old.get()],
+                    (CanonicalStatePathV1::Rows, CanonicalStatePathV1::Rows) => true,
+                    _ => false,
+                }
+        }).expect("every state binding has an explicitly retained successor");
+        assert_ne!(successor.state.assertion, prior.state.assertion);
+    }
+    let preserved = w.project_current_world().unwrap();
+    for name in [b"first".as_slice(), b"second"] {
+        let old = field(&after, name);
+        let new = field(&preserved, name);
+        for property in [b"position".as_slice(), b"destination", b"charge"] {
+            assert_eq!(field(new, property), field(old, property));
+        }
+        let old_identity = projected_referent_value_v1(field(old, b"$referent")).unwrap().unwrap();
+        let new_identity = projected_referent_value_v1(field(new, b"$referent")).unwrap().unwrap();
+        let ExecutableReferentIdentityV1::Declared(old_coordinate) = old_identity.identity() else {
+            panic!("initial state has declared subject identity");
+        };
+        assert_eq!(new_identity.identity(), &ExecutableReferentIdentityV1::Declared(retained[old_coordinate]));
+        assert_eq!(new_identity.domain(), retained[&old_identity.domain()]);
+    }
     let edited = settle(&mut w);
     assert_eq!(number(field(field(&edited, b"first"), b"charge")), 5.0);
     assert_eq!(number(field(field(&edited, b"second"), b"charge")), 1.5);

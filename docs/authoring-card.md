@@ -10,6 +10,198 @@ Use that pin's workbench directly:
 
 Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.
 
+## Bindings, focus, and structured values
+
+Each example constrains its named bindings once. A Reading uses ordinary flat or focused clauses; its executable direction remains a separate Mode. A four-binding numeric law and typed record copy share one atomic transition, and checked scalar-effect edits retain the live state identities.
+
+Catalog ID: `coherent-declarations`
+
+```clause
+F64
+Bool
+Item
+
+Point:
+  ?example:
+    x: F64
+    y: F64
+
+limited:
+  ?example:
+    amount: F64
+    minimum: F64
+    maximum: F64
+    result: F64
+    ?amount:
+      limited between ?minimum and ?maximum as: ?result
+
+mode limited given amount minimum maximum yields result: maybe
+
+law below
+  if
+    ?minimum <= ?maximum
+    ?amount < ?minimum
+  then
+    ?amount:
+      limited between ?minimum and ?maximum as: ?minimum
+law inside
+  if
+    ?minimum <= ?amount
+    ?amount <= ?maximum
+  then
+    ?amount:
+      limited between ?minimum and ?maximum as: ?amount
+law above
+  if
+    ?minimum <= ?maximum
+    ?amount > ?maximum
+  then
+    ?amount limited between ?minimum and ?maximum as ?maximum
+derive below
+derive inside
+derive above
+
+position
+  domain: Item
+  range: Point
+  cardinality: one
+destination
+  domain: Item
+  range: Point
+  cardinality: one
+charge
+  domain: Item
+  range: F64
+  cardinality: one
+
+first position Point { x: 2.0, y: 3.0 }
+first destination Point { x: 8.0, y: 9.0 }
+first charge 9.0
+second position Point { x: 4.0, y: 5.0 }
+second destination Point { x: 0.0, y: 0.0 }
+second charge -4.0
+
+on settle ?item
+  when
+    ?item:
+      position: ?position
+      destination: ?destination
+      charge: ?charge
+    (?charge + 3.0) limited between 0.0 and 10.0 as ?limited
+  withdraw
+    ?item:
+      destination: ?destination
+      charge: ?charge
+  include
+    ?item:
+      destination: ?position
+      charge: ?limited
+```
+
+## Composable text search
+
+contains-text(text, query) tests exact substring membership, including an empty query. lowercase(text) applies Unicode lowercase mapping, not locale-specific collation or Unicode normalization. Compose them explicitly for case-insensitive search; both inputs remain typed Text.
+
+Catalog ID: `text-search`
+
+```clause
+Text
+Bool
+Document
+
+text:
+  ?example:
+    document: Document
+    text: Text
+    ?document:
+      text: ?text
+
+mode text given document yields text: one
+matches:
+  ?example:
+    document: Document
+    matches: Bool
+    ?document:
+      matches: ?matches
+
+mode matches given document yields matches: one
+
+document
+  member of: Document
+document text ""
+document matches false
+
+on search ?document ?text ?query
+  when
+    ?document text ?prior
+    ?document matches ?matched
+  withdraw
+    ?document text ?prior
+    ?document matches ?matched
+  include
+    ?document text lowercase(?text)
+    ?document matches contains-text(lowercase(?text), lowercase(?query))
+```
+
+## Exact text-valued conditions
+
+A focused relation condition matches a Text literal using the same typed row equality as numbers and Booleans. Quoting, Unicode, and escaping have their ordinary Text meaning, including for runtime-created subjects.
+
+Catalog ID: `text-selectors`
+
+```clause
+Text
+Bool
+Item
+
+status:
+  ?example:
+    item: Item
+    status: Text
+    ?item:
+      status: ?status
+
+mode status given item yields status: one
+
+selected:
+  ?example:
+    item: Item
+    selected: Bool
+    ?item:
+      selected: ?selected
+
+mode selected given item yields selected: one
+
+first
+  member of: Item
+second
+  member of: Item
+
+first status "waiting {世界} \"yes\""
+first selected false
+second status "finished"
+second selected false
+
+on select ?item
+  when
+    ?item status "waiting {世界} \"yes\""
+    ?item selected ?prior
+  withdraw
+    ?item selected ?prior
+  include
+    ?item selected true
+
+on spawn ?item
+  when
+    ?item status "finished"
+  create
+    ?new
+      member of: Item
+  include
+    ?new status "waiting {世界} \"yes\""
+    ?new selected false
+```
+
 ## Ordinary role contracts
 
 Domain, range, and cardinality facts constrain a binary role. Actual properties establish structural participation without a membership registry. Required properties remain checked across atomic changes.
@@ -136,25 +328,41 @@ Text
 Bool
 Document
 
-relation cleaned
-  reads {document: Document} cleaned {value: Text}
-  subject document
-  mode given document yields value: one
+cleaned:
+  ?example:
+    document: Document
+    cleaned: Text
+    ?document:
+      cleaned: ?cleaned
 
-relation first-word
-  reads {document: Document} first word {value: Text}
-  subject document
-  mode given document yields value: one
+mode cleaned given document yields cleaned: one
 
-relation remaining-words
-  reads {document: Document} remaining words {value: Text}
-  subject document
-  mode given document yields value: one
+first-word:
+  ?example:
+    document: Document
+    first-word: Text
+    ?document:
+      first word: ?first-word
 
-relation prefixed
-  reads {document: Document} prefixed {value: Bool}
-  subject document
-  mode given document yields value: one
+mode first-word given document yields first-word: one
+
+remaining-words:
+  ?example:
+    document: Document
+    remaining-words: Text
+    ?document:
+      remaining words: ?remaining-words
+
+mode remaining-words given document yields remaining-words: one
+
+prefixed:
+  ?example:
+    document: Document
+    prefixed: Bool
+    ?document:
+      prefixed: ?prefixed
+
+mode prefixed given document yields prefixed: one
 
 document-main prefixed false
 document-main cleaned ""
@@ -190,9 +398,13 @@ F64
 Item
 Report
 
-relation magnitude
-  reads magnitude of {input: F64} as {output: F64}
-  mode given input yields output: maybe
+magnitude:
+  ?example:
+    input: F64
+    output: F64
+    magnitude of ?input as ?output
+
+mode magnitude given input yields output: maybe
 law negative
   if
     ?value < 0.0
@@ -206,14 +418,22 @@ law positive
 derive negative
 derive positive
 
-relation amount
-  reads {item: Item} amount {value: F64}
-  subject item
-  mode given item yields value: one
-relation total
-  reads {report: Report} total {value: F64}
-  subject report
-  mode given report yields value: one
+amount:
+  ?example:
+    item: Item
+    amount: F64
+    ?item:
+      amount: ?amount
+
+mode amount given item yields amount: one
+total:
+  ?example:
+    report: Report
+    total: F64
+    ?report:
+      total: ?total
+
+mode total given report yields total: one
 
 first
   member of: Item
@@ -245,10 +465,14 @@ Catalog ID: `scalar-conditional`
 F64
 Meter
 
-relation reading
-  reads {meter: Meter} reading {value: F64}
-  subject meter
-  mode given meter yields value: one
+reading:
+  ?example:
+    meter: Meter
+    reading: F64
+    ?meter:
+      reading: ?reading
+
+mode reading given meter yields reading: one
 
 meter
   member of: Meter
@@ -282,14 +506,22 @@ F64
 Bool
 Device
 
-relation charge
-  reads {device: Device} charge {value: F64}
-  subject device
-  mode given device yields value: maybe
-relation available
-  reads {device: Device} available {value: Bool}
-  subject device
-  mode given device yields value: one
+charge:
+  ?example:
+    device: Device
+    charge: F64
+    ?device:
+      charge: ?charge
+
+mode charge given device yields charge: maybe
+available:
+  ?example:
+    device: Device
+    available: Bool
+    ?device:
+      available: ?available
+
+mode available given device yields available: one
 
 first
   member of: Device
@@ -335,10 +567,14 @@ Catalog ID: `scalar-equality`
 Bool
 Item
 
-relation selected
-  reads {item: Item} selected {value: Bool}
-  subject item
-  mode given item yields value: one
+selected:
+  ?example:
+    item: Item
+    selected: Bool
+    ?item:
+      selected: ?selected
+
+mode selected given item yields selected: one
 
 first
   member of: Item
@@ -364,14 +600,22 @@ F64
 Bool
 Meter
 
-relation reading
-  reads {meter: Meter} reading {value: F64}
-  subject meter
-  mode given meter yields value: one
-relation positive
-  reads {meter: Meter} positive {value: Bool}
-  subject meter
-  mode given meter yields value: one
+reading:
+  ?example:
+    meter: Meter
+    reading: F64
+    ?meter:
+      reading: ?reading
+
+mode reading given meter yields reading: one
+positive:
+  ?example:
+    meter: Meter
+    positive: Bool
+    ?meter:
+      positive: ?positive
+
+mode positive given meter yields positive: one
 
 meter
   member of: Meter
@@ -401,22 +645,35 @@ F64
 Bool
 Item
 
-shape Point
-  x: F64
-  y: F64
+Point:
+  ?example:
+    x: F64
+    y: F64
 
-relation position
-  reads {item: Item} position {value: Point}
-  subject item
-  mode given item yields value: one
-relation destination
-  reads {item: Item} destination {value: Point}
-  subject item
-  mode given item yields value: one
-relation moving
-  reads {item: Item} moving {value: Bool}
-  subject item
-  mode given item yields value: one
+position:
+  ?example:
+    item: Item
+    position: Point
+    ?item:
+      position: ?position
+
+mode position given item yields position: one
+destination:
+  ?example:
+    item: Item
+    destination: Point
+    ?item:
+      destination: ?destination
+
+mode destination given item yields destination: one
+moving:
+  ?example:
+    item: Item
+    moving: Bool
+    ?item:
+      moving: ?moving
+
+mode moving given item yields moving: one
 
 item
   member of: Item
@@ -447,10 +704,14 @@ Catalog ID: `scalar-square-root`
 F64
 Meter
 
-relation reading
-  reads {meter: Meter} reading {value: F64}
-  subject meter
-  mode given meter yields value: one
+reading:
+  ?example:
+    meter: Meter
+    reading: F64
+    ?meter:
+      reading: ?reading
+
+mode reading given meter yields reading: one
 
 meter
   member of: Meter
@@ -485,22 +746,38 @@ Bool
 Item
 Report
 
-relation enabled
-  reads {item: Item} enabled {value: Bool}
-  subject item
-  mode given item yields value: one
-relation amount
-  reads {item: Item} amount {value: F64}
-  subject item
-  mode given item yields value: one
-relation total
-  reads {report: Report} total {value: F64}
-  subject report
-  mode given report yields value: one
-relation count
-  reads {report: Report} count {value: F64}
-  subject report
-  mode given report yields value: one
+enabled:
+  ?example:
+    item: Item
+    enabled: Bool
+    ?item:
+      enabled: ?enabled
+
+mode enabled given item yields enabled: one
+amount:
+  ?example:
+    item: Item
+    amount: F64
+    ?item:
+      amount: ?amount
+
+mode amount given item yields amount: one
+total:
+  ?example:
+    report: Report
+    total: F64
+    ?report:
+      total: ?total
+
+mode total given report yields total: one
+count:
+  ?example:
+    report: Report
+    count: F64
+    ?report:
+      count: ?count
+
+mode count given report yields count: one
 
 first
   member of: Item
@@ -580,10 +857,14 @@ Catalog ID: `scalar-state-transition`
 F64
 Account
 
-relation balance
-  reads {account: Account} balance {value: F64}
-  subject account
-  mode given account yields value: one
+balance:
+  ?example:
+    account: Account
+    balance: F64
+    ?account:
+      balance: ?balance
+
+mode balance given account yields balance: one
 
 operating-account balance 100.0
 
@@ -607,20 +888,29 @@ F64
 Bool
 Player
 
-shape Vec3
-  x: F64
-  y: F64
-  z: F64
+Vec3:
+  ?example:
+    x: F64
+    y: F64
+    z: F64
 
-relation velocity
-  reads {player: Player} velocity {value: Vec3}
-  subject player
-  mode given player yields value: one
+velocity:
+  ?example:
+    player: Player
+    velocity: Vec3
+    ?player:
+      velocity: ?velocity
 
-relation empowered
-  reads {player: Player} empowered {value: Bool}
-  subject player
-  mode given player yields value: one
+mode velocity given player yields velocity: one
+
+empowered:
+  ?example:
+    player: Player
+    empowered: Bool
+    ?player:
+      empowered: ?empowered
+
+mode empowered given player yields empowered: one
 
 player-1
   member of: Player
@@ -650,10 +940,14 @@ Catalog ID: `scalar-input-transition`
 F64
 Player
 
-relation camera-heading
-  reads {player: Player} camera heading {value: F64}
-  subject player
-  mode given player yields value: one
+camera-heading:
+  ?example:
+    player: Player
+    camera-heading: F64
+    ?player:
+      camera heading: ?camera-heading
+
+mode camera-heading given player yields camera-heading: one
 
 player-1
   member of: Player
@@ -680,15 +974,23 @@ Catalog ID: `many-valued-relation`
 Root
 Item
 
-relation active
-  reads {root: Root} active {value: Item}
-  subject root
-  mode given root yields value: one
+active:
+  ?example:
+    root: Root
+    active: Item
+    ?root:
+      active: ?active
 
-relation known
-  reads {root: Root} known {value: Item}
-  subject root
-  mode given root yields value: many
+mode active given root yields active: one
+
+known:
+  ?example:
+    root: Root
+    known: Item
+    ?root:
+      known: ?known
+
+mode known given root yields known: many
 
 root active none
 
@@ -723,20 +1025,32 @@ Bool
 Item
 ItemClass
 
-relation item-class
-  reads {item: Item} item class {value: ItemClass}
-  subject item
-  mode given item yields value: one
+item-class:
+  ?example:
+    item: Item
+    item-class: ItemClass
+    ?item:
+      item class: ?item-class
 
-relation selected
-  reads {item: Item} selected {value: Bool}
-  subject item
-  mode given item yields value: one
+mode item-class given item yields item-class: one
 
-relation progress
-  reads {item: Item} progress {value: F64}
-  subject item
-  mode given item yields value: one
+selected:
+  ?example:
+    item: Item
+    selected: Bool
+    ?item:
+      selected: ?selected
+
+mode selected given item yields selected: one
+
+progress:
+  ?example:
+    item: Item
+    progress: F64
+    ?item:
+      progress: ?progress
+
+mode progress given item yields progress: one
 
 first
   member of: Item
@@ -785,30 +1099,54 @@ Controller
 Contributor
 Account
 
-relation chosen-account
-  reads {controller: Controller} chosen account {value: Account}
-  subject controller
-  mode given controller yields value: one
-relation balance
-  reads {account: Account} balance {value: F64}
-  subject account
-  mode given account yields value: one
-relation enabled
-  reads {account: Account} enabled {value: Bool}
-  subject account
-  mode given account yields value: one
-relation selected
-  reads {contributor: Contributor} selected {value: Bool}
-  subject contributor
-  mode given contributor yields value: one
-relation contribution
-  reads {contributor: Contributor} contribution {value: F64}
-  subject contributor
-  mode given contributor yields value: one
-relation cooldown
-  reads {contributor: Contributor} cooldown {value: F64}
-  subject contributor
-  mode given contributor yields value: one
+chosen-account:
+  ?example:
+    controller: Controller
+    chosen-account: Account
+    ?controller:
+      chosen account: ?chosen-account
+
+mode chosen-account given controller yields chosen-account: one
+balance:
+  ?example:
+    account: Account
+    balance: F64
+    ?account:
+      balance: ?balance
+
+mode balance given account yields balance: one
+enabled:
+  ?example:
+    account: Account
+    enabled: Bool
+    ?account:
+      enabled: ?enabled
+
+mode enabled given account yields enabled: one
+selected:
+  ?example:
+    contributor: Contributor
+    selected: Bool
+    ?contributor:
+      selected: ?selected
+
+mode selected given contributor yields selected: one
+contribution:
+  ?example:
+    contributor: Contributor
+    contribution: F64
+    ?contributor:
+      contribution: ?contribution
+
+mode contribution given contributor yields contribution: one
+cooldown:
+  ?example:
+    contributor: Contributor
+    cooldown: F64
+    ?contributor:
+      cooldown: ?cooldown
+
+mode cooldown given contributor yields cooldown: one
 
 controller
   member of: Controller
@@ -896,30 +1234,50 @@ North
 GoalState
 Text
 
-relation goal-state
-  reads {north: North} goal state {value: GoalState}
-  subject north
-  mode given north yields value: one
+goal-state:
+  ?example:
+    north: North
+    goal-state: GoalState
+    ?north:
+      goal state: ?goal-state
 
-relation goal-title
-  reads {north: North} goal title {value: Text}
-  subject north
-  mode given north yields value: maybe
+mode goal-state given north yields goal-state: one
 
-relation goal-objective
-  reads {north: North} goal objective {value: Text}
-  subject north
-  mode given north yields value: maybe
+goal-title:
+  ?example:
+    north: North
+    goal-title: Text
+    ?north:
+      goal title: ?goal-title
 
-relation goal-tags
-  reads {north: North} goal tags {value: Text}
-  subject north
-  mode given north yields value: many
+mode goal-title given north yields goal-title: maybe
 
-relation banner
-  reads {north: North} banner {value: Text}
-  subject north
-  mode given north yields value: one
+goal-objective:
+  ?example:
+    north: North
+    goal-objective: Text
+    ?north:
+      goal objective: ?goal-objective
+
+mode goal-objective given north yields goal-objective: maybe
+
+goal-tags:
+  ?example:
+    north: North
+    goal-tags: Text
+    ?north:
+      goal tags: ?goal-tags
+
+mode goal-tags given north yields goal-tags: many
+
+banner:
+  ?example:
+    north: North
+    banner: Text
+    ?north:
+      banner: ?banner
+
+mode banner given north yields banner: one
 
 north-main
   member of: North
@@ -972,10 +1330,14 @@ Catalog ID: `multiline-text-output`
 Document
 Text
 
-relation output
-  reads {document: Document} output {value: Text}
-  subject document
-  mode given document yields value: one
+output:
+  ?example:
+    document: Document
+    output: Text
+    ?document:
+      output: ?output
+
+mode output given document yields output: one
 
 document-main output """
   initial
@@ -1007,35 +1369,59 @@ Goal
 GoalStatus
 Text
 
-relation known-goal
-  reads {north: North} known goal {value: Goal}
-  subject north
-  mode given north yields value: many
+known-goal:
+  ?example:
+    north: North
+    known-goal: Goal
+    ?north:
+      known goal: ?known-goal
 
-relation goal-title
-  reads {goal: Goal} title {value: Text}
-  subject goal
-  mode given goal yields value: maybe
+mode known-goal given north yields known-goal: many
 
-relation goal-objective
-  reads {goal: Goal} objective {value: Text}
-  subject goal
-  mode given goal yields value: maybe
+goal-title:
+  ?example:
+    goal: Goal
+    goal-title: Text
+    ?goal:
+      title: ?goal-title
 
-relation goal-status
-  reads {goal: Goal} status {value: GoalStatus}
-  subject goal
-  mode given goal yields value: maybe
+mode goal-title given goal yields goal-title: maybe
 
-relation prior-goal-objective
-  reads {goal: Goal} prior objective {value: Text}
-  subject goal
-  mode given goal yields value: many
+goal-objective:
+  ?example:
+    goal: Goal
+    goal-objective: Text
+    ?goal:
+      objective: ?goal-objective
 
-relation goal-catalog-state
-  reads {north: North} goal catalog state {value: GoalStatus}
-  subject north
-  mode given north yields value: one
+mode goal-objective given goal yields goal-objective: maybe
+
+goal-status:
+  ?example:
+    goal: Goal
+    goal-status: GoalStatus
+    ?goal:
+      status: ?goal-status
+
+mode goal-status given goal yields goal-status: maybe
+
+prior-goal-objective:
+  ?example:
+    goal: Goal
+    prior-goal-objective: Text
+    ?goal:
+      prior objective: ?prior-goal-objective
+
+mode prior-goal-objective given goal yields prior-goal-objective: many
+
+goal-catalog-state:
+  ?example:
+    north: North
+    goal-catalog-state: GoalStatus
+    ?north:
+      goal catalog state: ?goal-catalog-state
+
+mode goal-catalog-state given north yields goal-catalog-state: one
 
 north-main
   member of: North
@@ -1084,22 +1470,38 @@ F64
 Account
 Goal
 
-relation balance
-  reads {account: Account} balance {value: F64}
-  subject account
-  mode given account yields value: one
-relation known-goal
-  reads {account: Account} known goal {value: Goal}
-  subject account
-  mode given account yields value: many
-relation contribution
-  reads {goal: Goal} contribution {value: F64}
-  subject goal
-  mode given goal yields value: one
-relation remaining
-  reads {goal: Goal} remaining {value: F64}
-  subject goal
-  mode given goal yields value: one
+balance:
+  ?example:
+    account: Account
+    balance: F64
+    ?account:
+      balance: ?balance
+
+mode balance given account yields balance: one
+known-goal:
+  ?example:
+    account: Account
+    known-goal: Goal
+    ?account:
+      known goal: ?known-goal
+
+mode known-goal given account yields known-goal: many
+contribution:
+  ?example:
+    goal: Goal
+    contribution: F64
+    ?goal:
+      contribution: ?contribution
+
+mode contribution given goal yields contribution: one
+remaining:
+  ?example:
+    goal: Goal
+    remaining: F64
+    ?goal:
+      remaining: ?remaining
+
+mode remaining given goal yields remaining: one
 
 account
   member of: Account
@@ -1159,54 +1561,96 @@ Actor
 Move
 CombatRules
 
-relation clamped-between
-  reads {value: F64} clamped between {lower: F64} and {upper: F64} as {result: F64}
-  mode given value lower upper yields result: maybe
+clamped-between:
+  ?example:
+    value: F64
+    lower: F64
+    upper: F64
+    result: F64
+    ?value clamped between ?lower and ?upper as ?result
 
-relation vitality
-  reads {actor: Actor} vitality {value: F64}
-  subject actor
-  mode given actor yields value: one
+mode clamped-between given value lower upper yields result: maybe
 
-relation destabilization
-  reads {actor: Actor} destabilization {value: F64}
-  subject actor
-  mode given actor yields value: one
+vitality:
+  ?example:
+    actor: Actor
+    vitality: F64
+    ?actor:
+      vitality: ?vitality
 
-relation mass
-  reads {actor: Actor} mass {value: F64}
-  subject actor
-  mode given actor yields value: one
+mode vitality given actor yields vitality: one
 
-relation launch-velocity
-  reads {actor: Actor} launch velocity {value: F64}
-  subject actor
-  mode given actor yields value: one
+destabilization:
+  ?example:
+    actor: Actor
+    destabilization: F64
+    ?actor:
+      destabilization: ?destabilization
 
-relation damage
-  reads {move: Move} damage {value: F64}
-  subject move
-  mode given move yields value: one
+mode destabilization given actor yields destabilization: one
 
-relation destabilization-gain
-  reads {move: Move} destabilization gain {value: F64}
-  subject move
-  mode given move yields value: one
+mass:
+  ?example:
+    actor: Actor
+    mass: F64
+    ?actor:
+      mass: ?mass
 
-relation base-impulse
-  reads {move: Move} base impulse {value: F64}
-  subject move
-  mode given move yields value: one
+mode mass given actor yields mass: one
 
-relation launch-growth
-  reads {move: Move} launch growth {value: F64}
-  subject move
-  mode given move yields value: one
+launch-velocity:
+  ?example:
+    actor: Actor
+    launch-velocity: F64
+    ?actor:
+      launch velocity: ?launch-velocity
 
-relation destabilization-threshold
-  reads {rules: CombatRules} destabilization threshold {value: F64}
-  subject rules
-  mode given rules yields value: one
+mode launch-velocity given actor yields launch-velocity: one
+
+damage:
+  ?example:
+    move: Move
+    damage: F64
+    ?move:
+      damage: ?damage
+
+mode damage given move yields damage: one
+
+destabilization-gain:
+  ?example:
+    move: Move
+    destabilization-gain: F64
+    ?move:
+      destabilization gain: ?destabilization-gain
+
+mode destabilization-gain given move yields destabilization-gain: one
+
+base-impulse:
+  ?example:
+    move: Move
+    base-impulse: F64
+    ?move:
+      base impulse: ?base-impulse
+
+mode base-impulse given move yields base-impulse: one
+
+launch-growth:
+  ?example:
+    move: Move
+    launch-growth: F64
+    ?move:
+      launch growth: ?launch-growth
+
+mode launch-growth given move yields launch-growth: one
+
+destabilization-threshold:
+  ?example:
+    rules: CombatRules
+    destabilization-threshold: F64
+    ?rules:
+      destabilization threshold: ?destabilization-threshold
+
+mode destabilization-threshold given rules yields destabilization-threshold: one
 
 law clamp-lower
   if
@@ -1319,9 +1763,13 @@ Catalog ID: `composed-scalar-laws`
 F64
 Meter
 
-relation magnitude
-  reads | {input: F64} | = {output: F64}
-  mode given input yields output: maybe
+magnitude:
+  ?example:
+    input: F64
+    output: F64
+    | ?input | = ?output
+
+mode magnitude given input yields output: maybe
 
 law negative-magnitude
   if
@@ -1338,10 +1786,14 @@ law nonnegative-magnitude
 derive negative-magnitude
 derive nonnegative-magnitude
 
-relation reading
-  reads {meter: Meter} reading {value: F64}
-  subject meter
-  mode given meter yields value: one
+reading:
+  ?example:
+    meter: Meter
+    reading: F64
+    ?meter:
+      reading: ?reading
+
+mode reading given meter yields reading: one
 
 meter-1
   member of: Meter

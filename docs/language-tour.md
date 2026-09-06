@@ -47,8 +47,7 @@ on consume ?device
 
 This is the generated card's checked
 [role-contract example](authoring-card.md#ordinary-role-contracts).
-The role's description is ordinary Clause data. It needs no separate
-`relation`, `reads`, `subject`, or forward `mode` declaration.
+The role's description is ordinary Clause data and supplies its field Reading.
 
 The `charge` contract requires every Device participant to have one F64 charge.
 The compiler checks `lamp` from its facts; no second entry in a Device registry
@@ -82,6 +81,30 @@ are equal. They are not an ordered product.
 
 A colon or grouped indentation delimits a multiword role such as
 `worker count`. The reader does not guess phrase structure from English.
+
+## Bindings and readings
+
+A phrase with several bindings states each binding's domain once, then uses
+the ordinary clause syntax to relate them:
+
+```clause
+limited:
+  ?example:
+    amount: F64
+    minimum: F64
+    maximum: F64
+    result: F64
+    ?amount:
+      limited between ?minimum and ?maximum as: ?result
+
+mode limited given amount minimum maximum yields result: maybe
+```
+
+The example fixes the Reading independently of its executable direction.
+Laws and handlers use that same Reading. A structured value declares its
+fields under `?example:` without an additional phrase. The generated card's
+[checked journey](authoring-card.md#bindings-focus-and-structured-values)
+combines both forms with atomic updates and a checked live edit.
 
 ## Derivation and withdrawal
 

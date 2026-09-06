@@ -134,7 +134,9 @@ fn query_inputs_reject_unknown_duplicate_and_mistyped_values() {
 fn dependent_query_results_follow_bindings_not_binder_spelling() {
     let source = std::str::from_utf8(SOURCE).unwrap()
         .replace("sum ?value where", "sum ?value * ?count given ?count where");
-    for source in [source.clone(), source.replace("?total", "?aggregate")] {
+    let (declarations, handlers) = source.split_once("on measure").unwrap();
+    let renamed = format!("{declarations}on measure{}", handlers.replace("?total", "?aggregate"));
+    for source in [source.clone(), renamed] {
         let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
         assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), -2.0);
         run(&mut w, b"create-item", &[V::number(5.0).unwrap()]);

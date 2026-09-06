@@ -110,6 +110,7 @@ fn check(cst: &CanonicalSourceCstV1) -> Domains {
             _ => {}
         }
         if let Some((subject, role, value)) = fact(item) {
+            referents.insert(subject.to_vec());
             facts.entry((subject, role)).or_default().insert(value);
         }
     }

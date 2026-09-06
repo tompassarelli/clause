@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "coherent-declarations",
+        title: "Bindings, focus, and structured values",
+        summary: "Each example constrains its named bindings once. A Reading uses ordinary flat or focused clauses; its executable direction remains a separate Mode. A four-binding numeric law and typed record copy share one atomic transition, and checked scalar-effect edits retain the live state identities.",
+        source: include_str!("../../../test-vectors/authoring/coherent-declarations.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "text-search",
         title: "Composable text search",
         summary: "contains-text(text, query) tests exact substring membership, including an empty query. lowercase(text) applies Unicode lowercase mapping, not locale-specific collation or Unicode normalization. Compose them explicitly for case-insensitive search; both inputs remain typed Text.",

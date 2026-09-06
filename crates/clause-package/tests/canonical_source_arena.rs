@@ -1005,7 +1005,7 @@ fn transitive_referent_join_rejects_wrong_type_missing_cardinality_and_ambiguity
 
     let ambiguous = TRANSITIVE_REFERENT_WORLD.replacen(
         "policy-a policy adjustment 2.0\n\non apply-selected-policy",
-        "policy-a policy adjustment 2.0\nroot-2: Root\nroot-2 balance 8.0\nroot-2 selected policy policy-a\n\non apply-selected-policy",
+        "policy-a policy adjustment 2.0\nroot-2\n  member of: Root\nroot-2 balance 8.0\nroot-2 selected policy policy-a\n\non apply-selected-policy",
         1,
     );
     assert!(matches!(

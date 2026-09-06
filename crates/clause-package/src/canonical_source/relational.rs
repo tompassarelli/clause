@@ -103,7 +103,7 @@ fn sum_query(source: &GeneralHandlerCst, sum: &GeneralSumCst) -> Result<GeneralH
     Ok(GeneralHandlerCst {
         derivation: false,
         origin: sum.origin, producer: source.producer.clone(),
-        designation: source.designation.clone(), subject: Vec::new(),
+        designation: source.designation.clone(), subject: Vec::new(), premises: Vec::new(),
         arguments, creations: vec![], parameter_sources: sum.parameter_sources.clone(),
         membership_sources: vec![], required_sources: vec![], selectors: sum.selectors.clone(),
         scalar_bindings: sum.scalar_bindings.clone(), sums: vec![], predicates: sum.predicates.clone(),

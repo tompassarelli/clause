@@ -100,9 +100,8 @@ Vec2:
 ```
 
 A bare designation introduces or resolves a Referent. An `enum` child emits
-one independent membership fact. A `shape` child emits one field contract.
-The selected head supplies those meanings before child designations are
-resolved.
+one independent membership fact. Constraints under `?example:` give the named
+fields of a structured value; each field has one declared domain.
 
 A Shape is a structural participation contract, not physical layout or nominal
 membership. The resident checker currently enforces required field/role,
@@ -184,12 +183,15 @@ connects:
 mode connects given door origin yields destination: many
 ```
 
-Braces mark role binders; other words are literal phrase tokens. `subject`
-names the role that focus may omit. A `mode` names known and produced roles
-and the produced cardinality. The checked semantic form separately retains
-RelationSchema, Reading, Operator, and Mode identities.
+Each named field under `?example:` constrains one binding. The example uses
+those bindings with the same `?name` and focus syntax as laws and handlers;
+other words are literal phrase tokens. Each binding occurs exactly once in
+the Reading. A focused example selects the subject role explicitly. A `mode`
+names known and produced roles and the produced cardinality. The checked
+semantic form separately retains RelationSchema, Reading, Operator, and Mode
+identities.
 
-A relation block without `mode` declares only a schema and Reading. A schema
+A declaration without a matching `mode` defines only a schema and Reading. A schema
 alone can check facts and patterns but cannot form an executable application.
 An Operator may expose several Modes. Activation selects one Mode from the
 exact eligible set established during formation.
@@ -197,10 +199,10 @@ exact eligible set established during formation.
 Result cardinality is always explicit:
 
 ```clause
-mode given thing yields value: one
-mode given thing yields value: maybe
-mode given thing yields value: some
-mode given thing yields value: many
+mode charge given device yields amount: one
+mode charge given device yields amount: maybe
+mode charge given device yields amount: some
+mode charge given device yields amount: many
 ```
 
 These words constrain produced value rows, not the representation of one value.

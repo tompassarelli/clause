@@ -189,7 +189,7 @@ impl ScalarLawEnvironment {
     > {
         let mut matches = Vec::new();
         for relation in &self.relations {
-            if relation.subject.is_some() || relation.roles.iter().any(|role| !matches!(role.domain.as_slice(), b"F64" | b"Bool" | b"Text"))
+            if relation.roles.iter().any(|role| !matches!(role.domain.as_slice(), b"F64" | b"Bool" | b"Text"))
             {
                 continue;
             }

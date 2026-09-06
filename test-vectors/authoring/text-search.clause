@@ -2,14 +2,22 @@ Text
 Bool
 Document
 
-relation text
-  reads {document: Document} text {value: Text}
-  subject document
-  mode given document yields value: one
-relation matches
-  reads {document: Document} matches {value: Bool}
-  subject document
-  mode given document yields value: one
+text:
+  ?example:
+    document: Document
+    text: Text
+    ?document:
+      text: ?text
+
+mode text given document yields text: one
+matches:
+  ?example:
+    document: Document
+    matches: Bool
+    ?document:
+      matches: ?matches
+
+mode matches given document yields matches: one
 
 document
   member of: Document

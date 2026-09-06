@@ -365,6 +365,9 @@ fn match_parts(
             let remaining_parts = parts.len() - part - 1;
             let maximum = tokens.len().saturating_sub(remaining_parts);
             for end in token + 1..=maximum {
+                if !balanced_binding(source, &tokens[token..end]) {
+                    continue;
+                }
                 let value = &source[tokens[token].start..tokens[end - 1].end];
                 if bindings.insert(role.clone(), value.to_owned()).is_some() {
                     return;
@@ -374,6 +377,24 @@ fn match_parts(
             }
         }
     }
+}
+
+fn balanced_binding(source: &str, tokens: &[InputToken]) -> bool {
+    let mut closing = Vec::new();
+    for token in tokens {
+        match &source.as_bytes()[token.start..token.end] {
+            b"(" => closing.push(b')'),
+            b"[" => closing.push(b']'),
+            b"{" => closing.push(b'}'),
+            b")" | b"]" | b"}" => {
+                if closing.pop() != Some(source.as_bytes()[token.start]) {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    closing.is_empty()
 }
 
 pub(super) fn input_tokens(source: &str) -> Result<Vec<InputToken>, CanonicalSourceErrorV1> {

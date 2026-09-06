@@ -30,6 +30,19 @@ premises and conclusions, handler conditions, withdrawals, inclusions, and
 contributions. Flat and focused forms compile to the same bindings. This is a
 bounded reader feature, not the uniform extensible frontend.
 
+Named declarations constrain bindings under `?example:`. Their optional
+Reading uses ordinary flat or focused clauses; declarations without a Reading
+define structured fields. Modes remain separate. The declared focused-edge
+grammar drives declaration constraints, facts, patterns, and canonical
+printing. A four-binding scalar law and structured state journey exercises
+checking, execution, independent re-reading, and checked scalar-effect edits.
+Declaration discovery, scalar expressions, laws, handlers, and their lowering
+still contain host bootstrap cases; this does not complete the frontend below.
+Custom focused grammars can read, print, execute, and reload source, but scalar
+edit witnesses still re-read through the default grammar. Extending that edit
+boundary requires carrying the selected frontend into package and runtime
+witness checking.
+
 Authorized positive laws compute a bounded least fixed point. The runtime
 tracks independent support, preserves conclusions with surviving support, and
 removes consequences—including unsupported cycles—after the last root is
