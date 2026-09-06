@@ -1,4 +1,4 @@
-//! Opt-in, bounded wall-clock observations of the existing checked source path.
+//! Opt-in, bounded wall-clock observations of checked source and candidate paths.
 //! No profile observation participates in source identity, checking or execution.
 use std::cell::RefCell;
 
@@ -24,8 +24,28 @@ pub enum SourceProfilePhaseV1 {
     ClearIo,
     InstallEvent,
     EventExport,
+    CandidateExecution,
+    TickDispatch,
+    OccurrenceProbe,
+    OccurrenceAdvance,
+    StepPreparation,
+    DerivationClosure,
+    RuleMatching,
+    StateEffects,
+    ConfigurationClone,
+    EffectEvaluation,
+    OccurrenceIdentity,
+    EffectSubjectEvaluation,
+    EffectValueEvaluation,
+    SumEvaluation,
+    RowEffectCollection,
+    EffectTraceRetention,
+    RowEffectsApply,
+    FormationCheck,
+    ConfigurationEncoding,
+    CarrierIngress,
 }
-const NAMES: [&str; 19] = [
+const NAMES: [&str; 39] = [
     "transfer",
     "witness-check",
     "source-read",
@@ -45,6 +65,26 @@ const NAMES: [&str; 19] = [
     "clear-io",
     "install-event",
     "event-export",
+    "candidate-execution",
+    "tick-dispatch",
+    "occurrence-probe",
+    "occurrence-advance",
+    "step-preparation",
+    "derivation-closure",
+    "rule-matching",
+    "state-effects",
+    "configuration-clone",
+    "effect-evaluation",
+    "occurrence-identity",
+    "effect-subject-evaluation",
+    "effect-value-evaluation",
+    "sum-evaluation",
+    "row-effect-collection",
+    "effect-trace-retention",
+    "row-effects-apply",
+    "formation-check",
+    "configuration-encoding",
+    "carrier-ingress",
 ];
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -57,7 +97,7 @@ pub struct SourceProfileMeasurementV1 {
 pub struct ExecutableSourceProfileV1 {
     pub wall_milliseconds: f64,
     pub truncated: bool,
-    pub phases: [SourceProfileMeasurementV1; 19],
+    pub phases: [SourceProfileMeasurementV1; 39],
 }
 impl ExecutableSourceProfileV1 {
     /// Fixed field names and finite numeric measurements; no source or secrets.
@@ -125,7 +165,7 @@ pub fn begin_executable_source_profile_v1() -> bool {
             report: ExecutableSourceProfileV1 {
                 wall_milliseconds: 0.0,
                 truncated: false,
-                phases: [SourceProfileMeasurementV1::default(); 19],
+                phases: [SourceProfileMeasurementV1::default(); 39],
             },
         });
         true
