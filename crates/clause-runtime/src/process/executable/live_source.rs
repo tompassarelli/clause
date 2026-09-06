@@ -7,6 +7,13 @@ use clause_package::{
     replace_canonical_scalar_effect_v1,
 };
 
+/// Aggregate envelope for one compiler-produced source transition witness.
+///
+/// CET1 carries both independently bounded old/new session snapshots together
+/// with the source operation that relates them. Constituent formats retain
+/// their own limits; this is only the outer transport ceiling.
+pub const EXECUTABLE_SOURCE_EDIT_LIMIT_V1: usize = 16 * 1024 * 1024;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutableSourceEditV1 {
     pub old_source: Vec<u8>,
@@ -363,7 +370,7 @@ pub fn encode_executable_source_edit_v1(
         );
         bytes.extend_from_slice(blob);
     }
-    if bytes.len() > 4 * 1024 * 1024 {
+    if bytes.len() > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 {
         return Err(ExecutableErrorV1::ResourceLimit);
     }
     Ok(bytes)
@@ -372,7 +379,7 @@ pub fn encode_executable_source_edit_v1(
 pub fn decode_executable_source_edit_v1(
     bytes: &[u8],
 ) -> Result<ExecutableSourceEditV1, ExecutableErrorV1> {
-    if bytes.len() > 4 * 1024 * 1024 {
+    if bytes.len() > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 {
         return Err(ExecutableErrorV1::ResourceLimit);
     }
     let mut d = Decoder::new(bytes);
@@ -843,5 +850,55 @@ impl ExecutableProcessRuntimeV1 {
         self.configuration = next;
         self.source_continuity = Some(continuity);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CET1_FIXED_BYTES: usize =
+        4 + 2 * IDENTITY_BYTES + 2 * size_of::<u32>() + 5 * size_of::<u32>();
+
+    fn source_edit_with_old_source(old_source: Vec<u8>) -> ExecutableSourceEditV1 {
+        ExecutableSourceEditV1 {
+            old_source,
+            declared_frontend: Vec::new(),
+            old_root: ProgramChangeOccurrenceId::from_bytes([1; IDENTITY_BYTES]),
+            new_root: ProgramChangeOccurrenceId::from_bytes([2; IDENTITY_BYTES]),
+            handler: FormationLocalId::new(1),
+            effect: FormationLocalId::new(2),
+            expression: Vec::new(),
+            old_cpp1: Vec::new(),
+            new_cpp1: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn source_edit_codec_accepts_exact_aggregate_limit_and_rejects_limit_plus_one() {
+        let exact = source_edit_with_old_source(vec![
+            0;
+            EXECUTABLE_SOURCE_EDIT_LIMIT_V1
+                - CET1_FIXED_BYTES
+        ]);
+        let encoded = encode_executable_source_edit_v1(&exact).unwrap();
+        assert_eq!(encoded.len(), EXECUTABLE_SOURCE_EDIT_LIMIT_V1);
+        assert_eq!(decode_executable_source_edit_v1(&encoded).unwrap(), exact);
+
+        let oversized =
+            source_edit_with_old_source(vec![
+                0;
+                EXECUTABLE_SOURCE_EDIT_LIMIT_V1 - CET1_FIXED_BYTES + 1
+            ]);
+        assert_eq!(
+            encode_executable_source_edit_v1(&oversized),
+            Err(ExecutableErrorV1::ResourceLimit),
+        );
+        let mut encoded_oversized = encoded;
+        encoded_oversized.push(0);
+        assert_eq!(
+            decode_executable_source_edit_v1(&encoded_oversized),
+            Err(ExecutableErrorV1::ResourceLimit),
+        );
     }
 }
