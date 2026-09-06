@@ -30,8 +30,9 @@ are mapped. Unstructured `hot_reload` remains a fresh import.
 
 The new generation's CWR1 is a compiler artifact, **not** the native compiler
 process's live browser world. `last_source_edit()` returns a CET1 witness with
-the exact old source/root, new root, selected identities, replacement expression,
-and old/new CPP1. No host configuration is included. Its bound is 4 MiB.
+the exact old source/root, selected frontend declarations, new root, selected
+identities, replacement expression, and old/new CPP1. Witness checking uses
+that same declared grammar. No host configuration is included. Its bound is 4 MiB.
 
 `exact_source()` immutably borrows the exact checked source installed in the
 current native workbench generation. After an accepted edit, persist these

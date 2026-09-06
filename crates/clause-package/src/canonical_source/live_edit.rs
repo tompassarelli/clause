@@ -193,7 +193,7 @@ pub fn replace_canonical_scalar_effect_v1(
     exact.extend_from_slice(&cst.exact_source[..start]);
     exact.extend_from_slice(replacement);
     exact.extend_from_slice(&cst.exact_source[end..]);
-    let source = read_canonical_source_v1(&exact)?;
+    let source = read_canonical_source_with_declared_frontend_v1(&exact, &cst.declared_frontend)?;
     let plan = build_independent_plan(&source, new_root)?;
     let old_requests = allocation_requests(cst)?;
     let new_requests = allocation_requests(&source)?;

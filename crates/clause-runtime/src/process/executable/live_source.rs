@@ -1,15 +1,16 @@
 //! Compiler-checked source transitions applied to runtime-owned live state.
 use super::*;
 use clause_package::{
-    CanonicalAllocatedIdentityV1, CanonicalScalarEditV1, CanonicalSourceContextV1,
+    CanonicalAllocatedIdentityV1, CanonicalDeclaredFrontendV1, CanonicalScalarEditV1, CanonicalSourceContextV1,
     ProgramChangeOccurrenceId, canonical_scalar_effects_v1, elaborate_canonical_source_package_v1,
-    plan_independent_canonical_source_allocations_v1, read_canonical_source_v1,
+    plan_independent_canonical_source_allocations_v1, read_canonical_source_with_declared_frontend_v1,
     replace_canonical_scalar_effect_v1,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutableSourceEditV1 {
     pub old_source: Vec<u8>,
+    pub declared_frontend: Vec<u8>,
     pub old_root: ProgramChangeOccurrenceId,
     pub new_root: ProgramChangeOccurrenceId,
     pub handler: FormationLocalId,
@@ -350,6 +351,7 @@ pub fn encode_executable_source_edit_v1(
     bytes.extend_from_slice(&edit.effect.get().to_le_bytes());
     for blob in [
         &edit.old_source,
+        &edit.declared_frontend,
         &edit.expression,
         &edit.old_cpp1,
         &edit.new_cpp1,
@@ -391,6 +393,7 @@ pub fn decode_executable_source_edit_v1(
         handler,
         effect,
         old_source: blob()?,
+        declared_frontend: blob()?,
         expression: blob()?,
         old_cpp1: blob()?,
         new_cpp1: blob()?,
@@ -408,7 +411,8 @@ pub fn check_executable_source_edit_v1(
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::WitnessCheck);
     let rejected = |_| ExecutableErrorV1::MalformedProgram;
     let phase = source_profile_scope_v1(SourceProfilePhaseV1::SourceRead);
-    let old_cst = read_canonical_source_v1(&witness.old_source).map_err(rejected)?;
+    let frontend = CanonicalDeclaredFrontendV1::read(&witness.declared_frontend).map_err(rejected)?;
+    let old_cst = read_canonical_source_with_declared_frontend_v1(&witness.old_source, &frontend).map_err(rejected)?;
     drop(phase);
     let phase = source_profile_scope_v1(SourceProfilePhaseV1::Allocation);
     let old_allocations =
