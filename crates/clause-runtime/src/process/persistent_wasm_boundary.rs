@@ -26,6 +26,7 @@ const ALLOCATION_EPOCH_BYTES_V1: usize = 304;
 
 pub const WASM_SESSION_COMMAND_LIMIT_V1: usize = 1024 * 1024;
 pub const WASM_SESSION_EVENT_LIMIT_V1: usize = WASM_PROCESS_RESPONSE_LIMIT_V1;
+pub const WASM_SOURCE_CONTINUITY_LIMIT_V1: usize = WASM_PROCESS_REQUEST_LIMIT_V1;
 const WASM_SESSION_EVENT_FIELD_LIMIT_V1: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -347,6 +348,13 @@ impl WasmPersistentSessionBoundaryV1 {
 
     pub fn source_continuity_term(&self, handle: WasmSessionHandleV1) -> Result<Term, WasmProcessStatusV1> {
         self.captured_session(handle)?.source_continuity_term().map_err(|_| WasmProcessStatusV1::ProcessRejected)
+    }
+
+    pub fn source_continuity_bytes(&self, handle: WasmSessionHandleV1) -> Result<Vec<u8>, WasmProcessStatusV1> {
+        diagnostic_bytes_with_limit(
+            self.source_continuity_term(handle)?,
+            WASM_SOURCE_CONTINUITY_LIMIT_V1,
+        )
     }
 
     pub fn intervention_bytes(&self, handle: WasmSessionHandleV1, request: &[u8]) -> Result<Vec<u8>, WasmProcessStatusV1> {
@@ -686,8 +694,12 @@ impl WasmPersistentSessionBoundaryV1 {
 }
 
 fn diagnostic_bytes(term: Term) -> Result<Vec<u8>, WasmProcessStatusV1> {
+    diagnostic_bytes_with_limit(term, WASM_PROCESS_RESPONSE_LIMIT_V1)
+}
+
+fn diagnostic_bytes_with_limit(term: Term, limit: usize) -> Result<Vec<u8>, WasmProcessStatusV1> {
     let bytes = canonical_term_bytes(&term).map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
-    if bytes.len() > 1024 * 1024 { return Err(WasmProcessStatusV1::ResponseOutOfBounds); }
+    if bytes.len() > limit { return Err(WasmProcessStatusV1::ResponseOutOfBounds); }
     Ok(bytes)
 }
 
@@ -2061,6 +2073,37 @@ mod tests {
             Err(WasmProcessStatusV1::ResponseOutOfBounds)
         );
     }
+
+    #[test]
+    fn source_continuity_aggregate_accepts_exact_limit_and_rejects_limit_plus_one() {
+        let scope = TermScope {
+            universe: UniverseId::from_bytes([1; 32]),
+            semantics: ClauseSemanticsId::from_bytes([2; 32]),
+        };
+        let term = |payload| {
+            Term::atom(
+                scope,
+                b"continuity".to_vec(),
+                vec![0; payload],
+                EqualityContract::ExactOctetsV1,
+            )
+            .unwrap()
+        };
+        let fixed = canonical_term_bytes(&term(0)).unwrap().len();
+        let exact = diagnostic_bytes_with_limit(
+            term(WASM_SOURCE_CONTINUITY_LIMIT_V1 - fixed),
+            WASM_SOURCE_CONTINUITY_LIMIT_V1,
+        )
+        .unwrap();
+        assert_eq!(exact.len(), WASM_SOURCE_CONTINUITY_LIMIT_V1);
+        assert_eq!(
+            diagnostic_bytes_with_limit(
+                term(WASM_SOURCE_CONTINUITY_LIMIT_V1 - fixed + 1),
+                WASM_SOURCE_CONTINUITY_LIMIT_V1,
+            ),
+            Err(WasmProcessStatusV1::ResponseOutOfBounds),
+        );
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -2153,7 +2196,7 @@ mod wasm_exports {
 
     #[wasm_bindgen]
     pub fn clause_session_v1_source_continuity_bulk(slot: u32, generation: u32) -> Result<Vec<u8>, wasm_bindgen::JsError> {
-        SESSION_BOUNDARY.with_borrow(|boundary| boundary.source_continuity_term(super::WasmSessionHandleV1 { slot, generation }).and_then(super::diagnostic_bytes))
+        SESSION_BOUNDARY.with_borrow(|boundary| boundary.source_continuity_bytes(super::WasmSessionHandleV1 { slot, generation }))
             .map_err(|error| wasm_bindgen::JsError::new(&error.to_string()))
     }
 
