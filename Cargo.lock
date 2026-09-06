@@ -53,6 +53,7 @@ dependencies = [
 name = "clause-substrate"
 version = "0.0.0"
 dependencies = [
+ "clause-package",
  "proc-macro2",
  "quote",
  "sha2",

@@ -17,3 +17,7 @@ name = "ClauseCompiler"
 
 [[lean_lib]]
 name = "ClauseCompilerTrust"
+
+[[lean_exe]]
+name = "compiler_freeze"
+root = "CompilerFreeze"
