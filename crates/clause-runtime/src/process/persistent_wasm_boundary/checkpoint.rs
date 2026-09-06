@@ -1,8 +1,8 @@
+use super::super::MAX_ADMITTED_CHECKPOINT_BYTES_V1 as LIMIT;
 use super::*;
 use sha2::{Digest, Sha256};
 
 const MAGIC: &[u8; 4] = b"CWC1";
-const LIMIT: usize = 32 * 1024 * 1024;
 
 struct RecordedBoundary<'a> {
     context: &'a [u8],
@@ -170,5 +170,42 @@ impl WasmPersistentSessionBoundaryV1 {
         });
         self.generation = Some(saved.generation);
         Ok(event)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checkpoint_envelope_rejects_corruption_and_valid_oversize_encoding() {
+        let mut bytes = MAGIC.to_vec();
+        // Three blobs, the fixed boundary fields, and the digest consume 85 bytes.
+        let context = vec![0; LIMIT - 85];
+        for value in [context.as_slice(), &[], &[]] {
+            put_blob(&mut bytes, value).unwrap();
+        }
+        bytes.extend_from_slice(&[0; 37]);
+        let digest = Sha256::digest(&bytes);
+        bytes.extend_from_slice(&digest);
+        assert_eq!(bytes.len(), LIMIT);
+        assert_eq!(wasm_session_checkpoint_context_v1(&bytes).unwrap(), context);
+
+        *bytes.last_mut().unwrap() ^= 1;
+        assert_eq!(
+            wasm_session_checkpoint_context_v1(&bytes),
+            Err(WasmProcessStatusV1::MalformedRequest),
+        );
+
+        bytes.truncate(bytes.len() - 32);
+        bytes.insert(8, 0);
+        bytes[4..8].copy_from_slice(&((context.len() + 1) as u32).to_le_bytes());
+        let digest = Sha256::digest(&bytes);
+        bytes.extend_from_slice(&digest);
+        assert_eq!(bytes.len(), LIMIT + 1);
+        assert_eq!(
+            wasm_session_checkpoint_context_v1(&bytes),
+            Err(WasmProcessStatusV1::MalformedRequest),
+        );
     }
 }

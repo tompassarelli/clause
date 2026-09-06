@@ -1,8 +1,8 @@
 //! Physical reconstitution of a trusted, already-admitted world frontier.
+use super::super::MAX_ADMITTED_CHECKPOINT_BYTES_V1 as LIMIT;
 use super::*;
 
 const MAGIC: &[u8; 4] = b"CRF1";
-const LIMIT: usize = 16 * 1024 * 1024;
 
 macro_rules! ordinal_wire {
     ($($field:ident),+ $(,)?) => {
