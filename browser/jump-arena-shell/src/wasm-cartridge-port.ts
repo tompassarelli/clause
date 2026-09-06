@@ -50,9 +50,9 @@ const cse1_max_bytes = 1024 * 1024;
 
 const cse1_field_max_bytes = 64 * 1024;
 
-const cse1_projected_term_max_properties = cse1_field_max_bytes;
+const cse1_projected_term_max_properties = cse1_max_bytes;
 
-const cse1_projected_term_json_max_source_units = 4 * cse1_field_max_bytes + 1;
+const cse1_projected_term_json_max_source_units = 4 * cse1_max_bytes + 1;
 
 const session_open_max_bytes = 4 * 1024 * 1024;
 
@@ -70,7 +70,7 @@ const canonical_term_triple_path_min_bytes =
   1 + 2 * canonical_term_atom_min_bytes;
 
 const cse1_projected_term_max_depth = Math.trunc(
-  (cse1_field_max_bytes - 2 * identity_bytes - canonical_term_atom_min_bytes) /
+  (cse1_max_bytes - 2 * identity_bytes - canonical_term_atom_min_bytes) /
     canonical_term_triple_path_min_bytes,
 );
 
@@ -1315,7 +1315,7 @@ function decode_cse1_event(bytes: unknown): Cse1Event {
                         const term_record = parse_blob(
                           bytes,
                           observation_offset + identity_bytes,
-                          cse1_field_max_bytes,
+                          cse1_max_bytes,
                           "CSE1 projected Term",
                         );
                         if (!equivalent(term_record.next, bytes.length)) {
@@ -2114,7 +2114,7 @@ function decode_term_node(
         })();
 }
 
-function decode_canonical_term(bytes: unknown, maximumBytes = cse1_field_max_bytes): TermNode {
+function decode_canonical_term(bytes: unknown, maximumBytes = cse1_max_bytes): TermNode {
   const envelope_source = workbench["workbench-byte-envelope-source"](bytes);
   const source = envelope_source === null ? bytes : envelope_source;
   if (

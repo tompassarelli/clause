@@ -1797,7 +1797,7 @@ pub fn decode_wasm_session_event_v1(
                 0 => None,
                 1 => Some(WasmSessionProjectionV1 {
                     observation: ObservationId::from_bytes(d.identity()?),
-                    exact_term_bytes: d.blob(WASM_SESSION_EVENT_FIELD_LIMIT_V1)?.to_vec(),
+                    exact_term_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
                 }),
                 _ => return Err(WasmProcessStatusV1::MalformedRequest),
             },
@@ -2019,6 +2019,33 @@ mod tests {
         let mut boundary = WasmPersistentSessionBoundaryV1::default();
         boundary.install_event(event.clone()).unwrap();
         assert_eq!(boundary.event(), bytes);
+        assert_eq!(decode_wasm_session_event_v1(boundary.event()).unwrap(), event);
+    }
+
+    #[test]
+    fn session_event_projection_exceeds_legacy_response_limit() {
+        let event = WasmSessionEventV1 {
+            handle: WasmSessionHandleV1 { slot: 0, generation: 1 },
+            accepted_sequence: 1,
+            kind: WasmSessionEventKindV1::AdmissionAccepted {
+                predecessor: StateRevisionId::from_bytes([1; 32]),
+                successor: StateRevisionId::from_bytes([2; 32]),
+                admission: AdmissionOccurrenceId::from_bytes([3; 32]),
+                judgment: JudgmentOccurrenceId::from_bytes([4; 32]),
+                run: RunId::from_bytes([5; 32]),
+                activation: ActivationId::from_bytes([6; 32]),
+                session: RuntimeSessionId::from_bytes([7; 32]),
+                state_revision_count: 1,
+                projection: Some(WasmSessionProjectionV1 {
+                    observation: ObservationId::from_bytes([8; 32]),
+                    exact_term_bytes: vec![b'x'; 64 * 1024 + 1],
+                }),
+            },
+        };
+        let bytes = encode_wasm_session_event_v1(&event);
+        assert!(bytes.len() > 64 * 1024);
+        let mut boundary = WasmPersistentSessionBoundaryV1::default();
+        boundary.install_event(event.clone()).unwrap();
         assert_eq!(decode_wasm_session_event_v1(boundary.event()).unwrap(), event);
     }
 
