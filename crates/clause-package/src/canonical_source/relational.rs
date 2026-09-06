@@ -587,8 +587,8 @@ pub(super) fn expression_domain<'a>(
         S::Number(_) | S::SquareRoot(_) | S::Add(..) | S::Subtract(..) | S::Multiply(..) | S::Divide(..) => {
             Some(b"F64")
         }
-        S::Boolean(_) | S::Equal(..) | S::GreaterThan(..) | S::LessThanOrEqual(..) => Some(b"Bool"),
-        S::Text(_) | S::Concatenate(..) => Some(b"Text"),
+        S::Boolean(_) | S::Equal(..) | S::GreaterThan(..) | S::LessThanOrEqual(..) | S::StartsWith(..) => Some(b"Bool"),
+        S::Text(_) | S::Concatenate(..) | S::TextTransform(..) => Some(b"Text"),
         S::Parameter(name) => domains.get(name).map(Vec::as_slice),
         _ => None,
     }
@@ -623,12 +623,13 @@ pub(super) fn check_expression(
             check_expression(b, &domain, domains, origin)?;
         }
         S::SquareRoot(value) => check_expression(value, b"F64", domains, origin)?,
+        S::TextTransform(_, value) => check_expression(value, b"Text", domains, origin)?,
         S::Add(a, b) | S::Subtract(a, b) | S::Multiply(a, b) | S::Divide(a, b)
         | S::GreaterThan(a, b) | S::LessThanOrEqual(a, b) => {
             check_expression(a, b"F64", domains, origin)?;
             check_expression(b, b"F64", domains, origin)?;
         }
-        S::Concatenate(a, b) => {
+        S::Concatenate(a, b) | S::StartsWith(a, b) => {
             check_expression(a, b"Text", domains, origin)?;
             check_expression(b, b"Text", domains, origin)?;
         }

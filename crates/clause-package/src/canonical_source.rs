@@ -341,6 +341,8 @@ pub struct CanonicalStateCellV1 {
 /// declared argument ordinals local to the handler, never physical slots.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalExecutableExpressionV1 {
+    TextTransform(CanonicalTextTransformV1, Box<Self>),
+    StartsWith(Box<Self>, Box<Self>),
     Equal(Box<Self>, Box<Self>),
     GreaterThan(Box<Self>, Box<Self>),
     LessThanOrEqual(Box<Self>, Box<Self>),
@@ -513,10 +515,20 @@ pub struct CanonicalReferentInputBindingV1 {
     pub handler_designation: Vec<u8>,
 }
 
+/// Total UTF-8 text transformations; word boundaries use Unicode whitespace.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CanonicalTextTransformV1 {
+    Trim,
+    FirstWord,
+    RemainingWords,
+}
+
 /// Construct-blind scalar expression owned by one canonical source handler.
 /// Physical state coordinates are deliberately supplied only by refinement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalScalarExpressionV1 {
+    TextTransform(CanonicalTextTransformV1, Box<Self>),
+    StartsWith(Box<Self>, Box<Self>),
     Equal(Box<Self>, Box<Self>),
     GreaterThan(Box<Self>, Box<Self>),
     LessThanOrEqual(Box<Self>, Box<Self>),
@@ -1818,6 +1830,7 @@ fn allocation_requests(
     let mut requested = Vec::new();
     let mut requested_referents = BTreeSet::new();
     let mut many_assertions = BTreeSet::new();
+    let mut initial_assertion_repetitions = BTreeMap::new();
     let input = input_handler_parts(cst)?;
     let jump = jump_handler_parts(cst)?;
     let scalar = scalar_handler_parts(cst)?;
@@ -2094,20 +2107,20 @@ fn allocation_requests(
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
-                    requested.push(AllocationRequest {
-                        producer: initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin),
-                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
-                        domain: AllocationDomain::Formation,
-                    });
+                    request_initial_assertion(
+                        cst, &assertion.subject, &assertion.relation, assertion.origin,
+                        &mut requested, &mut many_assertions,
+                        &mut initial_assertion_repetitions,
+                    );
                 }
             }
             CstKind::ShapeAssertion(assertion) => {
                 if declared_state_relation(cst, &assertion.relation) {
-                    requested.push(AllocationRequest {
-                        producer: initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin),
-                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
-                        domain: AllocationDomain::Formation,
-                    });
+                    request_initial_assertion(
+                        cst, &assertion.subject, &assertion.relation, assertion.origin,
+                        &mut requested, &mut many_assertions,
+                        &mut initial_assertion_repetitions,
+                    );
                 }
             }
             CstKind::BooleanAssertion(assertion) => {
@@ -2124,11 +2137,11 @@ fn allocation_requests(
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
-                    requested.push(AllocationRequest {
-                        producer: initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin),
-                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
-                        domain: AllocationDomain::Formation,
-                    });
+                    request_initial_assertion(
+                        cst, &assertion.subject, &assertion.relation, assertion.origin,
+                        &mut requested, &mut many_assertions,
+                        &mut initial_assertion_repetitions,
+                    );
                 }
             }
             CstKind::NumberAssertion(assertion) => {
@@ -2156,11 +2169,11 @@ fn allocation_requests(
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
-                    requested.push(AllocationRequest {
-                        producer: initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin),
-                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
-                        domain: AllocationDomain::Formation,
-                    });
+                    request_initial_assertion(
+                        cst, &assertion.subject, &assertion.relation, assertion.origin,
+                        &mut requested, &mut many_assertions,
+                        &mut initial_assertion_repetitions,
+                    );
                 }
             }
             CstKind::SymbolAssertion(assertion) => {
@@ -2174,11 +2187,11 @@ fn allocation_requests(
                         )
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
-                    requested.push(AllocationRequest {
-                        producer: initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin),
-                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
-                        domain: AllocationDomain::Formation,
-                    });
+                    request_initial_assertion(
+                        cst, &assertion.subject, &assertion.relation, assertion.origin,
+                        &mut requested, &mut many_assertions,
+                        &mut initial_assertion_repetitions,
+                    );
                 }
             }
             CstKind::TextAssertion(assertion) => {
@@ -2192,11 +2205,11 @@ fn allocation_requests(
                         )
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
-                    requested.push(AllocationRequest {
-                        producer: initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin),
-                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
-                        domain: AllocationDomain::Formation,
-                    });
+                    request_initial_assertion(
+                        cst, &assertion.subject, &assertion.relation, assertion.origin,
+                        &mut requested, &mut many_assertions,
+                        &mut initial_assertion_repetitions,
+                    );
                 }
             }
             CstKind::KeyboardBinding(_)
@@ -2215,6 +2228,44 @@ fn allocation_requests(
         }
     }
     Ok(requested)
+}
+
+fn request_initial_assertion(
+    cst: &CanonicalSourceCstV1,
+    subject: &[u8],
+    relation: &[u8],
+    origin: CanonicalSourceOriginV1,
+    requested: &mut Vec<AllocationRequest>,
+    many: &mut BTreeSet<AllocationRequest>,
+    repetitions: &mut BTreeMap<CanonicalSemanticProducerV1, u64>,
+) {
+    let producer = initial_assertion_producer(cst, subject, relation, origin);
+    let slot = initial_assertion_slot(cst, relation, &producer, repetitions);
+    let request = AllocationRequest {
+        producer,
+        slot,
+        domain: AllocationDomain::Formation,
+    };
+    if declared_state_cardinality(cst, relation) == Some(SourceCardinality::Many) {
+        many.insert(request);
+    } else {
+        requested.push(request);
+    }
+}
+
+fn initial_assertion_slot(
+    cst: &CanonicalSourceCstV1,
+    relation: &[u8],
+    producer: &CanonicalSemanticProducerV1,
+    repetitions: &mut BTreeMap<CanonicalSemanticProducerV1, u64>,
+) -> CanonicalEmissionSlotV1 {
+    let mut slot = head_slot(CanonicalSourceProductionV1::Assertion);
+    if declared_state_cardinality(cst, relation) == Some(SourceCardinality::Many) {
+        let count = repetitions.entry(producer.clone()).or_default();
+        slot.repetition = (*count > 0).then_some(*count);
+        *count += 1;
+    }
+    slot
 }
 
 fn declared_state_cardinality(
@@ -2283,6 +2334,24 @@ fn general_handler_relation_designations(
         .collect()
 }
 
+fn general_handler_mutated_relation_designations(
+    handler: &GeneralHandlerCst,
+) -> BTreeSet<Vec<u8>> {
+    handler
+        .assignments
+        .iter()
+        .chain(&handler.insertions)
+        .chain(&handler.accumulations)
+        .map(|assignment| assignment.target.relation.clone())
+        .chain(
+            handler
+                .removals
+                .iter()
+                .map(|removal| removal.relation.clone()),
+        )
+        .collect()
+}
+
 fn relational_handler_origins(cst: &CanonicalSourceCstV1) -> BTreeSet<CanonicalSourceOriginV1> {
     let handlers = cst
         .items
@@ -2292,9 +2361,17 @@ fn relational_handler_origins(cst: &CanonicalSourceCstV1) -> BTreeSet<CanonicalS
             _ => None,
         })
         .collect::<Vec<_>>();
+    let initial_relations = initial_relational_designations(cst);
     let mut origins = handlers
         .iter()
-        .filter(|handler| handler.derivation || !handler.creations.is_empty() || !handler.sums.is_empty())
+        .filter(|handler| {
+            handler.derivation
+                || !handler.creations.is_empty()
+                || !handler.sums.is_empty()
+                || general_handler_mutated_relation_designations(handler)
+                    .iter()
+                    .any(|relation| initial_relations.contains(relation))
+        })
         .map(|handler| handler.origin)
         .collect::<BTreeSet<_>>();
     let mut relations = handlers
@@ -2337,10 +2414,38 @@ fn relational_relation_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<
             _ => None,
         })
         .flat_map(|handler| general_handler_relation_designations(handler, &cst.items))
+        .chain(initial_relational_designations(cst))
         .chain(cst.items.iter().filter_map(|item| match &item.kind {
             CstKind::Relation(relation) if relation.contract_origin.is_some() => Some(relation.surface.clone()), _ => None,
         }))
         .collect()
+}
+
+// Initial collections need rows even without an event that reads them.
+// A handler that mutates one seeds relational closure so its reads and writes
+// share that storage without relaxing read-only scalar join cardinality.
+fn initial_relational_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<u8>> {
+    cst.items.iter().filter_map(|item| {
+        let (subject, surface) = match &item.kind {
+            CstKind::VectorAssertion(a) => (&a.subject, &a.relation),
+            CstKind::ShapeAssertion(a) => (&a.subject, &a.relation),
+            CstKind::BooleanAssertion(a) => (&a.subject, &a.relation),
+            CstKind::NumberAssertion(a) => (&a.subject, &a.relation),
+            CstKind::SymbolAssertion(a) => (&a.subject, &a.relation),
+            CstKind::TextAssertion(a) => (&a.subject, &a.relation),
+            _ => return None,
+        };
+        if declared_state_cardinality(cst, surface) != Some(SourceCardinality::Many) {
+            return None;
+        }
+        let relation = cst.items.iter().find_map(|item| match &item.kind {
+            CstKind::Relation(r) if &r.surface == surface => Some(r),
+            _ => None,
+        })?;
+        let subject_role = relation.subject.as_ref()?;
+        let domain = &relation.roles.iter().find(|role| &role.name == subject_role)?.domain;
+        declared_domain_facet(cst, subject, domain).then(|| surface.clone())
+    }).collect()
 }
 
 fn declared_state_relation(cst: &CanonicalSourceCstV1, surface: &[u8]) -> bool {
@@ -3701,11 +3806,62 @@ fn resolve_general_parameter_states(
         let relation = resolved_state_relation(cst, plan, &source.relation, origin)?;
         planned.push(GeneralSourcePlan {
             source,
-            candidates: general_state_candidates(cst, plan, source, &initial_entities, origin)?,
+            candidates: Vec::new(),
             subject_domain: relation.subject_domain.to_vec(),
             value_domain: general_source_value_domain(cst, &relation, source, origin)?,
             singleton_forward_mode: singleton_forward_mode(&relation),
         });
+    }
+
+    {
+        let producers = planned
+            .iter()
+            .map(|source| (source.source.parameter.as_slice(), source))
+            .collect::<BTreeMap<_, _>>();
+        let mut independent_domains = BTreeMap::<&[u8], &[u8]>::new();
+        for source in &planned {
+            if !source.source.subject.starts_with(b"?") {
+                continue;
+            }
+            if let Some(domain) = independent_arguments.get(&source.source.subject) {
+                if !referent_domains_overlap(domain, &source.subject_domain) {
+                    return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
+                }
+                continue;
+            }
+            if source.source.subject == handler_subject || allow_independent_subjects {
+                if let Some(expected) = independent_domains.get(source.source.subject.as_slice())
+                {
+                    if !referent_domains_overlap(expected, &source.subject_domain) {
+                        return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
+                    }
+                } else {
+                    independent_domains.insert(
+                        source.source.subject.as_slice(),
+                        source.subject_domain.as_slice(),
+                    );
+                }
+                continue;
+            }
+            let producer = producers
+                .get(source.source.subject.as_slice())
+                .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?;
+            if !producer.singleton_forward_mode
+                || !referent_domains_overlap(&producer.value_domain, &source.subject_domain)
+            {
+                return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
+            }
+        }
+    }
+
+    for planned_source in &mut planned {
+        planned_source.candidates = general_state_candidates(
+            cst,
+            plan,
+            planned_source.source,
+            &initial_entities,
+            origin,
+        )?;
     }
 
     let mut shared_subjects = BTreeMap::<(Vec<u8>, Vec<u8>), BTreeSet<Vec<u8>>>::new();
@@ -3762,44 +3918,6 @@ fn resolve_general_parameter_states(
                 Err(CanonicalSourceErrorV1::MissingAllocation { .. }) => {}
                 Err(error) => return Err(error),
             }
-        }
-    }
-
-    let producers = planned
-        .iter()
-        .map(|source| (source.source.parameter.as_slice(), source))
-        .collect::<BTreeMap<_, _>>();
-    let mut independent_domains = BTreeMap::<&[u8], &[u8]>::new();
-    for source in &planned {
-        if !source.source.subject.starts_with(b"?") {
-            continue;
-        }
-        if let Some(domain) = independent_arguments.get(&source.source.subject) {
-            if !referent_domains_overlap(domain, &source.subject_domain) {
-                return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
-            }
-            continue;
-        }
-        if source.source.subject == handler_subject || allow_independent_subjects {
-            if let Some(expected) = independent_domains.get(source.source.subject.as_slice()) {
-                if !referent_domains_overlap(expected, &source.subject_domain) {
-                    return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
-                }
-            } else {
-                independent_domains.insert(
-                    source.source.subject.as_slice(),
-                    source.subject_domain.as_slice(),
-                );
-            }
-            continue;
-        }
-        let producer = producers
-            .get(source.source.subject.as_slice())
-            .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?;
-        if !producer.singleton_forward_mode
-            || !referent_domains_overlap(&producer.value_domain, &source.subject_domain)
-        {
-            return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
         }
     }
 
@@ -4410,6 +4528,15 @@ fn canonical_scalar_executable_expression(
                 canonical_scalar_executable_expression(value, current, parameters, origin)?,
             ))
         }
+        CanonicalScalarExpressionV1::TextTransform(operation, value) => {
+            CanonicalExecutableExpressionV1::TextTransform(*operation, Box::new(
+                canonical_scalar_executable_expression(value, current, parameters, origin)?,
+            ))
+        }
+        CanonicalScalarExpressionV1::StartsWith(left, right) => {
+            let (left, right) = pair(left, right)?;
+            CanonicalExecutableExpressionV1::StartsWith(left, right)
+        }
         CanonicalScalarExpressionV1::Current => {
             CanonicalExecutableExpressionV1::State(current.clone())
         }
@@ -4498,6 +4625,15 @@ fn expand_scalar_law_bindings(
             CanonicalScalarExpressionV1::SquareRoot(Box::new(
                 expand_scalar_law_bindings(value, bindings, expanding, origin)?,
             ))
+        }
+        CanonicalScalarExpressionV1::TextTransform(operation, value) => {
+            CanonicalScalarExpressionV1::TextTransform(*operation, Box::new(
+                expand_scalar_law_bindings(value, bindings, expanding, origin)?,
+            ))
+        }
+        CanonicalScalarExpressionV1::StartsWith(left, right) => {
+            let (left, right) = pair(left, right, expanding)?;
+            CanonicalScalarExpressionV1::StartsWith(left, right)
         }
         CanonicalScalarExpressionV1::Parameter(parameter) if bindings.contains_key(parameter) => {
             if !expanding.insert(parameter.clone()) {
@@ -4597,6 +4733,13 @@ fn canonical_general_executable_expression(
         }
         CanonicalScalarExpressionV1::SquareRoot(value) => {
             Ok(CanonicalExecutableExpressionV1::SquareRoot(Box::new(lower_expression(value)?)))
+        }
+        CanonicalScalarExpressionV1::TextTransform(operation, value) => {
+            Ok(CanonicalExecutableExpressionV1::TextTransform(*operation, Box::new(lower_expression(value)?)))
+        }
+        CanonicalScalarExpressionV1::StartsWith(left, right) => {
+            let (left, right) = pair(left, right)?;
+            Ok(CanonicalExecutableExpressionV1::StartsWith(left, right))
         }
         CanonicalScalarExpressionV1::Concatenate(left, right) => {
             let (left, right) = pair(left, right)?;
@@ -4887,6 +5030,13 @@ fn relational_scalar_expression(
         }
         CanonicalScalarExpressionV1::SquareRoot(value) => {
             CanonicalExecutableExpressionV1::SquareRoot(Box::new(lower_expression(value, Some(b"F64"))?))
+        }
+        CanonicalScalarExpressionV1::TextTransform(operation, value) => {
+            CanonicalExecutableExpressionV1::TextTransform(*operation, Box::new(lower_expression(value, Some(b"Text"))?))
+        }
+        CanonicalScalarExpressionV1::StartsWith(left, right) => {
+            let (left, right) = pair(left, right, Some(b"Text"))?;
+            CanonicalExecutableExpressionV1::StartsWith(left, right)
         }
         CanonicalScalarExpressionV1::Current => {
             return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
@@ -6246,6 +6396,7 @@ pub fn elaborate_canonical_source_package_v1(
     let tick_parts = tick_program_parts(cst)?;
     let mut emitted_referents = BTreeSet::new();
     let mut application_repetitions = BTreeMap::<(Vec<u8>, Vec<u8>), u64>::new();
+    let mut initial_assertion_repetitions = BTreeMap::new();
     for item in &cst.items {
         match &item.kind {
             CstKind::Referent { designation, .. } => {
@@ -6812,7 +6963,7 @@ pub fn elaborate_canonical_source_package_v1(
                     || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
-                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
@@ -6834,7 +6985,7 @@ pub fn elaborate_canonical_source_package_v1(
             CstKind::ShapeAssertion(assertion) => {
                 if declared_state_relation(cst, &assertion.relation) {
                     let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
-                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
@@ -6868,7 +7019,7 @@ pub fn elaborate_canonical_source_package_v1(
                     || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
-                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
@@ -6913,7 +7064,7 @@ pub fn elaborate_canonical_source_package_v1(
                     || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
-                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
@@ -6944,7 +7095,7 @@ pub fn elaborate_canonical_source_package_v1(
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
-                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
@@ -6975,7 +7126,7 @@ pub fn elaborate_canonical_source_package_v1(
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
-                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
@@ -9360,6 +9511,27 @@ impl ScalarExpressionParser<'_> {
 
     fn primary(&mut self) -> Option<CanonicalScalarExpressionV1> {
         self.skip_spaces();
+        for (prefix, operation) in [
+            (b"trim(".as_slice(), CanonicalTextTransformV1::Trim),
+            (b"first-word(".as_slice(), CanonicalTextTransformV1::FirstWord),
+            (b"remaining-words(".as_slice(), CanonicalTextTransformV1::RemainingWords),
+        ] {
+            if self.take_exact(prefix) {
+                let value = self.comparison()?;
+                self.skip_spaces();
+                self.take_exact(b")").then_some(())?;
+                return Some(CanonicalScalarExpressionV1::TextTransform(operation, Box::new(value)));
+            }
+        }
+        if self.take_exact(b"starts-with(") {
+            let value = self.comparison()?;
+            self.skip_spaces();
+            self.take_exact(b",").then_some(())?;
+            let prefix = self.comparison()?;
+            self.skip_spaces();
+            self.take_exact(b")").then_some(())?;
+            return Some(CanonicalScalarExpressionV1::StartsWith(Box::new(value), Box::new(prefix)));
+        }
         if self.take_exact(b"if(") {
             let condition = self.comparison()?;
             self.skip_spaces();
@@ -9503,13 +9675,15 @@ fn collect_scalar_expression_parameters(
                 collect_scalar_expression_parameters(value, parameters);
             }
         }
-        CanonicalScalarExpressionV1::SquareRoot(value) => {
+        CanonicalScalarExpressionV1::SquareRoot(value)
+        | CanonicalScalarExpressionV1::TextTransform(_, value) => {
             collect_scalar_expression_parameters(value, parameters);
         }
         CanonicalScalarExpressionV1::Parameter(parameter) => {
             parameters.insert(parameter.clone());
         }
         CanonicalScalarExpressionV1::Equal(left, right)
+        | CanonicalScalarExpressionV1::StartsWith(left, right)
         | CanonicalScalarExpressionV1::GreaterThan(left, right)
         | CanonicalScalarExpressionV1::LessThanOrEqual(left, right)
         | CanonicalScalarExpressionV1::Concatenate(left, right)
@@ -10106,6 +10280,8 @@ fn tick_guard_literal(expression: CanonicalScalarExpressionV1) -> Option<Canonic
         | CanonicalScalarExpressionV1::GreaterThan(_, _)
         | CanonicalScalarExpressionV1::LessThanOrEqual(_, _)
         | CanonicalScalarExpressionV1::SquareRoot(_)
+        | CanonicalScalarExpressionV1::TextTransform(..)
+        | CanonicalScalarExpressionV1::StartsWith(..)
         | CanonicalScalarExpressionV1::Conditional(..)
         | CanonicalScalarExpressionV1::Current
         | CanonicalScalarExpressionV1::Parameter(_)
@@ -11556,6 +11732,16 @@ fn scalar_expression_matches_kind(
             matches!(initial, CanonicalScalarValueV1::Boolean(_))
                 && matches(left, &CanonicalScalarValueV1::Number(0))
                 && matches(right, &CanonicalScalarValueV1::Number(0))
+        }
+        CanonicalScalarExpressionV1::TextTransform(_, value) => {
+            matches!(initial, CanonicalScalarValueV1::Text(_))
+                && matches(value, initial)
+        }
+        CanonicalScalarExpressionV1::StartsWith(left, right) => {
+            let text = CanonicalScalarValueV1::Text(String::new());
+            matches!(initial, CanonicalScalarValueV1::Boolean(_))
+                && matches(left, &text)
+                && matches(right, &text)
         }
         CanonicalScalarExpressionV1::SquareRoot(value) => {
             matches!(initial, CanonicalScalarValueV1::Number(_))

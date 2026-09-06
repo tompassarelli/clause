@@ -84,11 +84,12 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
                     check(b, bound, false, depth + 1, query_inputs)?;
                 }
             }
-            E::Not(a) | E::Accumulate(a) | E::SquareRoot(a) => check(a, bound, false, depth + 1, query_inputs)?,
+            E::Not(a) | E::Accumulate(a) | E::SquareRoot(a) | E::TextTransform(_, a) => check(a, bound, false, depth + 1, query_inputs)?,
             E::RelationRead(a, b)
             | E::RelationPresent(a, b)
             | E::RelationRemoveRow(a, b)
             | E::Concatenate(a, b)
+            | E::StartsWith(a, b)
             | E::Add(a, b)
             | E::Subtract(a, b)
             | E::Multiply(a, b)

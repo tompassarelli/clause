@@ -1,0 +1,32 @@
+Root
+Item
+F64
+
+relation known
+  reads {root: Root} known {value: Item}
+  subject root
+  mode given root yields value: many
+
+relation count
+  reads {root: Root} count {value: F64}
+  subject root
+  mode given root yields value: one
+
+root
+  member of: Root
+first
+  member of: Item
+second
+  member of: Item
+root known first
+root known second
+root count 0.0
+
+on inspect ?root
+  when
+    ?root count ?prior
+    sum 1.0 given ?root where { ?root known ?item } as ?count
+  withdraw
+    ?root count ?prior
+  include
+    ?root count ?count

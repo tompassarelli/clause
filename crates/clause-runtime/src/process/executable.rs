@@ -789,6 +789,8 @@ pub fn decode_executable_occurrence_v1(
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExecutableExpressionV1 {
+    TextTransform(CanonicalTextTransformV1, Box<Self>),
+    StartsWith(Box<Self>, Box<Self>),
     SquareRoot(Box<Self>),
     Conditional(Box<Self>, Box<Self>, Box<Self>),
     Constant(ExecutableValueV1),
@@ -958,10 +960,15 @@ pub fn lower_canonical_executable_program_v1(
     let mut event_entries = BTreeMap::new();
     for (ordinal, handler) in ordered_handlers.iter().enumerate() {
         let mut entry = u16::try_from(ordinal).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
-        // A named zero-input event selects all its rules in one Step, while
+        // A named event selects all its rules with the same input in one Step, while
         // each source handler retains its own identity for edits and diagnostics.
-        if handler.trigger == CanonicalHandlerTriggerV1::External && handler.argument_count == 0 {
-            entry = *event_entries.entry(handler.designation.clone()).or_insert(entry);
+        if handler.trigger == CanonicalHandlerTriggerV1::External {
+            let (shared_entry, count) = event_entries.entry(handler.designation.clone())
+                .or_insert((entry, handler.argument_count));
+            if *count != handler.argument_count {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            entry = *shared_entry;
         }
         handler_bindings.push(ExecutableCanonicalHandlerBindingV1 {
             handler: handler.id,
@@ -1090,6 +1097,13 @@ fn lower_canonical_expression(
         CanonicalExecutableExpressionV1::SquareRoot(value) => ExecutableExpressionV1::SquareRoot(Box::new(
             lower_canonical_expression(value, slots, depth + 1)?,
         )),
+        CanonicalExecutableExpressionV1::TextTransform(operation, value) => ExecutableExpressionV1::TextTransform(
+            *operation, Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+        ),
+        CanonicalExecutableExpressionV1::StartsWith(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::StartsWith(left, right)
+        }
         CanonicalExecutableExpressionV1::Constant(value) => {
             ExecutableExpressionV1::Constant(lower_scalar_value(value)?)
         }
@@ -1771,6 +1785,13 @@ fn lower_scalar_expression(
         CanonicalScalarExpressionV1::SquareRoot(value) => ExecutableExpressionV1::SquareRoot(Box::new(
             lower_scalar_expression(value, state_slot, parameter_slots, depth + 1)?,
         )),
+        CanonicalScalarExpressionV1::TextTransform(operation, value) => ExecutableExpressionV1::TextTransform(
+            *operation, Box::new(lower_scalar_expression(value, state_slot, parameter_slots, depth + 1)?),
+        ),
+        CanonicalScalarExpressionV1::StartsWith(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::StartsWith(left, right)
+        }
         CanonicalScalarExpressionV1::Current => ExecutableExpressionV1::Slot(state_slot),
         CanonicalScalarExpressionV1::Parameter(parameter) => ExecutableExpressionV1::Slot(
             *parameter_slots
@@ -6208,7 +6229,7 @@ fn validate_value_expression(
             }
             vec![]
         }
-        E::Not(value) | E::SquareRoot(value) => vec![value],
+        E::Not(value) | E::SquareRoot(value) | E::TextTransform(_, value) => vec![value],
         E::ReferentFacet { value, members, .. } => {
             if members.len() > MAX_PROGRAM_ITEMS
                 || members.windows(2).any(|pair| pair[0] >= pair[1])
@@ -6218,6 +6239,7 @@ fn validate_value_expression(
             vec![value]
         }
         E::RelationRead(a, b)
+        | E::StartsWith(a, b)
         | E::RelationPresent(a, b)
         | E::RelationRemoveRow(a, b)
         | E::Concatenate(a, b)
@@ -6791,6 +6813,26 @@ fn evaluate(
             let branch = if boolean(evaluate(condition, slots, arguments, context)?)? { yes } else { no };
             evaluate(branch, slots, arguments, context)
         }
+        E::TextTransform(operation, value) => {
+            let value = evaluate(value, slots, arguments, context)?;
+            let value = value.as_text().ok_or(ExecutableErrorV1::TypeMismatch)?;
+            let result = match operation {
+                CanonicalTextTransformV1::Trim => value.trim(),
+                CanonicalTextTransformV1::FirstWord => value.split_whitespace().next().unwrap_or(""),
+                CanonicalTextTransformV1::RemainingWords => {
+                    let value = value.trim_start();
+                    value.find(char::is_whitespace).map(|end| value[end..].trim_start()).unwrap_or("")
+                }
+            };
+            ExecutableValueV1::text(result)
+        }
+        E::StartsWith(value, prefix) => {
+            let value = evaluate(value, slots, arguments, context)?;
+            let prefix = evaluate(prefix, slots, arguments, context)?;
+            let value = value.as_text().ok_or(ExecutableErrorV1::TypeMismatch)?;
+            let prefix = prefix.as_text().ok_or(ExecutableErrorV1::TypeMismatch)?;
+            Ok(ExecutableValueV1::Boolean(value.starts_with(prefix)))
+        }
         E::Concatenate(left, right) => concatenate(left, right, slots, arguments, context),
         E::Add(left, right) => numeric2(left, right, slots, arguments, context, |a, b| a + b),
         E::Subtract(left, right) => numeric2(left, right, slots, arguments, context, |a, b| a - b),
@@ -7197,7 +7239,7 @@ fn encode_expression(
             encode_expression(bytes, value)?;
         }
         E::RelationEffects(effects) | E::DerivedRelation(effects) => {
-            bytes.push(if matches!(expression, E::DerivedRelation(_)) { 32 } else { 27 });
+            bytes.push(if matches!(expression, E::DerivedRelation(_)) { 34 } else { 27 });
             encode_count(bytes, effects.len())?;
             for effect in effects {
                 let (mode, subject, value) = effect.parts();
@@ -7228,6 +7270,16 @@ fn encode_expression(
             encode_ternary(bytes, 23, table, subject, value)?;
         }
         E::Concatenate(a, b) => encode_binary(bytes, 16, a, b)?,
+        E::StartsWith(a, b) => encode_binary(bytes, 33, a, b)?,
+        E::TextTransform(operation, value) => {
+            bytes.push(32);
+            bytes.push(match operation {
+                CanonicalTextTransformV1::Trim => 0,
+                CanonicalTextTransformV1::FirstWord => 1,
+                CanonicalTextTransformV1::RemainingWords => 2,
+            });
+            encode_expression(bytes, value)?;
+        }
         E::Add(a, b) => encode_binary(bytes, 3, a, b)?,
         E::Subtract(a, b) => encode_binary(bytes, 4, a, b)?,
         E::Multiply(a, b) => encode_binary(bytes, 5, a, b)?,
@@ -7541,6 +7593,16 @@ impl<'a> Decoder<'a> {
             24 => E::Accumulate(Box::new(self.expression(next)?)),
             25 => E::Binding(self.u16()?),
             30 => E::SquareRoot(Box::new(self.expression(next)?)),
+            32 => {
+                let operation = match self.byte()? {
+                    0 => CanonicalTextTransformV1::Trim,
+                    1 => CanonicalTextTransformV1::FirstWord,
+                    2 => CanonicalTextTransformV1::RemainingWords,
+                    _ => return Err(ExecutableErrorV1::MalformedProgram),
+                };
+                E::TextTransform(operation, Box::new(self.expression(next)?))
+            }
+            33 => E::StartsWith(Box::new(self.expression(next)?), Box::new(self.expression(next)?)),
             31 => E::Conditional(
                 Box::new(self.expression(next)?),
                 Box::new(self.expression(next)?),
@@ -7576,7 +7638,7 @@ impl<'a> Decoder<'a> {
                 Box::new(self.expression(next)?),
                 Box::new(self.expression(next)?),
             ),
-            tag @ (27 | 32) => {
+            tag @ (27 | 34) => {
                 let count = self.count()?;
                 let mut effects = Vec::with_capacity(count);
                 for _ in 0..count {
@@ -7591,7 +7653,7 @@ impl<'a> Decoder<'a> {
                         _ => return Err(ExecutableErrorV1::MalformedProgram),
                     });
                 }
-                if tag == 32 { E::DerivedRelation(effects) } else { E::RelationEffects(effects) }
+                if tag == 34 { E::DerivedRelation(effects) } else { E::RelationEffects(effects) }
             }
             _ => return Err(ExecutableErrorV1::MalformedProgram),
         })
