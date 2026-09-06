@@ -4864,6 +4864,7 @@ impl ExecutableProcessRuntimeV1 {
             allocation_root: self.allocation.root,
             step_ordinal,
             reads: None,
+            sum_queries: None,
             bindings: None,
             relational_occurrence: None,
         };
@@ -6364,7 +6365,7 @@ fn materialize_initial_configuration(
 ) -> Result<Vec<ExecutableSlotV1>, ExecutableErrorV1> {
     let base = materialize_base_configuration(program)?;
     let closed = closure::close(program, &base, EvaluationContextV1 {
-        allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None,
+        allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None, sum_queries: None,
         bindings: None, relational_occurrence: None,
     }, None)?;
     relational::validate_contracts(&closed)?;
@@ -6761,6 +6762,7 @@ struct EvaluationContextV1<'a> {
     allocation_root: [u8; IDENTITY_BYTES],
     step_ordinal: u64,
     reads: Option<&'a std::cell::RefCell<Vec<ExecutableReadV1>>>,
+    sum_queries: Option<&'a std::cell::RefCell<relational::SumQueries>>,
     bindings: Option<&'a BTreeMap<u16, ExecutableValueV1>>,
     relational_occurrence: Option<&'a [u8; IDENTITY_BYTES]>,
 }
