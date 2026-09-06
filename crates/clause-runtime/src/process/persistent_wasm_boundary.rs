@@ -337,7 +337,8 @@ impl WasmPersistentSessionBoundaryV1 {
         &self,
         handle: WasmSessionHandleV1,
     ) -> Result<Vec<u8>, WasmProcessStatusV1> {
-        diagnostic_bytes(self.current_accepted_projection_term(handle)?)
+        canonical_term_bytes(&self.current_accepted_projection_term(handle)?)
+            .map_err(|_| WasmProcessStatusV1::ProcessRejected)
     }
 
     pub fn intervene(&self, handle: WasmSessionHandleV1, query: &super::ExecutableInterventionQueryV1) -> Result<super::ExecutableInterventionResultV1, WasmProcessStatusV1> {
