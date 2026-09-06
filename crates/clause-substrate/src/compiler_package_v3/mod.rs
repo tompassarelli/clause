@@ -4,7 +4,7 @@
 //! bytes and yields a candidate; it never accepts a compiler or interprets
 //! Clause source meaning.
 
-mod checker;
+pub(crate) mod checker;
 mod codec;
 mod manifest;
 mod types;

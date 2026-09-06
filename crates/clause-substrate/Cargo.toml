@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 sha2 = "=0.10.9"
+clause-package = { path = "../clause-package" }
 
 [dev-dependencies]
 proc-macro2 = { version = "=1.0.106", features = ["span-locations"] }

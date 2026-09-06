@@ -316,6 +316,13 @@ structure OwnerAnchorWitness where
   private mk ::
   observation : OwnerAnchorObservation
 
+/- This is the irreducible ingress for an externally supplied selection, not
+an inference from decoding, hashing, or compiler execution. The checker still
+compares the complete selected bytes independently of length and digest. -/
+def OwnerAnchorWitness.fromExternalSelection
+    (observation : OwnerAnchorObservation) : OwnerAnchorWitness :=
+  ⟨observation⟩
+
 inductive OwnerAnchorInput where
   | missing
   | supplied (witness : OwnerAnchorWitness)

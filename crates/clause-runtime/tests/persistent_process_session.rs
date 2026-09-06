@@ -361,6 +361,72 @@ fn open_fresh_session() -> PersistentProcessSessionV1 {
         .expect("fresh conformance session opens")
 }
 
+fn checked_admitted_effect_package() -> (CheckedProcessPackage, ApplicationLocalId, ModeLocalId) {
+    let (package, application, mode_id) = checked_ongoing_effect_package();
+    let mut candidate = decode_process_package(package.exact_bytes())
+        .unwrap()
+        .candidate()
+        .clone();
+    let constitution = &mut candidate.snapshot.constitution;
+    let domain = constitution.schemas[0].result_domain.clone();
+    let mode = &mut constitution.operators[0].modes[0];
+    mode.contract.state_delta_domain = Some(domain.clone());
+    let mut checker = mode.clone();
+    checker.id = ModeLocalId::new(mode_id.get() + 1);
+    checker.contract.state_delta_domain = None;
+    checker.contract.effect_intents.clear();
+    checker.contract.formation_checks = vec![domain];
+    let checker_id = checker.id;
+    let RoleBindingValuePreimageV2::Known(expected) =
+        constitution.applications[0].form.bindings[0].value
+    else {
+        panic!("fixture input is known")
+    };
+    constitution.operators[0].modes[0].dynamic_prerequisites =
+        vec![DynamicPrerequisiteRequirementPreimageV2 {
+            slot: PrerequisiteLocalId::new(1),
+            role: None,
+            requirement: ActivationPrerequisiteKind::Observation,
+            expected,
+            scope: PrerequisiteScope::SameSemantics,
+            cardinality: CardinalityV2 {
+                minimum: 0,
+                maximum: Some(1),
+            },
+            cause_projection: vec![CauseProjectionEntryV2 {
+                component: CauseComponentLocalId::new(1),
+                path: PrerequisiteOccurrencePathV2::BoundOccurrence,
+            }],
+        }];
+    constitution.operators[0].modes.push(checker);
+    let operator = constitution.operators[0].id;
+    let form = &mut constitution.applications[0].form;
+    form.eligible_modes.push(checker_id);
+    form.dependency_closure
+        .push(LocalSemanticDependencyV2::Mode(LocalModeRefV2 {
+            operator,
+            mode: checker_id,
+        }));
+    form.dependency_closure.sort();
+    let formation = form.formation;
+    let evidence = constitution
+        .formations
+        .iter_mut()
+        .find(|value| value.id == formation)
+        .unwrap();
+    evidence
+        .direct_dependencies
+        .push(LocalSemanticDependencyV2::Mode(LocalModeRefV2 {
+            operator,
+            mode: checker_id,
+        }));
+    evidence.direct_dependencies.sort();
+    candidate.claimed_snapshot = derive_program_snapshot_id(&candidate.snapshot).unwrap();
+    let bytes = encode_process_package(&candidate).unwrap();
+    let package = check_process_package(decode_process_package(&bytes).unwrap()).unwrap();
+    (package, application, mode_id)
+}
+
 fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
     let constitution = package.constitution();
     let snapshot = constitution.snapshot();
@@ -826,8 +892,8 @@ fn wasm_authority_input() -> WasmAuthorityInputV1 {
 }
 
 #[test]
-fn source_owned_ongoing_effect_lifecycle_remains_non_authoritative() {
-    let (package, application_local, mode_local) = checked_ongoing_effect_package();
+fn admitted_effect_uses_a_separate_activation_and_one_attempt() {
+    let (package, application_local, mode_local) = checked_admitted_effect_package();
     let application = ApplicationId {
         snapshot: package.constitution().snapshot(),
         local: application_local,
@@ -852,6 +918,7 @@ fn source_owned_ongoing_effect_lifecycle_remains_non_authoritative() {
     assert_eq!(mode.contract.effect_intents.len(), 1);
 
     let (authority, facts) = carrier_authority(&package);
+    let ingress_authority = authority.clone();
     let mut session =
         PersistentProcessSessionV1::open(package, authority, application, plan, facts.executable)
             .expect("source-owned effect session opens without a fake state checker");
@@ -893,12 +960,90 @@ fn source_owned_ongoing_effect_lifecycle_remains_non_authoritative() {
     assert_eq!(intent.scope.application, application);
     assert_eq!(intent.scope.mode, physical_mode);
     assert_eq!(intent.scope.world, facts.initial_state);
+    assert!(matches!(
+        session.issue_effect_authorization(intent.id),
+        Err(PersistentProcessSessionErrorV1::Carrier(
+            ExecutableCarrierErrorV1::EffectIntentNotAdmitted
+        ))
+    ));
+    session
+        .apply_opaque_input_and_emit_candidate(&opaque(0, 3.0))
+        .unwrap();
+    let candidate = session.candidate().unwrap().unwrap().id;
+    assert_eq!(
+        session
+            .carrier()
+            .unwrap()
+            .candidate_delta(candidate)
+            .unwrap()
+            .proposal
+            .effect_intents,
+        vec![intent.id]
+    );
+    let admission_authorization = session.issue_candidate_admission_authorization().unwrap();
+    session
+        .admit_issued_candidate_with_projection(admission_authorization)
+        .unwrap();
     let authorization = session
         .issue_effect_authorization(intent.id)
         .expect("Clause issues exact at-most-once capability use");
+    let authorized_carrier = session.carrier().unwrap().clone();
+    let mut forged_authorization = authorization.clone();
+    forged_authorization.id = id!(IssuedEffectAuthorizationOccurrenceId, 248);
+    forged_authorization.admission = id!(AdmissionOccurrenceId, 248);
+    let mut carrier = authorized_carrier.clone();
+    assert!(matches!(
+        carrier.apply_ingress(&[ProcessRecordV2::IssuedEffectAuthorization(forged_authorization.clone())], &ingress_authority),
+        Err(ProcessIngressError::Record { cause, .. }) if matches!(*cause, ProcessError::EffectIntentNotAdmitted(id) if id == intent.id)
+    ));
+    assert!(carrier.issued_effect_authorization(forged_authorization.id).is_none());
     let attempt = session
         .begin_effect_attempt(authorization.id)
         .expect("the issued capability authorizes one attempt");
+    assert_ne!(attempt.activation, intent.emitted_by.activation);
+    assert_eq!(attempt.activation, authorization.activation);
+    let effect_activation = session
+        .carrier()
+        .unwrap()
+        .activation(attempt.activation)
+        .unwrap();
+    assert_eq!(effect_activation.mode(), physical_mode);
+    assert!(
+        effect_activation
+            .start_causes()
+            .contains(&CausalRef::Admission(authorization.admission))
+    );
+    for forged in [
+        EffectAttemptOccurrenceV1 {
+            activation: intent.emitted_by.activation,
+            ..attempt.clone()
+        },
+        EffectAttemptOccurrenceV1 {
+            intent: id!(EffectIntentId, 249),
+            ..attempt.clone()
+        },
+        EffectAttemptOccurrenceV1 {
+            scope: intent.scope,
+            ..attempt.clone()
+        },
+    ] {
+        let mut carrier = authorized_carrier.clone();
+        assert!(
+            matches!(carrier.apply_ingress(&[ProcessRecordV2::EffectAttempt(forged)], &ingress_authority),
+            Err(ProcessIngressError::Record { cause, .. }) if matches!(*cause, ProcessError::EffectAuthorizationScopeMismatch))
+        );
+        assert!(
+            carrier.effect_attempt(attempt.id).is_none(),
+            "failed ingress leaves no attempt"
+        );
+        carrier
+            .apply_ingress(
+                &[ProcessRecordV2::EffectAttempt(attempt.clone())],
+                &ingress_authority,
+            )
+            .unwrap();
+        assert_eq!(carrier.effect_attempt(attempt.id), Some(&attempt));
+    }
     let duplicate = session
         .begin_effect_attempt(authorization.id)
         .expect_err("the same capability occurrence cannot authorize twice");
@@ -986,9 +1131,17 @@ fn source_owned_ongoing_effect_lifecycle_remains_non_authoritative() {
             .contains(&CausalRef::Observation(observation))
     );
 
+    session.apply_opaque_input(&opaque(0, 4.0)).unwrap();
     let no_receipt_intent = session
         .emit_effect_intent()
         .expect("the ongoing Mode can emit a later independent intent");
+    session
+        .apply_opaque_input_and_emit_candidate(&opaque(0, 5.0))
+        .unwrap();
+    let admission_authorization = session.issue_candidate_admission_authorization().unwrap();
+    session
+        .admit_issued_candidate_with_projection(admission_authorization)
+        .unwrap();
     let no_receipt_authorization = session
         .issue_effect_authorization(no_receipt_intent.id)
         .expect("later intent receives its own exact capability use");
@@ -1008,13 +1161,13 @@ fn source_owned_ongoing_effect_lifecycle_remains_non_authoritative() {
     let carrier = session
         .carrier()
         .expect("complete effect history remains queryable");
-    assert_eq!(carrier.state_revision_count(), initial_state_count);
-    assert_eq!(carrier.candidate_delta_count(), 0);
-    assert!(session.last_admitted().is_none());
+    assert_eq!(carrier.state_revision_count(), initial_state_count + 2);
+    assert_eq!(carrier.candidate_delta_count(), 2);
+    assert!(session.last_admitted().is_some());
 }
 
 #[test]
-fn persistent_wasm_boundary_transports_the_exact_effect_lifecycle() {
+fn persistent_wasm_boundary_refuses_an_unadmitted_effect() {
     let (package, application_local, mode_local) = checked_ongoing_effect_package();
     let application = ApplicationId {
         snapshot: package.constitution().snapshot(),
@@ -1135,127 +1288,137 @@ fn persistent_wasm_boundary_transports_the_exact_effect_lifecycle() {
             && queried_resource == &resource_bytes
             && queried_payload == &payload_bytes
     ));
-    let issued = apply(
-        &mut boundary,
-        command(4, WasmSessionOperationV1::IssueEffectAuthorization(intent)),
-    );
-    let authorization = match issued.kind {
-        WasmSessionEventKindV1::EffectAuthorizationIssued {
-            authorization,
-            intent: authorized_intent,
-            state_revision_count,
-        } => {
-            assert_eq!(authorized_intent, intent);
-            assert_eq!(state_revision_count, initial_state_count);
-            authorization
-        }
-        other => panic!("unexpected effect authorization event: {other:?}"),
-    };
-    let begun = apply(
-        &mut boundary,
-        command(5, WasmSessionOperationV1::BeginEffectAttempt(authorization)),
-    );
-    let attempt = match begun.kind {
-        WasmSessionEventKindV1::EffectAttemptBegun {
-            attempt,
-            intent: attempted_intent,
-            authorization: used_authorization,
-            action_bytes: attempted_action,
-            resource_bytes: attempted_resource,
-            payload_bytes: attempted_payload,
-            state_revision_count,
-        } => {
-            assert_eq!(attempted_intent, intent);
-            assert_eq!(used_authorization, authorization);
-            assert_eq!(attempted_action, action_bytes);
-            assert_eq!(attempted_resource, resource_bytes);
-            assert_eq!(attempted_payload, payload_bytes);
-            assert_eq!(state_revision_count, initial_state_count);
-            attempt
-        }
-        other => panic!("unexpected effect attempt event: {other:?}"),
-    };
-    let settled = apply(
-        &mut boundary,
-        command(
-            6,
-            WasmSessionOperationV1::SettleEffectAttempt {
-                attempt,
-                receipt: Some(WasmSessionEffectReceiptV1 {
-                    status: 202,
-                    exact_bytes: b"accepted".to_vec(),
-                }),
-            },
-        ),
-    );
+    let issue = command(4, WasmSessionOperationV1::IssueEffectAuthorization(intent));
+    let refused = apply(&mut boundary, issue.clone());
     assert!(matches!(
-        settled.kind,
-        WasmSessionEventKindV1::EffectSettled {
-            intent: settled_intent,
-            attempt: settled_attempt,
-            receipt: Some(_),
-            observation: Some(_),
-            disposition: EffectJudgmentDispositionV1::ReceiptObserved,
-            state_revision_count,
-            ..
-        } if settled_intent == intent
-            && settled_attempt == attempt
-            && state_revision_count == initial_state_count
+        refused.kind,
+        WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::EffectRejected)
     ));
+    assert_eq!(
+        boundary.command(&encode_wasm_session_command_v1(&issue).unwrap()),
+        Err(WasmProcessStatusV1::SequenceRejected),
+        "command replay must not perform an attempt"
+    );
+}
 
-    let second_intent = match apply(
-        &mut boundary,
-        command(7, WasmSessionOperationV1::EmitEffectIntent),
-    )
-    .kind
-    {
-        WasmSessionEventKindV1::EffectIntentAvailable { intent, .. } => intent,
-        other => panic!("unexpected second effect intent event: {other:?}"),
+#[test]
+fn governed_effect_boundary_replays_one_attempt_without_reissuing() {
+    let (package, application_local, mode_local) = checked_admitted_effect_package();
+    let plan = ongoing_effect_physical_plan(&package, application_local, mode_local);
+    let package_id = package.id();
+    let authority = wasm_authority_input();
+    let session_id = authority.session;
+    let open = WasmSessionOpenV1 {
+        package_bytes: package.exact_bytes().to_vec(),
+        application: application_local,
+        physical_plan_bytes: encode_executable_physical_plan_v1(&plan).unwrap(),
+        authority,
+        allocation: WasmSessionAllocationV1::New,
+        limits: WasmSessionLimitsV1 {
+            max_commands: 16,
+            command_bytes: 4096,
+            event_bytes: WASM_SESSION_EVENT_LIMIT_V1 as u32,
+            trace_retention: WasmSessionTraceRetentionV1::FullUntilCommandLimit,
+        },
     };
-    let second_authorization = match apply(
-        &mut boundary,
-        command(
-            8,
-            WasmSessionOperationV1::IssueEffectAuthorization(second_intent),
-        ),
-    )
-    .kind
-    {
-        WasmSessionEventKindV1::EffectAuthorizationIssued { authorization, .. } => authorization,
-        other => panic!("unexpected second effect authorization event: {other:?}"),
+    let mut boundary = WasmPersistentSessionBoundaryV1::new();
+    let handle = boundary
+        .open(&encode_wasm_session_open_v1(&open).unwrap())
+        .unwrap()
+        .handle;
+    let mut command = |sequence, operation| {
+        let request = WasmSessionCommandV1 {
+            handle,
+            expected_sequence: sequence,
+            operation,
+        };
+        let event = boundary
+            .command(&encode_wasm_session_command_v1(&request).unwrap())
+            .unwrap();
+        assert_eq!(
+            decode_wasm_session_event_v1(&encode_wasm_session_event_v1(&event)).unwrap(),
+            event
+        );
+        event
     };
-    let second_attempt = match apply(
-        &mut boundary,
-        command(
-            9,
-            WasmSessionOperationV1::BeginEffectAttempt(second_authorization),
-        ),
-    )
-    .kind
-    {
-        WasmSessionEventKindV1::EffectAttemptBegun { attempt, .. } => attempt,
-        other => panic!("unexpected second effect attempt event: {other:?}"),
+    command(0, WasmSessionOperationV1::Input(opaque(0, 1.0)));
+    let WasmSessionEventKindV1::EffectIntentAvailable {
+        intent, emitted_by, ..
+    } = command(1, WasmSessionOperationV1::EmitEffectIntent).kind
+    else {
+        panic!("intent must be emitted")
     };
     assert!(matches!(
-        apply(
-            &mut boundary,
-            command(
-                10,
-                WasmSessionOperationV1::SettleEffectAttempt {
-                    attempt: second_attempt,
-                    receipt: None,
-                }
-            )
-        )
-        .kind,
-        WasmSessionEventKindV1::EffectSettled {
-            receipt: None,
-            observation: None,
-            disposition: EffectJudgmentDispositionV1::NoReceipt,
-            state_revision_count,
-            ..
-        } if state_revision_count == initial_state_count
+        command(2, WasmSessionOperationV1::IssueEffectAuthorization(intent)).kind,
+        WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::EffectRejected)
     ));
+    let WasmSessionEventKindV1::CandidateAccepted {
+        candidate, base, ..
+    } = command(3, WasmSessionOperationV1::Candidate(opaque(0, 2.0))).kind
+    else {
+        panic!("intent candidate must be proposed")
+    };
+    let WasmSessionEventKindV1::AdmissionAuthorizationIssued { occurrence, .. } = command(
+        4,
+        WasmSessionOperationV1::IssueAdmission(WasmSessionAdmissionScopeV1 {
+            package: package_id,
+            session: session_id,
+            base,
+            candidate,
+        }),
+    )
+    .kind
+    else {
+        panic!("candidate needs governed authority")
+    };
+    let WasmSessionEventKindV1::AdmissionAccepted { admission, .. } = command(
+        5,
+        WasmSessionOperationV1::Admit(WasmSessionAdmissionV1 {
+            package: package_id,
+            session: session_id,
+            base,
+            candidate,
+            authorization: occurrence,
+        }),
+    )
+    .kind
+    else {
+        panic!("intent must be admitted")
+    };
+    let WasmSessionEventKindV1::EffectAuthorizationIssued {
+        authorization,
+        activation,
+        admission: admitted_by,
+        ..
+    } = command(6, WasmSessionOperationV1::IssueEffectAuthorization(intent)).kind
+    else {
+        panic!("admitted intent receives exact effect authority")
+    };
+    assert_eq!(admitted_by, admission);
+    assert_ne!(activation, emitted_by.activation);
+    let begun = command(7, WasmSessionOperationV1::BeginEffectAttempt(authorization));
+    let WasmSessionEventKindV1::EffectAttemptBegun {
+        activation: attempted_by,
+        ..
+    } = begun.kind
+    else {
+        panic!("one attempt begins")
+    };
+    assert_eq!(attempted_by, activation);
+    assert!(matches!(
+        command(8, WasmSessionOperationV1::BeginEffectAttempt(authorization)).kind,
+        WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::EffectRejected)
+    ));
+    let replay = WasmSessionCommandV1 {
+        handle,
+        expected_sequence: 7,
+        operation: WasmSessionOperationV1::BeginEffectAttempt(authorization),
+    };
+    assert_eq!(
+        boundary.command(&encode_wasm_session_command_v1(&replay).unwrap()),
+        Err(WasmProcessStatusV1::SequenceRejected),
+        "replay cannot begin another attempt"
+    );
 }
 
 #[test]

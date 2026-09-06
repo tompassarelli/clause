@@ -660,6 +660,8 @@ pub struct EffectIntentOccurrenceV1 {
 /// A Clause-issued, exact, at-most-once authorization for one intent.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IssuedEffectAuthorizationV1 {
+    pub admission: AdmissionOccurrenceId,
+    pub activation: ActivationId,
     pub id: IssuedEffectAuthorizationOccurrenceId,
     pub intent: EffectIntentId,
     pub capability: CapabilityRef,
@@ -671,6 +673,7 @@ pub struct IssuedEffectAuthorizationV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EffectAttemptOccurrenceV1 {
+    pub activation: ActivationId,
     pub id: EffectAttemptId,
     pub intent: EffectIntentId,
     pub authorization: IssuedEffectAuthorizationOccurrenceId,
@@ -1893,6 +1896,22 @@ impl ProcessCarrier {
             .ok_or(ProcessError::EffectRoleBindingMissing(role))
     }
 
+    /// Whether one exact governed decision admitted this intent.
+    #[must_use]
+    pub fn effect_intent_admission(
+        &self,
+        intent: EffectIntentId,
+        admission: AdmissionOccurrenceId,
+    ) -> Option<&StateAdmissionDecisionV2> {
+        self.decision_by_occurrence(admission).filter(|decision| {
+            matches!(decision.outcome, StateAdmissionOutcomeV2::Admit(_))
+                && self
+                    .candidate_deltas
+                    .get(&decision.delta)
+                    .is_some_and(|candidate| candidate.proposal.effect_intents.contains(&intent))
+        })
+    }
+
     fn add_issued_effect_authorization(
         &mut self,
         authorization: IssuedEffectAuthorizationV1,
@@ -1909,12 +1928,44 @@ impl ProcessCarrier {
             .effect_intents
             .get(&authorization.intent)
             .ok_or(ProcessError::UnknownEffectIntent(authorization.intent))?;
+        let decision = self
+            .effect_intent_admission(intent.id, authorization.admission)
+            .ok_or(ProcessError::EffectIntentNotAdmitted(intent.id))?;
+        let StateAdmissionOutcomeV2::Admit(successor) = &decision.outcome else {
+            unreachable!()
+        };
+        let activation = self
+            .activations
+            .get(&authorization.activation)
+            .ok_or(ProcessError::UnknownActivation(authorization.activation))?;
+        if activation.id() == intent.emitted_by.activation
+            || activation.application() != authorization.scope.application
+            || activation.mode() != intent.scope.mode
+            || activation.pins().observed_state != Some(successor.id)
+            || activation.pins().runtime_session != Some(intent.scope.session)
+            || activation.pins().constitution.admitted_revision()
+                != Some(intent.scope.program_revision)
+            || activation.pins().budget != authorization.scope.budget
+            || !activation
+                .pins()
+                .capabilities
+                .contains(&authorization.capability)
+            || !activation
+                .start_causes()
+                .contains(&CausalRef::Admission(authorization.admission))
+        {
+            return Err(ProcessError::EffectScopeMismatch);
+        }
         if self
             .issued_effect_authorizations
             .values()
             .any(|existing| existing.intent == authorization.intent)
             || authorization.capability != intent.required_capability
-            || authorization.scope != intent.scope
+            || authorization.scope.application != intent.scope.application
+            || authorization.scope.mode != intent.scope.mode
+            || authorization.scope.program_revision != intent.scope.program_revision
+            || authorization.scope.session != intent.scope.session
+            || authorization.scope.world != successor.id
             || authorization.action != intent.action
             || authorization.resource != intent.resource
             || authorization.payload != intent.payload
@@ -1923,7 +1974,10 @@ impl ProcessCarrier {
         }
         self.register_causal(
             CausalRef::EffectAuthorization(authorization.id),
-            vec![CausalRef::EffectIntent(authorization.intent)],
+            vec![
+                CausalRef::Admission(authorization.admission),
+                CausalRef::EffectIntent(authorization.intent),
+            ],
         )?;
         self.issued_effect_authorizations
             .insert(authorization.id, authorization);
@@ -1951,7 +2005,9 @@ impl ProcessCarrier {
             .ok_or(ProcessError::UnknownIssuedEffectAuthorization(
                 attempt.authorization,
             ))?;
-        if attempt.intent != authorization.intent
+        if attempt.activation != authorization.activation
+            || self.effect_attempts.values().any(|existing| existing.activation == attempt.activation)
+            || attempt.intent != authorization.intent
             || attempt.scope != authorization.scope
             || attempt.action != authorization.action
             || attempt.resource != authorization.resource
@@ -3272,7 +3328,9 @@ impl ProcessCarrier {
             .prerequisite_bindings
             .iter()
             .any(|binding| binding.value == ActivationPrerequisite::Observation(value.evidence));
-        let step_has_evidence = proposal.causes.contains(&StepCause::PriorStep(producer));
+        let step_has_evidence = self
+            .step_causal_refs(&proposal.causes)?
+            .contains(&CausalRef::Step(producer));
         if !activation_has_evidence && !step_has_evidence {
             return Err(ProcessError::FormationEvidenceNotCausal(value.evidence));
         }
@@ -3483,6 +3541,21 @@ impl ProcessCarrier {
                     .expect("stateful Mode checked above"),
             )?;
             self.validate_supports(&delta.evidence)?;
+            for intent_id in &delta.effect_intents {
+                let intent = self
+                    .effect_intents
+                    .get(intent_id)
+                    .ok_or(ProcessError::UnknownEffectIntent(*intent_id))?;
+                if intent.scope.world != delta.base
+                    || Some(intent.scope.session) != activation.pins().runtime_session
+                    || Some(intent.scope.program_revision)
+                        != activation.pins().constitution.admitted_revision()
+                    || intent.emitted_by.activation != proposal.activation
+                    || intent.emitted_by.run != proposal.run
+                {
+                    return Err(ProcessError::EffectScopeMismatch);
+                }
+            }
         } else if mode.contract.state_delta_domain.is_some()
             && matches!(proposal.outcome, StepOutcomeProposalV2::Return(_))
         {
@@ -3506,6 +3579,9 @@ impl ProcessCarrier {
         };
         let mut causes = self.step_causal_refs(&proposal.causes)?;
         causes.extend(self.step_domain_evidence_refs(&proposal));
+        if let Some(delta) = &proposal.candidate_delta {
+            causes.extend(delta.effect_intents.iter().copied().map(CausalRef::EffectIntent));
+        }
         causes.sort_unstable();
         causes.dedup();
         self.validate_step_causal_insertions(
@@ -5096,6 +5172,7 @@ pub enum ProcessError {
     UnknownEffectContract(u32),
     EffectRoleBindingMissing(RoleLocalId),
     EffectScopeMismatch,
+    EffectIntentNotAdmitted(EffectIntentId),
     EffectContractMismatch,
     EffectAuthorizationScopeMismatch,
     EffectAuthorizationAlreadyConsumed(IssuedEffectAuthorizationOccurrenceId),

@@ -3727,10 +3727,85 @@ impl ExecutableProcessRuntimeV1 {
             .effect_intent(intent)
             .cloned()
             .ok_or(ExecutableCarrierErrorV1::UnknownPendingEffectIntent)?;
+        let admission = self.admission.as_ref().map(|value| value.id).or_else(|| {
+            match self.carrier_execution.as_ref()?.epoch_origin {
+                CausalRef::Admission(id) => Some(id),
+                _ => None,
+            }
+        }).ok_or(ExecutableCarrierErrorV1::EffectIntentNotAdmitted)?;
+        let decision = self
+            .carrier
+            .carrier()
+            .effect_intent_admission(intent, admission)
+            .ok_or(ExecutableCarrierErrorV1::EffectIntentNotAdmitted)?;
+        let StateAdmissionOutcomeV2::Admit(successor) = &decision.outcome else {
+            unreachable!()
+        };
+        let admission = decision.occurrence;
+        let world = successor.id;
+        let (run_ordinal, next_run) = stage_runtime_ordinal(self.identity_ordinals.next_run)
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let (activation_ordinal, next_activation) =
+            stage_runtime_ordinal(self.identity_ordinals.next_activation)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let (configuration_ordinal, next_configuration) =
+            stage_runtime_ordinal(self.identity_ordinals.next_configuration)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let mut effect_activation = self
+            .carrier
+            .carrier()
+            .activation(intent_record.emitted_by.activation)
+            .ok_or(ExecutableCarrierErrorV1::UnknownPendingEffectIntent)?
+            .proposal()
+            .clone();
+        effect_activation.id = ActivationId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::Activation,
+                activation_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        effect_activation.membership = RunMembership::RootOf(RunId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::Run,
+                run_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        ));
+        effect_activation.initial_configuration.id = ConfigurationId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::Configuration,
+                configuration_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        effect_activation.pins.observed_state = Some(world);
+        effect_activation.pins.budget.remaining_units = self
+            .carrier_execution
+            .as_ref()
+            .ok_or(ExecutableCarrierErrorV1::NotStarted)?
+            .remaining_budget;
+        effect_activation.causes.origin =
+            ActivationOrigin::RootedBy(RootTrigger::Admitted(admission));
+        for binding in &mut effect_activation.prerequisite_bindings {
+            if matches!(binding.value, ActivationPrerequisite::Admission(_)) {
+                binding.value = ActivationPrerequisite::Admission(admission);
+            }
+        }
+        for cause in &mut effect_activation.causes.prerequisite_occurrences {
+            if matches!(cause.occurrence, ActivationPrerequisite::Admission(_)) {
+                cause.occurrence = ActivationPrerequisite::Admission(admission);
+            }
+        }
         let (ordinal, next_ordinal) =
             stage_runtime_ordinal(self.identity_ordinals.next_effect_authorization)
                 .map_err(ExecutableCarrierErrorV1::Executable)?;
         let authorization = IssuedEffectAuthorizationV1 {
+            admission,
+            activation: effect_activation.id,
             id: IssuedEffectAuthorizationOccurrenceId::from_bytes(
                 runtime_identity_bytes(
                     self.allocation.root,
@@ -3741,17 +3816,25 @@ impl ExecutableProcessRuntimeV1 {
             ),
             intent,
             capability: intent_record.required_capability,
-            scope: intent_record.scope,
+            scope: EffectScopeV1 {
+                world,
+                budget: effect_activation.pins.budget,
+                ..intent_record.scope
+            },
             action: intent_record.action,
             resource: intent_record.resource,
             payload: intent_record.payload,
         };
         self.carrier
-            .apply_ingress(&[ProcessRecordV2::IssuedEffectAuthorization(
-                authorization.clone(),
-            )])
+            .apply_ingress(&[
+                ProcessRecordV2::Activation(effect_activation),
+                ProcessRecordV2::IssuedEffectAuthorization(authorization.clone()),
+            ])
             .map_err(ExecutableCarrierErrorV1::Ingress)?;
         self.identity_ordinals.next_effect_authorization = next_ordinal;
+        self.identity_ordinals.next_run = next_run;
+        self.identity_ordinals.next_activation = next_activation;
+        self.identity_ordinals.next_configuration = next_configuration;
         Ok(authorization)
     }
 
@@ -3772,6 +3855,7 @@ impl ExecutableProcessRuntimeV1 {
             stage_runtime_ordinal(self.identity_ordinals.next_effect_attempt)
                 .map_err(ExecutableCarrierErrorV1::Executable)?;
         let attempt = EffectAttemptOccurrenceV1 {
+            activation: issued.activation,
             id: EffectAttemptId::from_bytes(
                 runtime_identity_bytes(
                     self.allocation.root,
@@ -4714,6 +4798,7 @@ impl ExecutableProcessRuntimeV1 {
                 )?);
             }
             let carrier_candidate = CandidateDeltaV2 {
+                effect_intents: self.pending_effect_intent.into_iter().collect(),
                 id,
                 base: facts.initial_state,
                 delta: DomainBoundTermV2 {
@@ -6056,6 +6141,7 @@ pub enum ExecutableCarrierErrorV1 {
     UnknownPendingEffectIntent,
     UnknownEffectAuthorization,
     UnknownActiveEffectAttempt,
+    EffectIntentNotAdmitted,
     HistoryCompactionUnavailable,
     UnsupportedSurface,
 }

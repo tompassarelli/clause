@@ -1,4 +1,5 @@
 import * as workbench from "./workbench.js";
+import { enterSourceTransferPhase, leaveSourceTransferPhase, observeSourceTransferPhase } from "./source-transfer-observation.js";
 function equivalent(left, right) {
     return (Object.is(left, right) ||
         (Array.isArray(left) &&
@@ -25,14 +26,18 @@ function isRecord(value) {
 }
 const cwr1_max_bytes = 4 * 1024 * 1024;
 const cwr1_hex_max_source_units = 3 * cwr1_max_bytes;
+const cet1_max_bytes = 16 * 1024 * 1024;
 const cwo1_max_bytes = 64 * 1024;
 const cwo1_prefix_bytes = 4 + 32 + 32;
 const cwo1_identity_bytes = 32;
 const cwo1_max_values = 256;
-const cse1_max_bytes = 64 * 1024;
+const cse1_max_bytes = 1024 * 1024;
+const cse1_field_max_bytes = 64 * 1024;
 const cse1_projected_term_max_properties = cse1_max_bytes;
 const cse1_projected_term_json_max_source_units = 4 * cse1_max_bytes + 1;
+const session_open_max_bytes = 4 * 1024 * 1024;
 const session_command_max_bytes = 1024 * 1024;
+const source_continuity_max_bytes = 4 * 1024 * 1024;
 const session_command_limit = Number.MAX_SAFE_INTEGER;
 const current_admission_trace_retention = 1;
 const identity_bytes = 32;
@@ -81,12 +86,12 @@ function lowercase_hex_nibble(code) {
             ? code - 97 + 10
             : -1;
 }
-function decode_cwr1_hex(source) {
+function decode_hex_transport(source, label, maximumBytes, maximumSourceUnits) {
     if (typeof source === "string") {
         const length = source.length;
-        if (equivalent(length, 0) || length > cwr1_hex_max_source_units) {
+        if (equivalent(length, 0) || length > maximumSourceUnits) {
             (() => {
-                throw new Error("CWR1 hex transport is outside its source bound");
+                throw new Error(`${label} hex transport is outside its source bound`);
             })();
         }
         const bytes = [];
@@ -97,11 +102,11 @@ function decode_cwr1_hex(source) {
                 if (index === length) {
                     return !equivalent(high, -1)
                         ? (() => {
-                            throw new Error("CWR1 hex transport has an incomplete byte");
+                            throw new Error(`${label} hex transport has an incomplete byte`);
                         })()
                         : equivalent(countValues(bytes), 0)
                             ? (() => {
-                                throw new Error("CWR1 hex transport is empty");
+                                throw new Error(`${label} hex transport is empty`);
                             })()
                             : Object.freeze(bytes);
                 }
@@ -117,7 +122,7 @@ function decode_cwr1_hex(source) {
                     }
                     else if (nibble < 0) {
                         return (() => {
-                            throw new Error("CWR1 hex transport contains a non-hex unit");
+                            throw new Error(`${label} hex transport contains a non-hex unit`);
                         })();
                     }
                     else if (equivalent(high, -1)) {
@@ -127,9 +132,9 @@ function decode_cwr1_hex(source) {
                         high = _recur_1;
                         continue;
                     }
-                    else if (countValues(bytes) >= cwr1_max_bytes) {
+                    else if (countValues(bytes) >= maximumBytes) {
                         return (() => {
-                            throw new Error("CWR1 hex transport exceeds its byte bound");
+                            throw new Error(`${label} hex transport exceeds its byte bound`);
                         })();
                     }
                     else {
@@ -146,9 +151,15 @@ function decode_cwr1_hex(source) {
     }
     else {
         return (() => {
-            throw new Error("CWR1 hex transport must be text");
+            throw new Error(`${label} hex transport must be text`);
         })();
     }
+}
+function decode_cwr1_hex(source) {
+    return decode_hex_transport(source, "CWR1", cwr1_max_bytes, cwr1_hex_max_source_units);
+}
+function decode_cet1_hex(source) {
+    return decode_hex_transport(source, "CET1", cet1_max_bytes, 3 * cet1_max_bytes);
 }
 function ExactProcessRequest(bytes) {
     return Object.freeze({ _tag: "ExactProcessRequest", bytes });
@@ -215,7 +226,7 @@ function PersistentCartridge(openBytes, occurrences) {
 function require_persistent_cartridge(value) {
     if (!isRecord(value) ||
         value._tag !== "PersistentCartridge" ||
-        !exact_byte_array_p(value.openBytes, cwr1_max_bytes) ||
+        !binary_text_p(value.openBytes, cwr1_max_bytes) ||
         !Array.isArray(value.occurrences) ||
         !value.occurrences.every((occurrence) => exact_byte_array_p(occurrence, cwr1_max_bytes))) {
         throw new Error("persistent cartridge is invalid");
@@ -249,22 +260,34 @@ function cwo1observation_values(r) {
     return r.values;
 }
 function exact_byte_array_p(bytes, maximum) {
-    return (Array.isArray(bytes) &&
-        bytes.length >= 1 &&
-        bytes.length <= maximum &&
-        bytes.every((byte) => typeof byte === "number" &&
-            Number.isInteger(byte) &&
-            byte >= 0 &&
-            byte <= 255));
-}
-function require_request(request) {
-    if (typeof request !== "object" ||
-        request === null ||
-        !("bytes" in request) ||
-        !exact_byte_array_p(request.bytes, cwr1_max_bytes)) {
-        throw new Error("cartridge request must carry bounded exact bytes");
+    const profile = enterSourceTransferPhase("byte-validation");
+    try {
+        return (Array.isArray(bytes) &&
+            bytes.length >= 1 &&
+            bytes.length <= maximum &&
+            bytes.every((byte) => typeof byte === "number" &&
+                Number.isInteger(byte) &&
+                byte >= 0 &&
+                byte <= 255));
     }
-    return ExactProcessRequest(frozen_byte_range(request.bytes, 0, request.bytes.length));
+    finally {
+        leaveSourceTransferPhase(profile);
+    }
+}
+function require_request_bytes(request) {
+    const profile = enterSourceTransferPhase("request-custody");
+    try {
+        if (typeof request !== "object" ||
+            request === null ||
+            !("bytes" in request) ||
+            !Array.isArray(request.bytes) || request.bytes.length < 1 || request.bytes.length > cwr1_max_bytes) {
+            throw new Error("cartridge request must carry bounded exact bytes");
+        }
+        return exact_bytes_to_binary_text(request.bytes);
+    }
+    finally {
+        leaveSourceTransferPhase(profile);
+    }
 }
 function process_status(status) {
     return typeof status === "number" && Number.isSafeInteger(status)
@@ -326,21 +349,27 @@ function require_range(bytes, offset, length, label) {
         : end;
 }
 function frozen_byte_range(bytes, start, end) {
-    const result = [];
-    return (() => {
-        let index = start;
-        while (true) {
-            if (index === end) {
-                return Object.freeze(result);
+    const profile = enterSourceTransferPhase("frozen-byte-range");
+    try {
+        const result = [];
+        return (() => {
+            let index = start;
+            while (true) {
+                if (index === end) {
+                    return Object.freeze(result);
+                }
+                else {
+                    result.push(byte_at(bytes, index));
+                    const _recur_0 = index + 1;
+                    index = _recur_0;
+                    continue;
+                }
             }
-            else {
-                result.push(byte_at(bytes, index));
-                const _recur_0 = index + 1;
-                index = _recur_0;
-                continue;
-            }
-        }
-    })();
+        })();
+    }
+    finally {
+        leaveSourceTransferPhase(profile);
+    }
 }
 function canonical_byte_range(bytes, start, end) {
     return typeof bytes === "string"
@@ -354,11 +383,25 @@ function exact_bytes_to_binary_text(bytes) {
         const end = Math.min(start + chunk_size, bytes.length);
         let chunk = "";
         for (let index = start; index < end; index += 1) {
-            chunk += String.fromCharCode(byte_at(bytes, index));
+            const byte = byte_at(bytes, index);
+            if (!Number.isInteger(byte) || byte < 0 || byte > 255)
+                throw new Error("cartridge byte is not an exact octet");
+            chunk += String.fromCharCode(byte);
         }
         chunks.push(chunk);
     }
     return chunks.join("");
+}
+function binary_text_p(value, maximum) {
+    return typeof value === "string" && value.length > 0 && value.length <= maximum && !/[^\u0000-\u00ff]/.test(value);
+}
+function typed_bytes(bytes) {
+    if (typeof bytes !== "string")
+        return new Uint8Array(bytes);
+    const result = new Uint8Array(bytes.length);
+    for (let index = 0; index < bytes.length; index += 1)
+        result[index] = bytes.charCodeAt(index);
+    return result;
 }
 function finite_f64(bytes, offset) {
     const packed = new Uint8Array(8);
@@ -439,21 +482,22 @@ function project_frame(policy, observation) {
     return workbench["create-workbench-envelope"](policy, JSON.stringify(observation.values));
 }
 function dispatch_exact_request(module, request) {
-    const checked = require_request(request);
+    const checked = require_request_bytes(request);
     const reset = module.clause_process_v1_reset;
     const push = module.clause_process_v1_request_push;
     const dispatch = module.clause_process_v1_dispatch;
     const response_length = module.clause_process_v1_response_len;
     const response_byte = module.clause_process_v1_response_byte;
     reset();
-    checked.bytes.forEach((byte) => {
+    for (let index = 0; index < checked.length; index += 1) {
+        const byte = checked.charCodeAt(index);
         const status = process_status(push(byte));
         if (!equivalent(status, 0)) {
             (() => {
                 throw new Error(concatenate("CWR1 byte transfer rejected with status ", status));
             })();
         }
-    });
+    }
     const status = process_status(dispatch());
     if (!equivalent(status, 0)) {
         (() => {
@@ -475,7 +519,7 @@ function dispatch_exact_request(module, request) {
     }
     return ExactProcessObservation(Object.freeze(bytes));
 }
-function parse_blob(bytes, offset, maximum, label) {
+function blob_end(bytes, offset, maximum, label) {
     const header_end = require_range(bytes, offset, 4, label);
     const length = little_u32(bytes, offset);
     const __bound = length > maximum
@@ -485,7 +529,11 @@ function parse_blob(bytes, offset, maximum, label) {
             })();
         })()
         : null;
-    const end = require_range(bytes, header_end, length, label);
+    return require_range(bytes, header_end, length, label);
+}
+function parse_blob(bytes, offset, maximum, label) {
+    const end = blob_end(bytes, offset, maximum, label);
+    const header_end = offset + 4;
     return { bytes: frozen_byte_range(bytes, header_end, end), next: end };
 }
 function require_allocation_epoch(record) {
@@ -498,62 +546,65 @@ function require_allocation_epoch(record) {
         })();
 }
 function parse_persistent_cartridge_bang(request) {
-    const checked = require_request(request);
-    const bytes = checked.bytes;
-    if (bytes.length < 4 ||
-        !equivalent(byte_at(bytes, 0), 67) ||
-        !equivalent(byte_at(bytes, 1), 87) ||
-        !equivalent(byte_at(bytes, 2), 82) ||
-        !equivalent(byte_at(bytes, 3), 49)) {
-        (() => {
-            throw new Error("persistent cartridge must carry exact CWR1 bytes");
-        })();
+    const profile = enterSourceTransferPhase("cartridge-parse");
+    try {
+        const bytes = require_request_bytes(request);
+        if (bytes.length < 4 ||
+            !equivalent(byte_at(bytes, 0), 67) ||
+            !equivalent(byte_at(bytes, 1), 87) ||
+            !equivalent(byte_at(bytes, 2), 82) ||
+            !equivalent(byte_at(bytes, 3), 49)) {
+            (() => {
+                throw new Error("persistent cartridge must carry exact CWR1 bytes");
+            })();
+        }
+        const package_end = blob_end(bytes, 4, cwr1_max_bytes, "CWR1 package");
+        const application_end = require_range(bytes, package_end, 4, "CWR1 application");
+        const physical_plan_end = blob_end(bytes, application_end, cwr1_max_bytes, "CWR1 physical plan");
+        const allocation = parse_blob(bytes, physical_plan_end, allocation_epoch_bytes, "CWR1 allocation epoch");
+        const allocation_bytes = require_allocation_epoch(allocation);
+        const authority_start = allocation.next;
+        const identities_end = require_range(bytes, authority_start, 9 * identity_bytes, "CWR1 authority identities");
+        const occurrence_evidence_end = blob_end(bytes, identities_end, cwr1_max_bytes, "CWR1 occurrence evidence");
+        const judgment_id_end = require_range(bytes, occurrence_evidence_end, identity_bytes, "CWR1 Judgment evidence identity");
+        const judgment_evidence_end = blob_end(bytes, judgment_id_end, cwr1_max_bytes, "CWR1 Judgment evidence");
+        const admission_id_end = require_range(bytes, judgment_evidence_end, identity_bytes, "CWR1 Admission evidence identity");
+        const admission_evidence_end = blob_end(bytes, admission_id_end, cwr1_max_bytes, "CWR1 Admission evidence");
+        const budget_end = require_range(bytes, admission_evidence_end, 8, "CWR1 budget");
+        const count_end = require_range(bytes, budget_end, 2, "CWR1 occurrence count");
+        const occurrence_count = little_u16(bytes, budget_end);
+        let occurrence_offset = count_end;
+        const occurrences = [];
+        for (let index = 0; index < occurrence_count; index += 1) {
+            const occurrence = parse_blob(bytes, occurrence_offset, cwr1_max_bytes, "CWR1 occurrence");
+            occurrence_offset = occurrence.next;
+            occurrences.push(occurrence.bytes);
+        }
+        const occurrences_result = { next: occurrence_offset, values: occurrences };
+        const slot_count_end = require_range(bytes, occurrences_result.next, 2, "CWR1 projection count");
+        const slot_count = little_u16(bytes, occurrences_result.next);
+        const final_offset = require_range(bytes, slot_count_end, slot_count * 2, "CWR1 legacy projection");
+        if (!equivalent(final_offset, bytes.length)) {
+            (() => {
+                throw new Error("CWR1 cartridge shape is incomplete");
+            })();
+        }
+        const assembly = enterSourceTransferPhase("cws1-assembly");
+        try {
+            const trailer = [0];
+            append_u64_bang(trailer, session_command_limit);
+            append_u32_bang(trailer, session_command_max_bytes);
+            append_u32_bang(trailer, cse1_max_bytes);
+            trailer.push(current_admission_trace_retention);
+            return PersistentCartridge("CWS1" + bytes.slice(4, physical_plan_end) + bytes.slice(authority_start, budget_end) + exact_bytes_to_binary_text(trailer), Object.freeze(occurrences_result.values));
+        }
+        finally {
+            leaveSourceTransferPhase(assembly);
+        }
     }
-    const package_record = parse_blob(bytes, 4, cwr1_max_bytes, "CWR1 package");
-    const package_end = package_record.next;
-    const application_end = require_range(bytes, package_end, 4, "CWR1 application");
-    const physical_plan = parse_blob(bytes, application_end, cwr1_max_bytes, "CWR1 physical plan");
-    const allocation = parse_blob(bytes, physical_plan.next, allocation_epoch_bytes, "CWR1 allocation epoch");
-    const allocation_bytes = require_allocation_epoch(allocation);
-    const authority_start = allocation.next;
-    const identities_end = require_range(bytes, authority_start, 9 * identity_bytes, "CWR1 authority identities");
-    const occurrence_evidence = parse_blob(bytes, identities_end, cwr1_max_bytes, "CWR1 occurrence evidence");
-    const judgment_id_end = require_range(bytes, occurrence_evidence.next, identity_bytes, "CWR1 Judgment evidence identity");
-    const judgment_evidence = parse_blob(bytes, judgment_id_end, cwr1_max_bytes, "CWR1 Judgment evidence");
-    const admission_id_end = require_range(bytes, judgment_evidence.next, identity_bytes, "CWR1 Admission evidence identity");
-    const admission_evidence = parse_blob(bytes, admission_id_end, cwr1_max_bytes, "CWR1 Admission evidence");
-    const budget_end = require_range(bytes, admission_evidence.next, 8, "CWR1 budget");
-    const count_end = require_range(bytes, budget_end, 2, "CWR1 occurrence count");
-    const occurrence_count = little_u16(bytes, budget_end);
-    let occurrence_offset = count_end;
-    const occurrences = [];
-    for (let index = 0; index < occurrence_count; index += 1) {
-        const occurrence = parse_blob(bytes, occurrence_offset, cwr1_max_bytes, "CWR1 occurrence");
-        occurrence_offset = occurrence.next;
-        occurrences.push(occurrence.bytes);
+    finally {
+        leaveSourceTransferPhase(profile);
     }
-    const occurrences_result = { next: occurrence_offset, values: occurrences };
-    const slot_count_end = require_range(bytes, occurrences_result.next, 2, "CWR1 projection count");
-    const slot_count = little_u16(bytes, occurrences_result.next);
-    const final_offset = require_range(bytes, slot_count_end, slot_count * 2, "CWR1 legacy projection");
-    if (!equivalent(final_offset, bytes.length)) {
-        (() => {
-            throw new Error("CWR1 cartridge shape is incomplete");
-        })();
-    }
-    const open_bytes = [67, 87, 83, 49];
-    bytes.slice(4, physical_plan.next).forEach((byte) => {
-        open_bytes.push(byte);
-    });
-    bytes.slice(authority_start, budget_end).forEach((byte) => {
-        open_bytes.push(byte);
-    });
-    open_bytes.push(0);
-    append_u64_bang(open_bytes, session_command_limit);
-    append_u32_bang(open_bytes, session_command_max_bytes);
-    append_u32_bang(open_bytes, cse1_max_bytes);
-    open_bytes.push(current_admission_trace_retention);
-    return PersistentCartridge(Object.freeze(open_bytes), Object.freeze(occurrences_result.values));
 }
 function process_request_occurrences_bang(request) {
     return parse_persistent_cartridge_bang(request).occurrences;
@@ -586,9 +637,12 @@ function session_module_functions(module) {
     return { open: open, command: command, event: event, reclaim: reclaim };
 }
 function dispatch_session_request(module, request, operation) {
-    if (exact_byte_array_p(request, session_command_max_bytes)) {
+    const maximum = operation === "open"
+        ? session_open_max_bytes
+        : session_command_max_bytes;
+    if (exact_byte_array_p(request, maximum) || binary_text_p(request, maximum)) {
         const api = session_module_functions(module);
-        const typed_request = new Uint8Array(request);
+        const typed_request = typed_bytes(request);
         const status = process_status(operation === "open"
             ? api.open(typed_request)
             : api.command(typed_request));
@@ -774,7 +828,7 @@ function decode_cse1_event(bytes) {
                                 })()
                                 : equivalent(tag, 15)
                                     ? (() => {
-                                        const diagnostic = parse_blob(bytes, 21, cse1_max_bytes, "CSE1 candidate rejection diagnostic");
+                                        const diagnostic = parse_blob(bytes, 21, cse1_field_max_bytes, "CSE1 candidate rejection diagnostic");
                                         if (!equivalent(diagnostic.next, bytes.length)) {
                                             (() => {
                                                 throw new Error("CSE1 candidate rejection has an invalid shape");
@@ -835,9 +889,9 @@ function decode_cse1_event(bytes) {
                                             })()
                                             : equivalent(tag, 10)
                                                 ? (() => {
-                                                    const action = parse_blob(bytes, 369, cse1_max_bytes, "CSE1 effect action");
-                                                    const resource = parse_blob(bytes, action.next, cse1_max_bytes, "CSE1 effect resource");
-                                                    const payload = parse_blob(bytes, resource.next, cse1_max_bytes, "CSE1 effect payload");
+                                                    const action = parse_blob(bytes, 369, cse1_field_max_bytes, "CSE1 effect action");
+                                                    const resource = parse_blob(bytes, action.next, cse1_field_max_bytes, "CSE1 effect resource");
+                                                    const payload = parse_blob(bytes, resource.next, cse1_field_max_bytes, "CSE1 effect payload");
                                                     const count_end = require_range(bytes, payload.next, 4, "CSE1 effect StateRevision count");
                                                     if (!equivalent(count_end, bytes.length)) {
                                                         (() => {
@@ -896,7 +950,7 @@ function decode_cse1_event(bytes) {
                                                     })()
                                                     : equivalent(tag, 12)
                                                         ? (() => {
-                                                            if (!equivalent(bytes.length, 89)) {
+                                                            if (!equivalent(bytes.length, 153)) {
                                                                 (() => {
                                                                     throw new Error("CSE1 effect authorization has an invalid shape");
                                                                 })();
@@ -908,14 +962,16 @@ function decode_cse1_event(bytes) {
                                                                 sequence: sequence,
                                                                 authorizationId: identity_at(21),
                                                                 intentId: identity_at(53),
-                                                                stateRevisionCount: little_u32(bytes, 85),
+                                                                admissionId: identity_at(85),
+                                                                activationId: identity_at(117),
+                                                                stateRevisionCount: little_u32(bytes, 149),
                                                             };
                                                         })()
                                                         : equivalent(tag, 13)
                                                             ? (() => {
-                                                                const action = parse_blob(bytes, 117, cse1_max_bytes, "CSE1 attempted action");
-                                                                const resource = parse_blob(bytes, action.next, cse1_max_bytes, "CSE1 attempted resource");
-                                                                const payload = parse_blob(bytes, resource.next, cse1_max_bytes, "CSE1 attempted payload");
+                                                                const action = parse_blob(bytes, 149, cse1_field_max_bytes, "CSE1 attempted action");
+                                                                const resource = parse_blob(bytes, action.next, cse1_field_max_bytes, "CSE1 attempted resource");
+                                                                const payload = parse_blob(bytes, resource.next, cse1_field_max_bytes, "CSE1 attempted payload");
                                                                 const count_end = require_range(bytes, payload.next, 4, "CSE1 attempt StateRevision count");
                                                                 if (!equivalent(count_end, bytes.length)) {
                                                                     (() => {
@@ -930,6 +986,7 @@ function decode_cse1_event(bytes) {
                                                                     attemptId: identity_at(21),
                                                                     intentId: identity_at(53),
                                                                     authorizationId: identity_at(85),
+                                                                    activationId: identity_at(117),
                                                                     actionBytes: action.bytes,
                                                                     resourceBytes: resource.bytes,
                                                                     payloadBytes: payload.bytes,
@@ -1345,11 +1402,8 @@ function realize_object(realize_node, first) {
             throw new Error("projected object entry lacks a field Atom");
         }
         const key = ascii_text(field.payload, "projected field");
-        if (key === "__proto__" ||
-            key === "prototype" ||
-            key === "constructor" ||
-            keys.has(key)) {
-            throw new Error("projected object field is unsafe or duplicated");
+        if (keys.has(key)) {
+            throw new Error("projected object field is duplicated");
         }
         keys.add(key);
         fields.push([key, realize_node(value)]);
@@ -1358,6 +1412,8 @@ function realize_object(realize_node, first) {
     if (atom_kind_text(node) !== "clause/js-object-end-v1") {
         throw new Error("projected object has an invalid terminator");
     }
+    // Object.fromEntries defines own data properties without invoking the
+    // legacy __proto__ setter; freezing prevents later prototype mutation.
     return Object.freeze(Object.fromEntries(fields));
 }
 function realize_array(realize_node, first) {
@@ -1440,9 +1496,10 @@ function projected_table(payload) {
     const valueDomain = optional === 1 ? u32() : undefined;
     if ((valueKind === 4) !== (valueDomain !== undefined))
         throw new Error("inconsistent projected relation domain");
-    const cardinality = u8(), count = u16();
-    if (cardinality > 2)
+    const contract = u8(), count = u16();
+    if (contract > 3)
         throw new Error("invalid projected relation cardinality");
+    const total = contract === 3, cardinality = total ? 0 : contract;
     const rows = [];
     let previous;
     for (let row = 0; row < count; ++row) {
@@ -1489,7 +1546,7 @@ function projected_table(payload) {
     }
     if (offset !== payload.length)
         throw new Error("trailing projected relation bytes");
-    return Object.freeze({ kind: "relation-table", subjectDomain, valueKind, cardinality,
+    return Object.freeze({ kind: "relation-table", subjectDomain, valueKind, cardinality, total,
         ...(valueDomain === undefined ? {} : { valueDomain }), rows: Object.freeze(rows) });
 }
 function projected_set(node) {
@@ -1933,6 +1990,7 @@ function create_wasm_cartridge_port_bang(module, policy) {
 /** Apply compiler-owned CET1 to this exact live Wasm session. No source parsing,
  * identity inference, native shadow-state import, or automatic Admission. */
 export function editSourceSession(module, incomingSession, generation, request, witness, policy) {
+    const profile = enterSourceTransferPhase("adapter");
     try {
         const previous = require_live_session(incomingSession);
         if (!Number.isSafeInteger(generation) || generation <= previous.sourceGeneration) {
@@ -1940,26 +1998,37 @@ export function editSourceSession(module, incomingSession, generation, request, 
         }
         if (!is_source_edit_module(module))
             throw new Error("Wasm runtime lacks checked source edit API");
-        if (!exact_byte_array_p(witness, cwr1_max_bytes))
+        if (!observeSourceTransferPhase("witness-validation", () => exact_byte_array_p(witness, cet1_max_bytes)))
             throw new Error("source edit witness exceeds bound");
         const cartridge = parse_persistent_cartridge_bang(request);
-        const status = module.clause_session_v1_source_edit_bulk(previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value), new Uint8Array(cartridge.openBytes), new Uint8Array(witness));
+        const status = observeSourceTransferPhase("bulk-call", () => module.clause_session_v1_source_edit_bulk(previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(cartridge.openBytes)), observeSourceTransferPhase("typed-array-construction", () => new Uint8Array(witness))));
         if (status !== 0)
             throw new Error(`checked source edit rejected: ${process_status(status)}`);
-        const event = decode_cse1_event([...module.clause_session_v1_event_bulk()]);
+        const eventBytes = observeSourceTransferPhase("event-array-construction", () => [...observeSourceTransferPhase("event-bulk", () => module.clause_session_v1_event_bulk())]);
+        const event = observeSourceTransferPhase("cse1-decode", () => decode_cse1_event(eventBytes));
         if (event.kind !== "opened" || event.sequence !== 0)
             throw new Error("source edit returned invalid replacement custody");
-        const session = WasmSession(Object.freeze({ slot: event.slot, generation: event.generation }), generation, event.packageId, event.sessionId, event.allocation, { value: event.world, watches: {} }, { value: 0, watches: {} }, cartridge.occurrences, { value: false, watches: {} });
-        previous.disposed.value = true;
-        setTimeout(() => reclaim_retired_session_bang(module), 0);
-        return workbench["->SessionStarted"](session, event.world, workbench["create-workbench-envelope"](policy, "[]"));
+        const construction = enterSourceTransferPhase("session-construction");
+        try {
+            const session = WasmSession(Object.freeze({ slot: event.slot, generation: event.generation }), generation, event.packageId, event.sessionId, event.allocation, { value: event.world, watches: {} }, { value: 0, watches: {} }, cartridge.occurrences, { value: false, watches: {} });
+            previous.disposed.value = true;
+            setTimeout(() => reclaim_retired_session_bang(module), 0);
+            return workbench["->SessionStarted"](session, event.world, workbench["create-workbench-envelope"](policy, "[]"));
+        }
+        finally {
+            leaveSourceTransferPhase(construction);
+        }
     }
     catch (error) {
         return workbench["->SessionFailed"](reject_reason(error));
     }
+    finally {
+        leaveSourceTransferPhase(profile);
+    }
 }
 function isDiagnosticModule(module) {
     return is_session_wasm_module(module)
+        && "clause_session_v1_project_bulk" in module && typeof module.clause_session_v1_project_bulk === "function"
         && "clause_session_v1_explain_bulk" in module && typeof module.clause_session_v1_explain_bulk === "function"
         && "clause_session_v1_intervene_bulk" in module && typeof module.clause_session_v1_intervene_bulk === "function"
         && "clause_session_v1_source_continuity_bulk" in module && typeof module.clause_session_v1_source_continuity_bulk === "function";
@@ -1969,6 +2038,13 @@ function diagnosticModule(module) {
         throw new Error("Wasm runtime lacks execution-backed diagnostic API");
     }
     return module;
+}
+/** Read the package-declared projection of the current accepted world without
+ * executing an input or creating a semantic event. */
+export function projectSession(module, incomingSession) {
+    const session = require_live_session(incomingSession);
+    const bytes = diagnosticModule(module).clause_session_v1_project_bulk(session.handle.slot, session.handle.generation);
+    return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
 }
 export function explainSession(module, incomingSession, entry) {
     const session = require_live_session(incomingSession);
@@ -1980,9 +2056,9 @@ export function explainSession(module, incomingSession, entry) {
 export function sourceContinuity(module, incomingSession) {
     const session = require_live_session(incomingSession);
     const bytes = diagnosticModule(module).clause_session_v1_source_continuity_bulk(session.handle.slot, session.handle.generation);
-    return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+    return realize_projection_node(decode_canonical_term([...bytes], source_continuity_max_bytes));
 }
-/** Read-only opaque CIQ1 request: all search and semantic evaluation occurs
+/** Read-only opaque CIQ1/CIQ2 request: all search and semantic evaluation occurs
  * inside the live Wasm runtime against a retained actual event. */
 export function interveneSession(module, incomingSession, query) {
     const session = require_live_session(incomingSession);
@@ -1991,13 +2067,65 @@ export function interveneSession(module, incomingSession, query) {
     const bytes = diagnosticModule(module).clause_session_v1_intervene_bulk(session.handle.slot, session.handle.generation, new Uint8Array(query));
     return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
 }
+export { checked_referent as checkedProjectedReferent };
+/** Decode exact runtime coordinates; ordinal page keys are not row identities. */
+export function explanationRelationRows(explanation) {
+    const object = (value) => {
+        if (typeof value !== "object" || value === null || Array.isArray(value))
+            throw new Error("invalid explanation object");
+        return value;
+    };
+    return Object.entries(object(object(explanation).states)).flatMap(([coordinate, value]) => {
+        const slot = Number(coordinate), state = object(value);
+        if (!Number.isInteger(slot) || slot < 0 || slot > 65535)
+            throw new Error("invalid explanation slot");
+        if (state.rows === undefined)
+            return [];
+        return Object.values(object(state.rows)).flatMap(page => Object.values(object(page))).map(value => {
+            const row = object(value);
+            return { slot, subject: checked_referent(row.subject), source: object(state.source), before: row.before, after: row.after };
+        });
+    });
+}
+/** Read one runtime diagnostic index entry from its fixed 64-value pages. */
+export function projectedDiagnosticIndexValue(index, position) {
+    if (!Number.isInteger(position) || position < 0)
+        throw new Error("invalid diagnostic index position");
+    const object = (value) => {
+        if (typeof value !== "object" || value === null || Array.isArray(value))
+            throw new Error("invalid diagnostic index");
+        return value;
+    };
+    const page = object(index)[String(Math.floor(position / 64))];
+    return page === undefined ? undefined : object(page)[String(position % 64)];
+}
+export function projectedRelationRowValue(table, subject) {
+    if (typeof table !== "object" || table === null || Array.isArray(table))
+        throw new Error("invalid predicted table");
+    const value = table;
+    if (value.kind !== "relation-table" || value.cardinality === 2 || !Array.isArray(value.rows))
+        throw new Error("prediction is not a single-valued relation");
+    checked_referent(subject);
+    for (const candidate of value.rows) {
+        if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate))
+            throw new Error("invalid predicted row");
+        const row = candidate;
+        if (projected_scalar_order(row.subject, subject) === 0) {
+            if (!Array.isArray(row.values) || row.values.length !== 1)
+                throw new Error("invalid predicted cardinality");
+            return row.values[0];
+        }
+    }
+    return undefined;
+}
 /** Passive typed serializer for a finite question supplied by the caller.
  * CPP1 tags encode the shared normalized predicate; no local evaluation. */
 export function finiteScalarInterventionQuery(event, allowed, maximumEvaluations, desired) {
     if (!/^[0-9a-f]{64}$/.test(event) || allowed.length > 20 || !Number.isInteger(maximumEvaluations)
         || maximumEvaluations < 0 || maximumEvaluations > 4096)
         throw new Error("finite intervention envelope is invalid");
-    const bytes = [67, 73, 81, 49, ...event.match(/../g).map(pair => Number.parseInt(pair, 16))];
+    const rows = allowed.some(change => change.subject !== undefined);
+    const bytes = [67, 73, 81, rows ? 50 : 49, ...event.match(/../g).map(pair => Number.parseInt(pair, 16))];
     append_u32_bang(bytes, maximumEvaluations);
     const slot = (value) => {
         if (!Number.isInteger(value) || value < 0 || value > 65535)
@@ -2016,9 +2144,25 @@ export function finiteScalarInterventionQuery(event, allowed, maximumEvaluations
         new DataView(buffer).setFloat64(0, value === 0 ? 0 : value, true);
         bytes.push(...new Uint8Array(buffer));
     };
+    const referent = (value) => {
+        const reference = checked_referent(value);
+        append_u32_bang(bytes, reference.domain);
+        if (reference.identity.kind === "declared") {
+            bytes.push(0);
+            append_u32_bang(bytes, reference.identity.value);
+        }
+        else {
+            bytes.push(1, ...reference.identity.value);
+        }
+    };
     slot(allowed.length);
     for (const change of allowed) {
         slot(change.slot);
+        if (rows) {
+            bytes.push(change.subject === undefined ? 0 : 1);
+            if (change.subject !== undefined)
+                referent(change.subject);
+        }
         scalar(change.value);
     }
     if (typeof desired === "boolean") {
@@ -2026,10 +2170,17 @@ export function finiteScalarInterventionQuery(event, allowed, maximumEvaluations
         scalar(desired);
     }
     else {
-        bytes.push(8, 1);
+        bytes.push("greaterThan" in desired ? 8 : 10);
+        if (desired.subject !== undefined)
+            bytes.push(18);
+        bytes.push(1);
         slot(desired.slot);
+        if (desired.subject !== undefined) {
+            bytes.push(0, 5);
+            referent(desired.subject);
+        }
         bytes.push(0);
-        scalar(desired.greaterThan);
+        scalar("greaterThan" in desired ? desired.greaterThan : desired.equals);
     }
     return Object.freeze(bytes);
 }
@@ -2054,6 +2205,7 @@ export { cwo1observation_observationId as "cwo1observation-observationId" };
 export { cwo1observation_stateRevisionId as "cwo1observation-stateRevisionId" };
 export { cwo1observation_values as "cwo1observation-values" };
 export { decode_cwo1_observation as "decode-cwo1-observation" };
+export { decode_cet1_hex as "decode-cet1-hex" };
 export { decode_cwr1_hex as "decode-cwr1-hex" };
 export { decode_projected_term_frame as "decode-projected-term-frame" };
 export { emit_effect_intent_bang as "emit-effect-intent!" };

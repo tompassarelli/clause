@@ -285,6 +285,8 @@ export type Cse1Event =
         kind: "effect-authorization";
         authorizationId: ExactBytes;
         intentId: ExactBytes;
+        admissionId: ExactBytes;
+        activationId: ExactBytes;
         stateRevisionCount: number;
       }>)
   | (Cse1EventBase &
@@ -293,6 +295,7 @@ export type Cse1Event =
         attemptId: ExactBytes;
         intentId: ExactBytes;
         authorizationId: ExactBytes;
+        activationId: ExactBytes;
         actionBytes: ExactBytes;
         resourceBytes: ExactBytes;
         payloadBytes: ExactBytes;
@@ -1567,7 +1570,7 @@ function decode_cse1_event(bytes: unknown): Cse1Event {
                           })()
                         : equivalent(tag, 12)
                           ? (() => {
-                              if (!equivalent(bytes.length, 89)) {
+                              if (!equivalent(bytes.length, 153)) {
                                 (() => {
                                   throw new Error(
                                     "CSE1 effect authorization has an invalid shape",
@@ -1581,14 +1584,16 @@ function decode_cse1_event(bytes: unknown): Cse1Event {
                                 sequence: sequence,
                                 authorizationId: identity_at(21),
                                 intentId: identity_at(53),
-                                stateRevisionCount: little_u32(bytes, 85),
+                                admissionId: identity_at(85),
+                                activationId: identity_at(117),
+                                stateRevisionCount: little_u32(bytes, 149),
                               };
                             })()
                           : equivalent(tag, 13)
                             ? (() => {
                                 const action = parse_blob(
                                   bytes,
-                                  117,
+                                  149,
                                   cse1_field_max_bytes,
                                   "CSE1 attempted action",
                                 );
@@ -1625,6 +1630,7 @@ function decode_cse1_event(bytes: unknown): Cse1Event {
                                   attemptId: identity_at(21),
                                   intentId: identity_at(53),
                                   authorizationId: identity_at(85),
+                                  activationId: identity_at(117),
                                   actionBytes: action.bytes,
                                   resourceBytes: resource.bytes,
                                   payloadBytes: payload.bytes,

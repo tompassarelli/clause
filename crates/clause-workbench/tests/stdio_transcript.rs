@@ -15,19 +15,19 @@ fn text(frame: &[u8]) -> String {
 
 fn state_token(frame: &[u8]) -> Vec<u8> {
     let term = decode_canonical_term(frame).expect("response decodes");
-    let Term::Triple(_, state, _) = term else {
+    let Ok((_, mut state, _)) = term.into_triple() else {
         panic!("response is a transaction triple");
     };
     let Term::Atom {
         kind,
         canonical_payload,
         ..
-    } = state.into_inner()
+    } = &mut state
     else {
         panic!("next state is one opaque Atom");
     };
     assert_eq!(kind, b"clause/workbench-state/v1");
-    canonical_payload
+    std::mem::take(canonical_payload)
 }
 
 #[test]

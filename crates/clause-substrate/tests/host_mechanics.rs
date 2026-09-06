@@ -163,6 +163,7 @@ const CLOSED_WIRE_CODEC_FUNCTIONS: &[&str] = &[
     "compiler_package_v3::codec::decode_term",
     "compiler_package_v3::codec::encode_core_manifest_value_with_budget",
     "compiler_package_v3::codec::encode_core_manifest_value",
+    "compiler_package_v3::codec::encode_canonical_term",
     "compiler_package_v3::codec::encode_definition",
     "compiler_package_v3::codec::encode_evidence_value",
     "compiler_package_v3::codec::encode_expr",
@@ -177,7 +178,6 @@ const CLOSED_WIRE_CODEC_FUNCTIONS: &[&str] = &[
     "compiler_package_v3::codec::encode_sort",
     "compiler_package_v3::codec::encode_subject_value",
     "compiler_package_v3::codec::encode_term",
-    "compiler_package_v3::codec::encode_term_depth",
     "compiler_package_v3::codec::encode_u8_sequence",
     "compiler_package_v3::codec::encode_value",
     "compiler_package_v3::codec::expression_depth",
@@ -188,7 +188,6 @@ const CLOSED_WIRE_CODEC_FUNCTIONS: &[&str] = &[
     "compiler_package_v3::codec::reserve_decode_expressions",
     "compiler_package_v3::codec::reserve_encode_expressions",
     "compiler_package_v3::codec::schedule_fixed_expression",
-    "compiler_package_v3::codec::term_depth",
     "compiler_package_v3::codec::unknown",
 ];
 
@@ -228,6 +227,7 @@ const CLOSED_CORE_ABI_FUNCTIONS: &[&str] = &[
     "compiler_package_v3::types::KValue::sort",
     "compiler_package_v3::types::KValue::try_clone_resource",
     "compiler_package_v3::types::KValue::validate_resource_bounds",
+    "compiler_package_v3::types::Term::into_triple",
     "compiler_package_v3::types::Term::try_clone_resource",
     "compiler_package_v3::types::Term::try_triple",
     "compiler_package_v3::types::Term::validate_resource_bounds",
@@ -279,6 +279,7 @@ const CLOSED_KERNEL_STEP_FUNCTIONS: &[&str] = &[
     "evaluator::Evaluator::check_physical_profile",
     "evaluator::Evaluator::infer",
     "evaluator::Evaluator::new_unprofiled",
+    "evaluator::Evaluator::invoke_entrypoint",
     "evaluator::Evaluator::replay_entrypoint",
     "evaluator::RuntimeByteStorage::as_slice",
     "evaluator::RuntimeByteStorage::owned_len",
@@ -1841,7 +1842,7 @@ fn parse_mir_function(
             });
             let diverging_call = value
                 .rsplit_once(" -> ")
-                .is_some_and(|(_, successor)| is_basic_block_id(successor));
+                .is_some_and(|(_, continuation)| is_call_continuation(continuation));
             if value.contains(" -> [") || diverging_call {
                 let (target, arguments) = call_parts(&value).ok_or_else(|| {
                     AuditError::MirParse(format!(
@@ -2011,6 +2012,12 @@ fn is_basic_block_id(value: &str) -> bool {
     })
 }
 
+fn is_call_continuation(value: &str) -> bool {
+    is_basic_block_id(value)
+        || (value.starts_with('[') && value.ends_with(']'))
+        || value.starts_with("unwind ")
+}
+
 fn parse_assignment(line: &str) -> Option<(String, String)> {
     let (left, right) = line.split_once(" = ")?;
     let destination = base_local(left)?;
@@ -2026,9 +2033,7 @@ fn parse_assignment(line: &str) -> Option<(String, String)> {
 
 fn call_parts(value: &str) -> Option<(String, Vec<String>)> {
     let (call, continuation) = value.rsplit_once(" -> ")?;
-    if !((continuation.starts_with('[') && continuation.ends_with(']'))
-        || is_basic_block_id(continuation))
-    {
+    if !is_call_continuation(continuation) {
         return None;
     }
     let open = top_level_open_paren(call)?;
@@ -3478,6 +3483,13 @@ fn is_inherent_platform_contract(target: &str) -> bool {
         && segments[..3] == ["core", "bool", "<impl bool>"]
         && segments[3] == "then_some"
         && generic_segment_arity(segments[4]) == Some(1)
+    {
+        return true;
+    }
+    if segments.len() == 4
+        && segments[..3] == ["std", "mem", "take"]
+        && generic_segment_arguments(segments[3])
+            .is_some_and(|arguments| arguments == ["Vec<u8>"])
     {
         return true;
     }
@@ -5695,6 +5707,21 @@ fn production_digest_lookalike_does_not_authorize_target() {
     let error = build_context_closure(&inventory, &program)
         .expect_err("a wrapped production digest spelling is not an exact digest contract");
     assert!(matches!(error, AuditError::UnsupportedExternalContract(_)));
+}
+
+#[test]
+fn byte_vector_take_has_an_exact_platform_contract() {
+    assert!(external_contract("std::mem::take::<Vec<u8>>").is_ok());
+    for target in [
+        "std::mem::take::<ForeignDefault>",
+        "foreign::mem::take::<Vec<u8>>",
+        "std::mem::take::<Vec<ForeignByte>>",
+    ] {
+        assert!(matches!(
+            external_contract(target),
+            Err(AuditError::UnsupportedExternalContract(_))
+        ));
+    }
 }
 
 #[test]
