@@ -28,7 +28,8 @@ const EVENT_HEADER_BYTES: usize = 4 + 4 + 4 + 8 + 1;
 const ALLOCATION_EPOCH_BYTES_V1: usize = 304;
 
 pub const WASM_SESSION_COMMAND_LIMIT_V1: usize = 1024 * 1024;
-pub const WASM_SESSION_EVENT_LIMIT_V1: usize = 64 * 1024;
+pub const WASM_SESSION_EVENT_LIMIT_V1: usize = WASM_SESSION_COMMAND_LIMIT_V1;
+const WASM_SESSION_EVENT_FIELD_LIMIT_V1: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WasmSessionHandleV1 {
@@ -1796,7 +1797,7 @@ pub fn decode_wasm_session_event_v1(
                 0 => None,
                 1 => Some(WasmSessionProjectionV1 {
                     observation: ObservationId::from_bytes(d.identity()?),
-                    exact_term_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
+                    exact_term_bytes: d.blob(WASM_SESSION_EVENT_FIELD_LIMIT_V1)?.to_vec(),
                 }),
                 _ => return Err(WasmProcessStatusV1::MalformedRequest),
             },
@@ -1844,9 +1845,9 @@ pub fn decode_wasm_session_event_v1(
             contract_index: d.u32()?,
             required_capability: get_capability_ref(&mut d)?,
             scope: get_effect_scope(&mut d)?,
-            action_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
-            resource_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
-            payload_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
+            action_bytes: d.blob(WASM_SESSION_EVENT_FIELD_LIMIT_V1)?.to_vec(),
+            resource_bytes: d.blob(WASM_SESSION_EVENT_FIELD_LIMIT_V1)?.to_vec(),
+            payload_bytes: d.blob(WASM_SESSION_EVENT_FIELD_LIMIT_V1)?.to_vec(),
             state_revision_count: d.u32()?,
         },
         11 => WasmSessionEventKindV1::EffectIntentAbsent {
@@ -1861,9 +1862,9 @@ pub fn decode_wasm_session_event_v1(
             attempt: EffectAttemptId::from_bytes(d.identity()?),
             intent: EffectIntentId::from_bytes(d.identity()?),
             authorization: IssuedEffectAuthorizationOccurrenceId::from_bytes(d.identity()?),
-            action_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
-            resource_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
-            payload_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
+            action_bytes: d.blob(WASM_SESSION_EVENT_FIELD_LIMIT_V1)?.to_vec(),
+            resource_bytes: d.blob(WASM_SESSION_EVENT_FIELD_LIMIT_V1)?.to_vec(),
+            payload_bytes: d.blob(WASM_SESSION_EVENT_FIELD_LIMIT_V1)?.to_vec(),
             state_revision_count: d.u32()?,
         },
         14 => WasmSessionEventKindV1::EffectSettled {
@@ -1888,7 +1889,7 @@ pub fn decode_wasm_session_event_v1(
             state_revision_count: d.u32()?,
         },
         15 => WasmSessionEventKindV1::CandidateRejected {
-            diagnostic: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
+            diagnostic: d.blob(WASM_SESSION_EVENT_FIELD_LIMIT_V1)?.to_vec(),
         },
         16 => WasmSessionEventKindV1::CommandWindowRenewed,
         _ => return Err(WasmProcessStatusV1::MalformedRequest),
@@ -2000,6 +2001,30 @@ mod tests {
         assert_eq!(
             decode_wasm_session_event_v1(&bytes).expect("candidate rejection event decodes"),
             event
+        );
+    }
+
+    #[test]
+    fn session_event_aggregate_allows_maximum_diagnostic_field() {
+        let event = WasmSessionEventV1 {
+            handle: WasmSessionHandleV1 { slot: 0, generation: 1 },
+            accepted_sequence: 1,
+            kind: WasmSessionEventKindV1::CandidateRejected {
+                diagnostic: vec![b'x'; WASM_SESSION_EVENT_FIELD_LIMIT_V1],
+            },
+        };
+        let bytes = encode_wasm_session_event_v1(&event);
+        assert!(bytes.len() > 64 * 1024);
+        assert!(bytes.len() <= WASM_SESSION_EVENT_LIMIT_V1);
+        assert_eq!(decode_wasm_session_event_v1(&bytes).unwrap(), event);
+    }
+
+    #[test]
+    fn session_event_aggregate_limit_plus_one_rejects() {
+        let bytes = vec![0; WASM_SESSION_EVENT_LIMIT_V1 + 1];
+        assert_eq!(
+            decode_wasm_session_event_v1(&bytes),
+            Err(WasmProcessStatusV1::ResponseOutOfBounds)
         );
     }
 }
