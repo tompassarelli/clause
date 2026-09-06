@@ -53,7 +53,9 @@ explicit continuity relationship is not equality of the old/new coordinates.
 `sourceContinuity(module, session)` exposes the checked old/new address map and
 runtime-epoch-rooted continuing occurrence tokens. The tokens are separate from
 snapshot addresses, survive subsequent explicit edits, and do not identify an
-independently opened run as the same world.
+independently opened run as the same world. This aggregate address map has a
+4 MiB envelope; explanation and intervention diagnostics retain their 1 MiB
+envelopes.
 Runtime-created referent occurrence bytes are retained while domain addresses
 are mapped. Unstructured `hot_reload` remains a fresh import.
 

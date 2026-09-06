@@ -60,6 +60,8 @@ const session_open_max_bytes = 4 * 1024 * 1024;
 
 const session_command_max_bytes = 1024 * 1024;
 
+const source_continuity_max_bytes = 4 * 1024 * 1024;
+
 const session_command_limit = Number.MAX_SAFE_INTEGER;
 
 const current_admission_trace_retention = 1;
@@ -2994,7 +2996,7 @@ export function explainSession(module: unknown, incomingSession: unknown, entry:
 export function sourceContinuity(module: unknown, incomingSession: unknown): ProjectedValue {
   const session = require_live_session(incomingSession);
   const bytes = diagnosticModule(module).clause_session_v1_source_continuity_bulk(session.handle.slot, session.handle.generation);
-  return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+  return realize_projection_node(decode_canonical_term([...bytes], source_continuity_max_bytes));
 }
 
 /** Read-only opaque CIQ1/CIQ2 request: all search and semantic evaluation occurs
