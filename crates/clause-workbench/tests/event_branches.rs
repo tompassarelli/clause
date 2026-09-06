@@ -24,7 +24,26 @@ fn number(frame: &Term, relation: &[u8]) -> f64 {
 
 #[test]
 fn event_rules_share_the_prestate_and_report_rejected_actions() {
-    let mut w = ResidentSourceWorkbenchV1::open(SOURCE.as_bytes()).unwrap();
+    assert_event_rules_share_the_prestate(SOURCE);
+}
+
+#[test]
+fn unwired_zero_input_event_rules_share_the_prestate() {
+    let source = SOURCE.replace("bind keyboard Use down to use\n", "");
+    assert_ne!(source, SOURCE);
+    assert_event_rules_share_the_prestate(&source);
+}
+
+#[test]
+fn unwired_zero_input_conditional_event_rules_share_the_prestate() {
+    let source = SOURCE.replace("bind keyboard Use down to use\n", "")
+        .replace("    ?charge > 0.0\n", "    if(?charge > 0.0, true, false) = true\n");
+    assert!(source.contains("if(?charge > 0.0, true, false) = true"));
+    assert_event_rules_share_the_prestate(&source);
+}
+
+fn assert_event_rules_share_the_prestate(source: &str) {
+    let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
     let accepted = run(&mut w);
     assert_eq!(number(&accepted, b"charge"), 0.0);
     assert_eq!(number(&accepted, b"attempts"), 1.0);
