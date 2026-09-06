@@ -463,7 +463,7 @@ pub(super) fn checked_handler_with_domains(
                 source.origin,
             )?;
             let cardinality = state_relation_cardinality(cst, plan, target, source.origin)?;
-            if source.derivation && cardinality != SourceCardinality::Many {
+            if source.derivation && !matches!(cardinality, SourceCardinality::Many | SourceCardinality::Maybe) {
                 return Err(error());
             }
             if mode == 2 && (domain != b"F64" || cardinality == SourceCardinality::Many) {
@@ -487,7 +487,7 @@ pub(super) fn checked_handler_with_domains(
                 target.field.as_deref(),
                 source.origin,
             )?;
-            if mode == 1 && cardinality != SourceCardinality::Many {
+            if mode == 1 && cardinality != SourceCardinality::Many && !source.derivation {
                 predicates.push(P::Equal(
                     E::RelationPresent(
                         Box::new(E::State(state.clone())),
@@ -498,7 +498,7 @@ pub(super) fn checked_handler_with_domains(
             }
             let effect = match mode {
                 2 => R::Accumulate(subject, value),
-                1 if cardinality == SourceCardinality::Many => R::Insert(subject, value),
+                1 if cardinality == SourceCardinality::Many || source.derivation => R::Insert(subject, value),
                 _ => R::Put(subject, value),
             };
             effects.entry(state).or_default().push(effect);

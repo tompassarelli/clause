@@ -59,7 +59,8 @@ pub(super) fn validate(
                 .get(usize::from(*slot)).and_then(ExecutableSlotV1::value) else {
                 return Err(ExecutableErrorV1::MalformedProgram);
             };
-            if table.cardinality != ExecutableRelationCardinalityV1::Many || !table.rows.is_empty() {
+            if !matches!(table.cardinality, ExecutableRelationCardinalityV1::Many | ExecutableRelationCardinalityV1::Maybe)
+                || !table.rows.is_empty() {
                 return Err(ExecutableErrorV1::MalformedProgram);
             }
             targets.insert(*slot);
@@ -135,7 +136,14 @@ pub(super) fn close(
                         };
                         let subject = table.subject(&subject.value)?.clone();
                         if !table.value_matches(&value.value) { return Err(ExecutableErrorV1::TypeMismatch); }
-                        if table.rows.entry(subject.clone()).or_default().insert(value.value.clone()) {
+                        let values = table.rows.entry(subject.clone()).or_default();
+                        // Optional conclusions are still monotone sets: equal proofs
+                        // share one value, while competing values reject the closure.
+                        if table.cardinality == ExecutableRelationCardinalityV1::Maybe
+                            && !values.is_empty() && !values.contains(&value.value) {
+                            return Err(ExecutableErrorV1::ConflictingStateEffects(*slot));
+                        }
+                        if values.insert(value.value.clone()) {
                             count += 1;
                             if count > MAX_DERIVED_ROWS { return Err(ExecutableErrorV1::ResourceLimit); }
                             discovered.push((*slot, subject, assignment, effect_index, value));

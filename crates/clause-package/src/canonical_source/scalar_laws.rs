@@ -7,6 +7,7 @@ pub(super) struct ScalarLawCst {
     relation: Vec<u8>,
     roles: BTreeMap<Vec<u8>, CanonicalScalarExpressionV1>,
     predicates: Vec<CanonicalScalarPredicateV1>,
+    premises: Vec<(String, CanonicalSourceOriginV1)>,
 }
 
 #[derive(Clone, Debug)]
@@ -29,6 +30,7 @@ pub(super) struct ScalarLawCase {
     pub predicates: Vec<CanonicalScalarPredicateV1>,
     pub law_origin: CanonicalSourceOriginV1,
     pub derive_origin: CanonicalSourceOriginV1,
+    pub dependency_origins: Vec<CanonicalSourceOriginV1>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -83,6 +85,7 @@ impl ScalarLawEnvironment {
             let mut section = "";
             let mut predicates = Vec::new();
             let mut binding_constraints = Vec::new();
+            let mut premises = Vec::new();
             let mut result = None;
             let mut supported = true;
             let mut sections = BTreeSet::new();
@@ -99,6 +102,8 @@ impl ScalarLawEnvironment {
                         binding_constraints.push(constraint);
                     } else if let Some(predicate) = parse_scalar_predicate(text, "") {
                         predicates.push(predicate);
+                    } else if environment.application(text, line.origin)?.is_some() {
+                        premises.push((text.to_owned(), line.origin));
                     } else {
                         supported = false;
                     }
@@ -118,6 +123,12 @@ impl ScalarLawEnvironment {
             let mut domains = BTreeMap::new();
             for role in &relation.roles {
                 relational::check_expression(&roles[&role.name], &role.domain, &mut domains, origin)?;
+            }
+            for (premise, premise_origin) in &premises {
+                let (relation, roles) = environment.application(premise, *premise_origin)?.unwrap();
+                for role in &relation.roles {
+                    relational::check_expression(&roles[&role.name], &role.domain, &mut domains, *premise_origin)?;
+                }
             }
             for predicate in &predicates {
                 let (a, b, numeric) = match predicate {
@@ -144,6 +155,7 @@ impl ScalarLawEnvironment {
                 relation,
                 roles,
                 predicates,
+                premises,
             });
         }
         for block in &blocks {
@@ -213,9 +225,22 @@ impl ScalarLawEnvironment {
         source: &str,
         origin: CanonicalSourceOriginV1,
     ) -> Result<Option<ScalarLawBindingCst>, CanonicalSourceErrorV1> {
+        self.binding_with_stack(source, origin, &mut Vec::new())
+    }
+
+    fn binding_with_stack(
+        &self,
+        source: &str,
+        origin: CanonicalSourceOriginV1,
+        stack: &mut Vec<Vec<u8>>,
+    ) -> Result<Option<ScalarLawBindingCst>, CanonicalSourceErrorV1> {
         let Some((relation, roles)) = self.application(source, origin)? else {
             return Ok(None);
         };
+        if stack.contains(&relation.designation) || stack.len() >= 64 {
+            return Err(CanonicalSourceErrorV1::ScalarLawExpansionLimit { origin });
+        }
+        stack.push(relation.designation.clone());
         let modes = relation
             .modes
             .iter()
@@ -258,61 +283,81 @@ impl ScalarLawEnvironment {
             else {
                 continue;
             };
-            let mut substitutions = BTreeMap::new();
-            let mut predicates = Vec::new();
-            for role in &mode.known {
-                let given = &roles[role];
-                match &law.roles[role] {
-                    CanonicalScalarExpressionV1::Parameter(variable) => {
-                        if let Some(previous) =
-                            substitutions.insert(variable.clone(), given.clone())
-                        {
-                            predicates
-                                .push(CanonicalScalarPredicateV1::Equal(previous, given.clone()));
+            let bindings = law.premises.iter().map(|(source, origin)| {
+                self.binding_with_stack(source, *origin, stack)?.ok_or(
+                    CanonicalSourceErrorV1::MissingExecutableBinding { origin: *origin })
+            }).collect::<Result<Vec<_>, _>>()?;
+            for case in binding_cases(&bindings)? {
+                let expand = |value: &CanonicalScalarExpressionV1| expand_scalar_law_bindings(
+                    value, &case.bindings, &mut BTreeSet::new(), law.origin);
+                let law_value = expand(&law.roles[output])?;
+                let law_predicates = guarded_predicates(&law.predicates, &case).iter().map(|predicate| {
+                    Ok(match predicate {
+                        CanonicalScalarPredicateV1::Equal(a, b) => CanonicalScalarPredicateV1::Equal(expand(a)?, expand(b)?),
+                        CanonicalScalarPredicateV1::GreaterThan(a, b) => CanonicalScalarPredicateV1::GreaterThan(expand(a)?, expand(b)?),
+                        CanonicalScalarPredicateV1::LessThanOrEqual(a, b) => CanonicalScalarPredicateV1::LessThanOrEqual(expand(a)?, expand(b)?),
+                    })
+                }).collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
+                let mut substitutions = BTreeMap::new();
+                let mut predicates = Vec::new();
+                for role in &mode.known {
+                    let given = &roles[role];
+                    match &law.roles[role] {
+                        CanonicalScalarExpressionV1::Parameter(variable) => {
+                            if let Some(previous) =
+                                substitutions.insert(variable.clone(), given.clone())
+                            {
+                                predicates
+                                    .push(CanonicalScalarPredicateV1::Equal(previous, given.clone()));
+                            }
+                        }
+                        CanonicalScalarExpressionV1::Number(_)
+                        | CanonicalScalarExpressionV1::Boolean(_)
+                        | CanonicalScalarExpressionV1::Text(_) => {
+                            predicates.push(CanonicalScalarPredicateV1::Equal(
+                                law.roles[role].clone(),
+                                given.clone(),
+                            ));
+                        }
+                        _ => {
+                            return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+                                origin: law.origin,
+                            });
                         }
                     }
-                    CanonicalScalarExpressionV1::Number(_)
-                    | CanonicalScalarExpressionV1::Boolean(_)
-                    | CanonicalScalarExpressionV1::Text(_) => {
-                        predicates.push(CanonicalScalarPredicateV1::Equal(
-                            law.roles[role].clone(),
-                            given.clone(),
-                        ));
-                    }
-                    _ => {
-                        return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
-                            origin: law.origin,
-                        });
-                    }
+                }
+                let mut used = BTreeSet::new();
+                collect_scalar_expression_parameters(&law_value, &mut used);
+                for predicate in &law_predicates {
+                    collect_predicate_parameters(predicate, &mut used);
+                }
+                if used
+                    .iter()
+                    .any(|variable| !substitutions.contains_key(variable))
+                {
+                    return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+                        origin: law.origin,
+                    });
+                }
+                // Substitution is simultaneous: a caller variable with the same spelling
+                // as a law binder is not another occurrence of that binder.
+                let value = substitute(&law_value, &substitutions);
+                predicates.extend(
+                    law_predicates
+                        .iter()
+                        .map(|predicate| substitute_predicate(predicate, &substitutions)),
+                );
+                cases.push(ScalarLawCase {
+                    value,
+                    predicates,
+                    law_origin: law.origin,
+                    derive_origin: derive.origin,
+                    dependency_origins: case.origins,
+                });
+                if cases.len() > 4096 {
+                    return Err(CanonicalSourceErrorV1::ScalarLawExpansionLimit { origin });
                 }
             }
-            let mut used = BTreeSet::new();
-            collect_scalar_expression_parameters(&law.roles[output], &mut used);
-            for predicate in &law.predicates {
-                collect_predicate_parameters(predicate, &mut used);
-            }
-            if used
-                .iter()
-                .any(|variable| !substitutions.contains_key(variable))
-            {
-                return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
-                    origin: law.origin,
-                });
-            }
-            // Substitution is simultaneous: a caller variable with the same spelling
-            // as a law binder is not another occurrence of that binder.
-            let value = substitute(&law.roles[output], &substitutions);
-            predicates.extend(
-                law.predicates
-                    .iter()
-                    .map(|predicate| substitute_predicate(predicate, &substitutions)),
-            );
-            cases.push(ScalarLawCase {
-                value,
-                predicates,
-                law_origin: law.origin,
-                derive_origin: derive.origin,
-            });
         }
         if cases.is_empty() {
             return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
@@ -326,6 +371,7 @@ impl ScalarLawEnvironment {
                 }
             }
         }
+        stack.pop();
         Ok(Some(ScalarLawBindingCst {
             origin,
             parameter: parameter.clone(),
@@ -562,6 +608,7 @@ pub(super) fn binding_cases(
                         .insert(binding.parameter.clone(), case.value.clone());
                     next.predicates.extend(case.predicates.clone());
                     next.origins.extend([case.law_origin, case.derive_origin]);
+                    next.origins.extend(&case.dependency_origins);
                     next
                 })
             })

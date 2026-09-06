@@ -1,0 +1,117 @@
+F64
+Bool
+Item
+Report
+
+Point:
+  x: F64
+  z: F64
+
+selected:
+  ?item shape Item
+  ?value shape Bool
+  ?item:
+    selected: ?value
+
+mode selected given item yields value: one
+alive:
+  ?item shape Item
+  ?value shape Bool
+  ?item:
+    alive: ?value
+
+mode alive given item yields value: one
+health:
+  ?item shape Item
+  ?value shape F64
+  ?item:
+    health: ?value
+
+mode health given item yields value: one
+offset:
+  ?item shape Item
+  ?value shape Point
+  ?item:
+    offset: ?value
+
+mode offset given item yields value: one
+formation:
+  ?item shape Item
+  ?value shape Point
+  ?item:
+    formation: ?value
+
+mode formation given item yields value: maybe
+total:
+  ?report shape Report
+  ?value shape F64
+  ?report:
+    total: ?value
+
+mode total given report yields value: one
+
+law selected-living-formation
+  if
+    ?item selected true
+    ?item alive true
+    ?item health ?health
+    ?health > 0.0
+    ?item offset ?offset
+  then
+    ?item formation ?offset
+derive selected-living-formation
+
+first
+  member of: Item
+second
+  member of: Item
+report
+  member of: Report
+first selected true
+first alive true
+first health 1.0
+first
+  offset:
+    x: 2.0
+    z: 3.0
+second selected true
+second alive true
+second health 1.0
+second
+  offset:
+    x: 2.0
+    z: 3.0
+report total 0.0
+
+on measure ?report
+  when
+    ?report total ?prior
+    sum ?x where { ?item formation Point { x: ?x, z: ?z } } as ?total
+  withdraw
+    ?report total ?prior
+  include
+    ?report total ?total
+
+on select ?item ?selected
+  when
+    ?item selected ?prior
+  withdraw
+    ?item selected ?prior
+  include
+    ?item selected ?selected
+
+on vitality ?item ?health
+  when
+    ?item health ?prior
+  withdraw
+    ?item health ?prior
+  include
+    ?item health ?health
+
+on living ?item ?alive
+  when
+    ?item alive ?prior
+  withdraw
+    ?item alive ?prior
+  include
+    ?item alive ?alive

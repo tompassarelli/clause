@@ -1,0 +1,96 @@
+F64
+Bool
+Text
+Device
+
+device-readiness:
+  ?enabled shape Bool
+  ?charge shape F64
+  ?message shape Text
+  device enabled ?enabled charge ?charge reports ?message
+
+mode device-readiness given enabled charge yields message: maybe
+law device-readiness
+  if
+    ?enabled enabled with charge ?charge reports ?result
+  then
+    device enabled ?enabled charge ?charge reports ?result
+derive device-readiness
+
+readiness:
+  ?enabled shape Bool
+  ?charge shape F64
+  ?message shape Text
+  ?enabled enabled with charge ?charge reports ?message
+
+mode readiness given enabled charge yields message: maybe
+enabled:
+  ?device shape Device
+  ?value shape Bool
+  ?device:
+    enabled: ?value
+
+mode enabled given device yields value: one
+charge:
+  ?device shape Device
+  ?value shape F64
+  ?device:
+    charge: ?value
+
+mode charge given device yields value: one
+message:
+  ?device shape Device
+  ?value shape Text
+  ?device:
+    message: ?value
+
+mode message given device yields value: one
+
+law disabled
+  if
+    ?enabled = false
+  then
+    ?enabled enabled with charge ?charge reports "Disabled"
+law empty
+  if
+    ?enabled = true
+    ?charge <= 0.0
+  then
+    ?enabled enabled with charge ?charge reports "Empty"
+law ready
+  if
+    ?enabled = true
+    ?charge > 0.0
+  then
+    ?enabled enabled with charge ?charge reports "Ready"
+derive disabled
+derive empty
+derive ready
+
+device
+  member of: Device
+device enabled true
+device charge 1.0
+device message "Unchecked"
+
+on inspect ?device
+  when
+    ?device enabled ?enabled
+    ?device charge ?charge
+    ?device message ?prior
+    device enabled ?enabled charge ?charge reports ?message
+  withdraw
+    ?device message ?prior
+  include
+    ?device message ?message
+
+on use ?device
+  when
+    ?device enabled ?enabled
+    ?device charge ?charge
+    device enabled ?enabled charge ?charge reports ?message
+    ?message = "Ready"
+  withdraw
+    ?device charge ?charge
+  include
+    ?device charge ?charge - 1.0
