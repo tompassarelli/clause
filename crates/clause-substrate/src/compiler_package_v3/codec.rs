@@ -295,31 +295,37 @@ fn encode_sort(encoder: &mut Encoder<'_>, sort: KSort) -> Result<(), EncodeError
     })
 }
 
-fn encode_term(
-    encoder: &mut Encoder<'_>,
-    value: &Term,
-    current_depth: usize,
-) -> Result<(), EncodeError> {
-    let next_depth = encode_term_depth(current_depth)?;
-    encoder.term_node()?;
-    match value {
-        Term::Atom {
-            kind,
-            canonical_payload,
-            equality_contract,
-        } => {
-            encoder.u8(0x00)?;
-            encoder.blob("Atom kind", kind)?;
-            encoder.blob("Atom payload", canonical_payload)?;
-            encoder.blob("Atom equality contract", equality_contract)
-        }
-        Term::Triple(first, second, third) => {
-            encoder.u8(0x01)?;
-            encode_term(encoder, first, next_depth)?;
-            encode_term(encoder, second, next_depth)?;
-            encode_term(encoder, third, next_depth)
+fn encode_term(encoder: &mut Encoder<'_>, value: &Term) -> Result<(), EncodeError> {
+    let mut tasks = Vec::new();
+    tasks
+        .try_reserve(1)
+        .map_err(|_| EncodeError::ResourceExhausted)?;
+    tasks.push(value);
+    while let Some(value) = tasks.pop() {
+        encoder.term_node()?;
+        match value {
+            Term::Atom {
+                kind,
+                canonical_payload,
+                equality_contract,
+            } => {
+                encoder.u8(0x00)?;
+                encoder.blob("Atom kind", kind)?;
+                encoder.blob("Atom payload", canonical_payload)?;
+                encoder.blob("Atom equality contract", equality_contract)?;
+            }
+            Term::Triple(first, second, third) => {
+                encoder.u8(0x01)?;
+                tasks
+                    .try_reserve(3)
+                    .map_err(|_| EncodeError::ResourceExhausted)?;
+                tasks.push(third);
+                tasks.push(second);
+                tasks.push(first);
+            }
         }
     }
+    Ok(())
 }
 
 struct EncodeExpressionTask<'a> {
@@ -350,7 +356,7 @@ fn encode_expr(
             }
             KExpr::TermLiteral(value) => {
                 encoder.u8(0x01)?;
-                encode_term(encoder, value, 0)?;
+                encode_term(encoder, value)?;
             }
             KExpr::Var(index) => {
                 encoder.u8(0x02)?;
@@ -556,13 +562,6 @@ fn push_encode_expression<'a>(
     Ok(())
 }
 
-fn encode_term_depth(current_depth: usize) -> Result<usize, EncodeError> {
-    current_depth
-        .checked_add(1)
-        .filter(|depth| *depth <= MAX_TERM_DEPTH)
-        .ok_or(EncodeError::ResourceExhausted)
-}
-
 fn encode_expression_depth(current_depth: usize) -> Result<usize, EncodeError> {
     current_depth
         .checked_add(1)
@@ -594,7 +593,7 @@ fn encode_subject_value(
     encoder.fixed(subject.interface.compile.as_bytes())?;
     encoder.fixed(subject.interface.admit_propose.as_bytes())?;
     encoder.sequence("definitions", &subject.program, encode_definition)?;
-    encode_term(&mut encoder, &subject.build_request, 0)?;
+    encode_term(&mut encoder, &subject.build_request)?;
     Ok(encoder.bytes)
 }
 
@@ -710,7 +709,7 @@ fn encode_value(encoder: &mut Encoder<'_>, value: &KValue) -> Result<(), EncodeE
         }
         KValue::Term(term) => {
             encoder.u8(0x01)?;
-            encode_term(encoder, term, 0)
+            encode_term(encoder, term)
         }
     }
 }
@@ -727,7 +726,7 @@ pub(crate) fn canonical_value_bytes(value: &KValue) -> Result<Vec<u8>, EncodeErr
 pub fn encode_canonical_term(value: &Term) -> Result<Vec<u8>, EncodeError> {
     let mut budget = EncodeBudget::new();
     let mut encoder = Encoder::new(&mut budget)?;
-    encode_term(&mut encoder, value, 0)?;
+    encode_term(&mut encoder, value)?;
     Ok(encoder.bytes)
 }
 
@@ -742,7 +741,7 @@ pub fn decode_canonical_term(input: &[u8]) -> Result<Term, DecodeFailure> {
         return Err(DecodeFailure::ResourceExhausted);
     }
     let mut cursor = Cursor::top(input);
-    let term = decode_term(&mut cursor, 0)?;
+    let term = decode_term(&mut cursor)?;
     if cursor.offset != cursor.limit {
         return Err(cursor.rejection(DecodeCode::TrailingBytes, cursor.offset));
     }
@@ -1063,12 +1062,6 @@ fn decode_sort(cursor: &mut Cursor<'_>) -> Result<KSort, DecodeFailure> {
     }
 }
 
-fn term_depth(next: usize) -> Result<usize, DecodeFailure> {
-    next.checked_add(1)
-        .filter(|depth| *depth <= MAX_TERM_DEPTH)
-        .ok_or(DecodeFailure::ResourceExhausted)
-}
-
 fn expression_depth(next: usize) -> Result<usize, DecodeFailure> {
     next.checked_add(1)
         .filter(|depth| *depth <= MAX_EXPRESSION_DEPTH)
@@ -1079,23 +1072,46 @@ fn decode_box<T>(value: T) -> Result<FallibleBox<T>, DecodeFailure> {
     FallibleBox::try_new(value).map_err(|_| DecodeFailure::ResourceExhausted)
 }
 
-fn decode_term(cursor: &mut Cursor<'_>, current_depth: usize) -> Result<Term, DecodeFailure> {
-    let next_depth = term_depth(current_depth)?;
-    cursor.budget.term_node()?;
-    let offset = cursor.offset;
-    match cursor.u8()? {
-        0x00 => Ok(Term::Atom {
-            kind: cursor.blob()?,
-            canonical_payload: cursor.blob()?,
-            equality_contract: cursor.blob()?,
-        }),
-        0x01 => {
-            let first = decode_box(decode_term(cursor, next_depth)?)?;
-            let second = decode_box(decode_term(cursor, next_depth)?)?;
-            let third = decode_box(decode_term(cursor, next_depth)?)?;
-            Ok(Term::Triple(first, second, third))
+fn decode_term(cursor: &mut Cursor<'_>) -> Result<Term, DecodeFailure> {
+    // A frame retains only completed siblings. Each push corresponds to a
+    // charged triple node, so even truncated input cannot grow unbounded work.
+    let mut frames: Vec<Vec<Term>> = Vec::new();
+    loop {
+        cursor.budget.term_node()?;
+        let offset = cursor.offset;
+        let mut term = match cursor.u8()? {
+            0x00 => Term::Atom {
+                kind: cursor.blob()?,
+                canonical_payload: cursor.blob()?,
+                equality_contract: cursor.blob()?,
+            },
+            0x01 => {
+                frames
+                    .try_reserve(1)
+                    .map_err(|_| DecodeFailure::ResourceExhausted)?;
+                let mut children = Vec::new();
+                children
+                    .try_reserve_exact(3)
+                    .map_err(|_| DecodeFailure::ResourceExhausted)?;
+                frames.push(children);
+                continue;
+            }
+            _ => return Err(unknown(cursor, offset)),
+        };
+        loop {
+            let Some(children) = frames.last_mut() else {
+                return Ok(term);
+            };
+            children.push(term);
+            if children.len() < 3 {
+                break;
+            }
+            let third = decode_box(children.pop().expect("third child"))?;
+            let second = decode_box(children.pop().expect("second child"))?;
+            let first = decode_box(children.pop().expect("first child"))?;
+            frames.pop();
+            term = Term::Triple(first, second, third);
         }
-        _ => Err(unknown(cursor, offset)),
     }
 }
 
@@ -1154,7 +1170,7 @@ fn decode_expr(cursor: &mut Cursor<'_>, current_depth: usize) -> Result<KExpr, D
                     }
                     0x01 => push_decoded_expression(
                         &mut results,
-                        KExpr::TermLiteral(decode_term(cursor, 0)?),
+                        KExpr::TermLiteral(decode_term(cursor)?),
                     )?,
                     0x02 => {
                         push_decoded_expression(&mut results, KExpr::Var(cursor.u32()?))?;
@@ -1429,7 +1445,7 @@ fn decode_subject_value(cursor: &mut Cursor<'_>) -> Result<CompilerSubject, Deco
         admit_propose: cursor.id32()?,
     };
     let program = cursor.sequence(decode_definition)?;
-    let build_request = decode_term(cursor, 0)?;
+    let build_request = decode_term(cursor)?;
     Ok(CompilerSubject {
         lineage,
         nominal_declarations,

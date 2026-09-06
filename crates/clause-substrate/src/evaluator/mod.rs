@@ -2475,48 +2475,55 @@ impl<'a> EvaluationMachine<'a> {
                 values.push(RuntimeValue::Term(RuntimeTerm::Borrowed(third)));
                 (triple_body, values)
             }
-            RuntimeTerm::Owned(Term::Atom {
-                kind,
-                canonical_payload,
-                equality_contract,
-            }) => {
-                let incoming = kind
-                    .len()
-                    .checked_add(canonical_payload.len())
-                    .and_then(|bytes| bytes.checked_add(equality_contract.len()))
-                    .ok_or(EvalError::ResourceExhausted)?;
-                self.prepare_owned_allocation(
-                    Some(LiveExpression {
-                        expression: atom_body,
-                        bound: 3,
-                        environment: parent,
-                    }),
-                    incoming,
-                    None,
-                )?;
-                let mut values = Vec::new();
-                values
-                    .try_reserve_exact(3)
-                    .map_err(|_| EvalError::ResourceExhausted)?;
-                values.push(RuntimeValue::Bytes(self.byte_store.owned(kind)?));
-                values.push(RuntimeValue::Bytes(
-                    self.byte_store.owned(canonical_payload)?,
-                ));
-                values.push(RuntimeValue::Bytes(
-                    self.byte_store.owned(equality_contract)?,
-                ));
-                (atom_body, values)
-            }
-            RuntimeTerm::Owned(Term::Triple(first, second, third)) => {
-                let mut values = Vec::new();
-                values
-                    .try_reserve_exact(3)
-                    .map_err(|_| EvalError::ResourceExhausted)?;
-                values.push(RuntimeValue::Term(RuntimeTerm::Owned(first.into_inner())));
-                values.push(RuntimeValue::Term(RuntimeTerm::Owned(second.into_inner())));
-                values.push(RuntimeValue::Term(RuntimeTerm::Owned(third.into_inner())));
-                (triple_body, values)
-            }
+            RuntimeTerm::Owned(mut term) => match &mut term {
+                Term::Atom {
+                    kind,
+                    canonical_payload,
+                    equality_contract,
+                } => {
+                    let incoming = kind
+                        .len()
+                        .checked_add(canonical_payload.len())
+                        .and_then(|bytes| bytes.checked_add(equality_contract.len()))
+                        .ok_or(EvalError::ResourceExhausted)?;
+                    self.prepare_owned_allocation(
+                        Some(LiveExpression {
+                            expression: atom_body,
+                            bound: 3,
+                            environment: parent,
+                        }),
+                        incoming,
+                        None,
+                    )?;
+                    let mut values = Vec::new();
+                    values
+                        .try_reserve_exact(3)
+                        .map_err(|_| EvalError::ResourceExhausted)?;
+                    values.push(RuntimeValue::Bytes(
+                        self.byte_store.owned(std::mem::take(kind))?,
+                    ));
+                    values.push(RuntimeValue::Bytes(
+                        self.byte_store.owned(std::mem::take(canonical_payload))?,
+                    ));
+                    values.push(RuntimeValue::Bytes(
+                        self.byte_store.owned(std::mem::take(equality_contract))?,
+                    ));
+                    (atom_body, values)
+                }
+                Term::Triple(..) => {
+                    let (first, second, third) = term
+                        .into_triple()
+                        .map_err(|_| EvalError::ResourceExhausted)?;
+                    let mut values = Vec::new();
+                    values
+                        .try_reserve_exact(3)
+                        .map_err(|_| EvalError::ResourceExhausted)?;
+                    values.push(RuntimeValue::Term(RuntimeTerm::Owned(first)));
+                    values.push(RuntimeValue::Term(RuntimeTerm::Owned(second)));
+                    values.push(RuntimeValue::Term(RuntimeTerm::Owned(third)));
+                    (triple_body, values)
+                }
+            },
         };
         self.reserve_tasks(1)?;
         let environment = self.environments.extend(values, Some(parent))?;

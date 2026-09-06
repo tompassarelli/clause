@@ -8,10 +8,9 @@ use std::ops::{Deref, DerefMut, Range};
 pub(crate) const MAX_WIRE_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const MAX_WIRE_ITEMS: usize = 262_144;
 
-/// The exact Compiler0 package measures 79 Term levels, 121 KExpr levels, 9,419
-/// Term nodes, and 31,618 KExpr nodes. Separate limits preserve that real
-/// shape without exposing evaluator stack depth as a wire-format constraint.
-pub(crate) const MAX_TERM_DEPTH: usize = 128;
+/// Expressions retain their independent structural bound. Term traversal and
+/// destruction are iterative: aggregate nodes and bytes, not nesting, bound
+/// their retained data and work.
 pub(crate) const MAX_EXPRESSION_DEPTH: usize = 512;
 pub(crate) const MAX_TERM_NODES: usize = 262_144;
 pub(crate) const MAX_EXPRESSION_NODES: usize = 262_144;
@@ -23,8 +22,9 @@ pub(crate) const MAX_RUNTIME_ENVIRONMENTS: usize = 1_000_000;
 /// One heap-owned value whose allocation is explicit and fallible.
 ///
 /// CLCP-v3 uses this only to give recursive wire carriers a finite Rust size.
-/// The private vector invariant is always `len() == 1`; after the successful
-/// reservation, `push` cannot allocate.
+/// A live box contains exactly one value; consumption and Term destruction
+/// drain it before dropping the storage. After the successful reservation,
+/// `push` cannot allocate.
 #[derive(Debug, Eq, PartialEq)]
 pub struct FallibleBox<T> {
     value: Vec<T>,
@@ -317,17 +317,53 @@ pub(crate) fn try_copy_bytes(value: &[u8]) -> Result<Vec<u8>, ResourceLimit> {
     Ok(copied)
 }
 
+impl Drop for Term {
+    fn drop(&mut self) {
+        // Rotate the owned tree onto its third spine, then retire one shallow
+        // triple at a time. Reuse its boxes: failure cleanup must neither
+        // allocate a work stack nor recurse through the original nesting.
+        while let Self::Triple(first, second, third) = self {
+            if third.value.is_empty() {
+                return; // A retired triple has transferred its final child.
+            }
+            if matches!(&**first, Self::Triple(..)) {
+                std::mem::swap(first, third);
+                let Self::Triple(a, b, c) = &mut **third else {
+                    unreachable!("the rotated first child is a triple");
+                };
+                std::mem::swap(first, a);
+                std::mem::swap(second, b);
+                std::mem::swap(a, c);
+            } else if matches!(&**second, Self::Triple(..)) {
+                std::mem::swap(first, second);
+            } else {
+                let next = third.value.pop().expect("one owned final child");
+                let retired = std::mem::replace(self, next);
+                drop(retired);
+            }
+        }
+    }
+}
+
 impl Term {
+    /// Consume a triple without copying its children; return an atom unchanged.
+    pub fn into_triple(mut self) -> Result<(Self, Self, Self), Self> {
+        let Self::Triple(first, second, third) = &mut self else {
+            return Err(self);
+        };
+        let first = first.value.pop().expect("one owned first child");
+        let second = second.value.pop().expect("one owned second child");
+        let third = third.value.pop().expect("one owned third child");
+        Ok((first, second, third))
+    }
+
     pub(crate) fn validate_resource_bounds(&self) -> Result<(), ResourceLimit> {
         let mut stack = Vec::new();
         stack.try_reserve(1).map_err(|_| ResourceLimit)?;
-        stack.push((self, 1_usize));
+        stack.push(self);
         let mut nodes = 0_usize;
         let mut bytes = 0_usize;
-        while let Some((term, depth)) = stack.pop() {
-            if depth > MAX_TERM_DEPTH {
-                return Err(ResourceLimit);
-            }
+        while let Some(term) = stack.pop() {
             nodes = nodes.checked_add(1).ok_or(ResourceLimit)?;
             if nodes > MAX_TERM_NODES {
                 return Err(ResourceLimit);
@@ -348,11 +384,10 @@ impl Term {
                     }
                 }
                 Self::Triple(first, second, third) => {
-                    let next = depth.checked_add(1).ok_or(ResourceLimit)?;
                     stack.try_reserve(3).map_err(|_| ResourceLimit)?;
-                    stack.push((third, next));
-                    stack.push((second, next));
-                    stack.push((first, next));
+                    stack.push(third);
+                    stack.push(second);
+                    stack.push(first);
                 }
             }
         }
@@ -361,7 +396,7 @@ impl Term {
 
     pub(crate) fn try_clone_resource(&self) -> Result<Self, ResourceLimit> {
         self.validate_resource_bounds()?;
-        clone_term(self, 1)
+        clone_term(self)
     }
 
     pub(crate) fn try_triple(
@@ -378,45 +413,39 @@ impl Term {
     }
 }
 
-fn clone_term(term: &Term, depth: usize) -> Result<Term, ResourceLimit> {
+fn clone_term(term: &Term) -> Result<Term, ResourceLimit> {
     enum Task<'a> {
-        Read(&'a Term, usize),
+        Read(&'a Term),
         Triple,
     }
 
     let mut tasks = Vec::new();
     tasks.try_reserve(1).map_err(|_| ResourceLimit)?;
-    tasks.push(Task::Read(term, depth));
+    tasks.push(Task::Read(term));
     let mut results = Vec::new();
     while let Some(task) = tasks.pop() {
         match task {
-            Task::Read(term, depth) => {
-                if depth > MAX_TERM_DEPTH {
-                    return Err(ResourceLimit);
-                }
-                match term {
+            Task::Read(term) => match term {
+                Term::Atom {
+                    kind,
+                    canonical_payload,
+                    equality_contract,
+                } => push_term(
+                    &mut results,
                     Term::Atom {
-                        kind,
-                        canonical_payload,
-                        equality_contract,
-                    } => push_term(
-                        &mut results,
-                        Term::Atom {
-                            kind: try_copy_bytes(kind)?,
-                            canonical_payload: try_copy_bytes(canonical_payload)?,
-                            equality_contract: try_copy_bytes(equality_contract)?,
-                        },
-                    )?,
-                    Term::Triple(first, second, third) => {
-                        let next = depth.checked_add(1).ok_or(ResourceLimit)?;
-                        tasks.try_reserve(4).map_err(|_| ResourceLimit)?;
-                        tasks.push(Task::Triple);
-                        tasks.push(Task::Read(third, next));
-                        tasks.push(Task::Read(second, next));
-                        tasks.push(Task::Read(first, next));
-                    }
+                        kind: try_copy_bytes(kind)?,
+                        canonical_payload: try_copy_bytes(canonical_payload)?,
+                        equality_contract: try_copy_bytes(equality_contract)?,
+                    },
+                )?,
+                Term::Triple(first, second, third) => {
+                    tasks.try_reserve(4).map_err(|_| ResourceLimit)?;
+                    tasks.push(Task::Triple);
+                    tasks.push(Task::Read(third));
+                    tasks.push(Task::Read(second));
+                    tasks.push(Task::Read(first));
                 }
-            }
+            },
             Task::Triple => {
                 let third = results.pop().ok_or(ResourceLimit)?;
                 let second = results.pop().ok_or(ResourceLimit)?;
@@ -696,3 +725,130 @@ impl fmt::Display for EncodeError {
 }
 
 impl std::error::Error for EncodeError {}
+
+#[cfg(test)]
+mod term_resource_tests {
+    use super::*;
+    use crate::compiler_package_v3::{decode_canonical_term, encode_canonical_term};
+    use crate::evaluator::{EvalError, Evaluator};
+
+    fn atom() -> Term {
+        Term::Atom {
+            kind: Vec::new(),
+            canonical_payload: Vec::new(),
+            equality_contract: Vec::new(),
+        }
+    }
+
+    fn triple(first: Term, second: Term, third: Term) -> Term {
+        Term::Triple(
+            FallibleBox::try_new(first).unwrap(),
+            FallibleBox::try_new(second).unwrap(),
+            FallibleBox::try_new(third).unwrap(),
+        )
+    }
+
+    #[test]
+    fn term_nodes_not_host_stack_bound_transport_runtime_and_cleanup() {
+        std::thread::Builder::new()
+            .name("term-resource-bound".into())
+            .stack_size(128 * 1024)
+            .spawn(|| {
+                // Full ternary trees contain 1 + 3*n nodes. This reaches the
+                // aggregate budget while traversing all three child positions.
+                let mut term = atom();
+                for level in 0..(MAX_TERM_NODES - 1) / 3 {
+                    term = match level % 3 {
+                        0 => triple(term, atom(), atom()),
+                        1 => triple(atom(), term, atom()),
+                        _ => triple(atom(), atom(), term),
+                    };
+                }
+                term.validate_resource_bounds().unwrap();
+                let wire = encode_canonical_term(&term).unwrap();
+                let decoded = decode_canonical_term(&wire).unwrap();
+                assert_eq!(encode_canonical_term(&decoded).unwrap(), wire);
+                drop(decoded);
+                let evaluator = Evaluator::new(&[]).unwrap();
+                let literal = KExpr::TermLiteral(term);
+                let value = evaluator.evaluate(&literal, &[], 1).unwrap().value;
+                let KValue::Term(cloned) = value else {
+                    panic!("Term result")
+                };
+                assert_eq!(encode_canonical_term(&cloned).unwrap(), wire);
+                let over = triple(atom(), atom(), cloned);
+                assert!(over.validate_resource_bounds().is_err());
+                assert_eq!(
+                    encode_canonical_term(&over),
+                    Err(EncodeError::ResourceExhausted)
+                );
+                assert!(matches!(
+                    evaluator.evaluate(&KExpr::Var(0), &[KValue::Term(over)], 1),
+                    Err(EvalError::ResourceExhausted)
+                ));
+                let mut over_wire = vec![1];
+                over_wire.extend_from_slice(&wire);
+                over_wire.extend_from_slice(&[0; 26]);
+                assert!(matches!(
+                    decode_canonical_term(&over_wire),
+                    Err(DecodeFailure::ResourceExhausted)
+                ));
+
+                // The node budget is exhausted before a later corrupt sibling
+                // can be inspected; corruption does not bypass resource limits.
+                let mut corrupt = vec![1];
+                corrupt.extend_from_slice(&wire);
+                corrupt.push(0xff);
+                assert!(matches!(
+                    decode_canonical_term(&corrupt),
+                    Err(DecodeFailure::ResourceExhausted)
+                ));
+                drop(literal);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn term_byte_budget_and_deep_corruption_keep_their_distinct_verdicts() {
+        let mut term = atom();
+        for _ in 0..4096 {
+            term = triple(atom(), atom(), term);
+        }
+        let wire = encode_canonical_term(&term).unwrap();
+        let mut malformed = vec![1];
+        malformed.extend_from_slice(&wire);
+        let offset = malformed.len();
+        malformed.push(0xff);
+        assert_eq!(
+            decode_canonical_term(&malformed),
+            Err(DecodeFailure::Rejected(DecodeRejection {
+                code: DecodeCode::UnknownSumTag,
+                offset: offset as u64,
+            }))
+        );
+        malformed.pop();
+        assert_eq!(
+            decode_canonical_term(&malformed),
+            Err(DecodeFailure::Rejected(DecodeRejection {
+                code: DecodeCode::Truncated,
+                offset: offset as u64,
+            }))
+        );
+        let over_bytes = Term::Atom {
+            kind: vec![0; MAX_WIRE_BYTES / 2],
+            canonical_payload: vec![0; MAX_WIRE_BYTES / 2],
+            equality_contract: vec![0],
+        };
+        assert!(over_bytes.validate_resource_bounds().is_err());
+        assert_eq!(
+            encode_canonical_term(&over_bytes),
+            Err(EncodeError::ResourceExhausted)
+        );
+        assert_eq!(
+            decode_canonical_term(&vec![0; MAX_WIRE_BYTES + 1]),
+            Err(DecodeFailure::ResourceExhausted)
+        );
+    }
+}
