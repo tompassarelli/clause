@@ -193,6 +193,24 @@ fn exhausted_finite_join_is_an_error_not_absence() {
 }
 
 #[test]
+fn withdrawing_a_collection_joins_known_members_by_value() {
+    let source = format!(
+        "{}\non clear ?account\n  when\n    ?goal contribution ?amount\n    ?goal remaining ?remaining\n    ?account known goal ?goal\n  withdraw\n    ?account known goal ?goal\n    ?goal contribution ?amount\n    ?goal remaining ?remaining\n",
+        std::str::from_utf8(SOURCE).unwrap()
+    );
+    let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let create = w.handler_occurrence(b"create-goal", &[n(7.0), n(3.0)]).unwrap();
+    w.run_occurrences_to_candidate(&vec![create; 256]).unwrap();
+    let before = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+    assert_eq!(known(&before).len(), 256);
+    let after = run(&mut w, b"clear", &[]);
+    assert!(known(&after).is_empty());
+    assert!(table(&after, b"contribution").rows().is_empty());
+    assert!(table(&after, b"remaining").rows().is_empty());
+    assert_eq!(balance(&after), balance(&before));
+}
+
+#[test]
 fn real_encounter_accepts_independent_runtime_created_burns() {
     let source = [
         include_bytes!("../../../test-vectors/authoring/live-encounter.clause").as_slice(),
