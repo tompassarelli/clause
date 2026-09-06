@@ -6051,6 +6051,26 @@ fn normalize_typed_equality(
         ) => {
             *value = typed_state_value(cst, plan, state, value.clone(), origin)?;
         }
+        (
+            CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Referent(referent)),
+            CanonicalExecutableExpressionV1::Constant(value),
+        )
+        | (
+            CanonicalExecutableExpressionV1::Constant(value),
+            CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Referent(referent)),
+        ) => {
+            if let CanonicalScalarValueV1::Symbol(designation) = value {
+                let domain = cst.items.iter().find_map(|item| match &item.kind {
+                    CstKind::Referent { designation, .. }
+                        if referent_type_id(cst, plan, designation, origin).ok()
+                            == Some(referent.domain) => Some(designation),
+                    _ => None,
+                }).ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?;
+                *value = CanonicalScalarValueV1::Referent(declared_referent_value(
+                    cst, plan, designation, domain, origin,
+                )?);
+            }
+        }
         _ => {}
     }
     Ok(())
