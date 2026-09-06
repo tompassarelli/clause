@@ -282,6 +282,67 @@ fn bound_pattern(
     }
 }
 
+type ValueIndex<'a> = BTreeMap<
+    &'a ExecutableValueV1,
+    Vec<(&'a ExecutableReferentV1, &'a ExecutableValueV1)>,
+>;
+
+/// A physical specialization of exact value selection, not another relation.
+/// The borrowed pre-state cannot change while the checked index is in use.
+struct CheckedValueIndex<'a> {
+    buckets: ValueIndex<'a>,
+}
+
+impl<'a> CheckedValueIndex<'a> {
+    fn build(
+        table: &'a ExecutableRelationTableV1,
+        visits: &mut usize,
+    ) -> Result<Self, ExecutableErrorV1> {
+        let mut buckets = BTreeMap::<_, Vec<_>>::new();
+        for (subject, values) in &table.rows {
+            for value in values {
+                *visits = visits.checked_add(1).ok_or(ExecutableErrorV1::ResourceLimit)?;
+                if *visits > MAX_JOIN_VISITS {
+                    return Err(ExecutableErrorV1::ResourceLimit);
+                }
+                buckets.entry(value).or_default().push((subject, value));
+            }
+        }
+        Self::check(table, buckets)
+    }
+
+    fn check(
+        table: &'a ExecutableRelationTableV1,
+        buckets: ValueIndex<'a>,
+    ) -> Result<Self, ExecutableErrorV1> {
+        let mut covered = 0usize;
+        for (key, rows) in &buckets {
+            if rows.is_empty() || rows.windows(2).any(|pair| pair[0] >= pair[1]) {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            for (subject, value) in rows {
+                if key != value || !table.rows.get(subject).is_some_and(|values| values.contains(value)) {
+                    return Err(ExecutableErrorV1::MalformedProgram);
+                }
+                covered = covered.checked_add(1).ok_or(ExecutableErrorV1::ResourceLimit)?;
+                if covered > MAX_JOIN_VISITS {
+                    return Err(ExecutableErrorV1::ResourceLimit);
+                }
+            }
+        }
+        // Strict bucket ordering forbids duplicates; exact membership forbids
+        // inventions; disjoint value keys plus equal cardinality prove coverage.
+        if covered != table.rows.values().map(BTreeSet::len).sum::<usize>() {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+        Ok(Self { buckets })
+    }
+
+    fn select(&self, value: &ExecutableValueV1) -> impl Iterator<Item = (&'a ExecutableReferentV1, &'a ExecutableValueV1)> + '_ {
+        self.buckets.get(value).into_iter().flatten().copied()
+    }
+}
+
 /// Complete finite positive matching or an explicit error. Never interpret a
 /// bound-exhausted prefix as no match. Duplicate derivations of the same exact
 /// substitution are one match; equal-valued distinct referents are not equal.
@@ -305,10 +366,7 @@ pub(super) fn match_rule(
                 return Err(ExecutableErrorV1::TypeMismatch);
             };
             let mut next = BTreeMap::new();
-            let mut by_value = None::<BTreeMap<
-                &ExecutableValueV1,
-                Vec<(&ExecutableReferentV1, &ExecutableValueV1)>,
-            >>;
+            let mut by_value = None::<CheckedValueIndex<'_>>;
             for incoming in active {
                 let start_visits = *visits;
                 let mut found = false;
@@ -374,17 +432,9 @@ pub(super) fn match_rule(
                     } else if let Some(value) = bound_value.as_ref() {
                         if unbound {
                             if by_value.is_none() {
-                                let mut index = BTreeMap::<_, Vec<_>>::new();
-                                for (subject, values) in &table.rows {
-                                    for value in values {
-                                        *visits = visits.checked_add(1).ok_or(ExecutableErrorV1::ResourceLimit)?;
-                                        if *visits > MAX_JOIN_VISITS { return Err(ExecutableErrorV1::ResourceLimit); }
-                                        index.entry(value).or_default().push((subject, value));
-                                    }
-                                }
-                                by_value = Some(index);
+                                by_value = Some(CheckedValueIndex::build(table, visits)?);
                             }
-                            Box::new(by_value.as_ref().unwrap().get(value).into_iter().flatten().copied())
+                            Box::new(by_value.as_ref().unwrap().select(value))
                         } else {
                             Box::new(first_row.into_iter().filter_map(|(subject, values)| values.get(value).map(|value| (subject, value))))
                         }
@@ -597,5 +647,79 @@ impl RowEffects {
             next[usize::from(slot)] = ExecutableValueV1::RelationTable(table).into();
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod ordered_specialization_tests {
+    use super::*;
+
+    fn table() -> ExecutableRelationTableV1 {
+        let n = |v| ExecutableValueV1::number(v).unwrap();
+        ExecutableRelationTableV1 {
+            subject_domain: 7,
+            value_kind: ExecutableRelationValueKindV1::Number,
+            value_domain: None,
+            cardinality: ExecutableRelationCardinalityV1::Many,
+            total: false,
+            rows: BTreeMap::from([
+                (ExecutableReferentV1::declared(7, 9), BTreeSet::from([n(4.0), n(9.0)])),
+                (ExecutableReferentV1::created(7, [1; IDENTITY_BYTES]), BTreeSet::from([n(4.0)])),
+                (ExecutableReferentV1::created(7, [2; IDENTITY_BYTES]), BTreeSet::from([n(4.0)])),
+            ]),
+        }
+    }
+
+    #[test]
+    fn checked_index_refines_exact_ordered_selection_and_preserves_limits() {
+        let table = table();
+        let mut visits = 0;
+        let index = CheckedValueIndex::build(&table, &mut visits).unwrap();
+        assert_eq!(visits, 4);
+        for value in [0.0, 4.0, 9.0] {
+            let value = ExecutableValueV1::number(value).unwrap();
+            let expected = table.rows.iter().flat_map(|(subject, values)| {
+                values.iter().filter(|candidate| **candidate == value).map(move |value| (subject, value))
+            }).collect::<Vec<_>>();
+            assert_eq!(index.select(&value).collect::<Vec<_>>(), expected);
+        }
+        let mut visits = MAX_JOIN_VISITS - 4;
+        assert!(CheckedValueIndex::build(&table, &mut visits).is_ok());
+        assert_eq!(visits, MAX_JOIN_VISITS);
+        let mut visits = MAX_JOIN_VISITS - 3;
+        assert!(matches!(CheckedValueIndex::build(&table, &mut visits), Err(ExecutableErrorV1::ResourceLimit)));
+        assert_eq!(visits, MAX_JOIN_VISITS + 1);
+        let mut empty = table.clone();
+        empty.rows.clear();
+        assert!(CheckedValueIndex::build(&empty, &mut 0).unwrap().buckets.is_empty());
+    }
+
+    #[test]
+    fn specialization_checker_rejects_missing_duplicate_reordered_and_invented_rows() {
+        let table = table();
+        let index = CheckedValueIndex::build(&table, &mut 0).unwrap();
+        let value = ExecutableValueV1::number(4.0).unwrap();
+        for mutation in 0..5 {
+            let mut buckets = index.buckets.clone();
+            let rows = buckets.get_mut(&value).unwrap();
+            match mutation {
+                0 => { rows.pop(); }
+                1 => { rows.push(rows[0]); }
+                2 => rows.swap(0, 1),
+                3 => { rows[1] = rows[0]; }
+                4 => { buckets.insert(&value, vec![]); }
+                _ => unreachable!(),
+            }
+            assert!(CheckedValueIndex::check(&table, buckets).is_err(), "mutation {mutation}");
+        }
+        let foreign = ExecutableReferentV1::created(7, [3; IDENTITY_BYTES]);
+        let mut buckets = index.buckets.clone();
+        buckets.get_mut(&value).unwrap()[2].0 = &foreign;
+        assert!(CheckedValueIndex::check(&table, buckets).is_err());
+        let wrong = ExecutableValueV1::number(16.0).unwrap();
+        let mut buckets = index.buckets.clone();
+        let rows = buckets.remove(&value).unwrap();
+        buckets.insert(&wrong, rows);
+        assert!(CheckedValueIndex::check(&table, buckets).is_err());
     }
 }

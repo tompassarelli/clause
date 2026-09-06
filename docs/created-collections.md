@@ -81,7 +81,8 @@ This slice lowers connected general/scalar handlers, typed relation rows,
 Boolean state guards and existing scalar-law composition. Positive recursive
 laws also reclose over current rows after atomic changes, including creations.
 Negation, aggregation, and allocation inside recursive rules remain unsupported,
-as do general multi-input derived relations, specialization, and a full
+as do general multi-input derived relations, specialization beyond the
+checked exact-row selection index (`clause:docs/ordered-collections.md`), and a full
 source-language type-system proof. Unsupported seams reject rather than route
 to host gameplay. Per-frame projection size and compiler witness work still
 need measurement against the application performance targets.

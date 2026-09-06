@@ -1,0 +1,64 @@
+F64
+Bool
+Measurement
+Batch
+
+position
+  domain: Measurement
+  range: F64
+  cardinality: one
+reading
+  domain: Measurement
+  range: F64
+  cardinality: one
+batch
+  domain: Measurement
+  range: Batch
+  cardinality: one
+active
+  domain: Batch
+  range: Bool
+  cardinality: one
+
+samples
+  active: true
+archive
+  active: false
+
+last
+  position: 2.0
+  reading: 9.0
+  batch: samples
+first
+  position: 0.0
+  reading: 4.0
+  batch: samples
+middle
+  position: 1.0
+  reading: 4.0
+  batch: samples
+saved
+  position: 0.0
+  reading: 16.0
+  batch: archive
+
+on calibrate ?batch ?divisor
+  when
+    ?batch active true
+    ?measurement batch ?batch
+    ?measurement position ?position
+    ?measurement reading ?reading
+  withdraw
+    ?measurement reading ?reading
+  include
+    ?measurement reading sqrt(?reading) / ?divisor
+
+on append ?batch ?position ?reading
+  when
+    ?batch active true
+  create
+    ?measurement
+  include
+    ?measurement batch ?batch
+    ?measurement position ?position
+    ?measurement reading ?reading

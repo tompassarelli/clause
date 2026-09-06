@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "ordered-measurements",
+        title: "Positioned measurement occurrences",
+        summary: "Calibrate each active batch's readings once while preserving its occurrence identities and explicit positions. Equal readings remain independent, including newly appended measurements. An invalid numeric result rejects the whole change.",
+        source: include_str!("../../../test-vectors/authoring/ordered-measurements.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "coherent-declarations",
         title: "Bindings, focus, and structured values",
         summary: "Ordinary conformance premises constrain the same bindings in declarations, laws, and handlers. Shared-edge focus states a common constraint once and keeps the Reading clean; executable direction remains a separate Mode. A role's declared range selects ordinary field edges for values and patterns, with no repeated constructor or field Referents. A four-binding numeric law and typed field replacement share one atomic transition; checked scalar-effect edits retain the live state identities.",

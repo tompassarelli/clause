@@ -72,6 +72,14 @@ values, update many-valued relations, and combine explicit numeric
 checked on initial and candidate worlds. [Created collections](created-collections.md)
 records the exact current bounds and unsupported cases.
 
+Positioned measurement occurrences exercise one ordered-value transformation
+without changing their explicit positions or identities. Exact relation-value
+selection uses a checked inverse index over the same typed pre-state, with
+complete coverage and order-preserving buckets. Execution, explanation, and
+finite queries share that path. This is a bounded positioned-relation slice,
+not general sequence operations or arbitrary specialization; see
+`clause:docs/ordered-collections.md`.
+
 The resident source session preserves its accepted generation, live state,
 handlers, and pending candidate across unchanged or rejected source. Checked
 scalar expression edits preserve the existing target and created Referent

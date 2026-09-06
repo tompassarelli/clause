@@ -10,6 +10,79 @@ Use that pin's workbench directly:
 
 Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.
 
+## Positioned measurement occurrences
+
+Calibrate each active batch's readings once while preserving its occurrence identities and explicit positions. Equal readings remain independent, including newly appended measurements. An invalid numeric result rejects the whole change.
+
+Catalog ID: `ordered-measurements`
+
+```clause
+F64
+Bool
+Measurement
+Batch
+
+position
+  domain: Measurement
+  range: F64
+  cardinality: one
+reading
+  domain: Measurement
+  range: F64
+  cardinality: one
+batch
+  domain: Measurement
+  range: Batch
+  cardinality: one
+active
+  domain: Batch
+  range: Bool
+  cardinality: one
+
+samples
+  active: true
+archive
+  active: false
+
+last
+  position: 2.0
+  reading: 9.0
+  batch: samples
+first
+  position: 0.0
+  reading: 4.0
+  batch: samples
+middle
+  position: 1.0
+  reading: 4.0
+  batch: samples
+saved
+  position: 0.0
+  reading: 16.0
+  batch: archive
+
+on calibrate ?batch ?divisor
+  when
+    ?batch active true
+    ?measurement batch ?batch
+    ?measurement position ?position
+    ?measurement reading ?reading
+  withdraw
+    ?measurement reading ?reading
+  include
+    ?measurement reading sqrt(?reading) / ?divisor
+
+on append ?batch ?position ?reading
+  when
+    ?batch active true
+  create
+    ?measurement
+  include
+    ?measurement batch ?batch
+    ?measurement position ?position
+    ?measurement reading ?reading
+```
+
 ## Bindings, focus, and structured values
 
 Ordinary conformance premises constrain the same bindings in declarations, laws, and handlers. Shared-edge focus states a common constraint once and keeps the Reading clean; executable direction remains a separate Mode. A role's declared range selects ordinary field edges for values and patterns, with no repeated constructor or field Referents. A four-binding numeric law and typed field replacement share one atomic transition; checked scalar-effect edits retain the live state identities.
@@ -110,6 +183,237 @@ on settle ?item
         x: ?x
         y: ?y
       charge: ?limited
+```
+
+## Reusable optional structured relations
+
+Positive laws may derive a cardinality-maybe value, including a structured value. Queries consume the same current selection, liveness and health definition. Equal proofs share one value; conflicting conclusions reject, and withdrawn premises remove their consequences.
+
+Catalog ID: `optional-derived-formation`
+
+```clause
+F64
+Bool
+Item
+Report
+
+Point:
+  x: F64
+  z: F64
+
+selected:
+  ?item shape Item
+  ?value shape Bool
+  ?item:
+    selected: ?value
+
+mode selected given item yields value: one
+alive:
+  ?item shape Item
+  ?value shape Bool
+  ?item:
+    alive: ?value
+
+mode alive given item yields value: one
+health:
+  ?item shape Item
+  ?value shape F64
+  ?item:
+    health: ?value
+
+mode health given item yields value: one
+offset:
+  ?item shape Item
+  ?value shape Point
+  ?item:
+    offset: ?value
+
+mode offset given item yields value: one
+formation:
+  ?item shape Item
+  ?value shape Point
+  ?item:
+    formation: ?value
+
+mode formation given item yields value: maybe
+total:
+  ?report shape Report
+  ?value shape F64
+  ?report:
+    total: ?value
+
+mode total given report yields value: one
+
+law selected-living-formation
+  if
+    ?item selected true
+    ?item alive true
+    ?item health ?health
+    ?health > 0.0
+    ?item offset ?offset
+  then
+    ?item formation ?offset
+derive selected-living-formation
+
+first
+  member of: Item
+second
+  member of: Item
+report
+  member of: Report
+first selected true
+first alive true
+first health 1.0
+first
+  offset:
+    x: 2.0
+    z: 3.0
+second selected true
+second alive true
+second health 1.0
+second
+  offset:
+    x: 2.0
+    z: 3.0
+report total 0.0
+
+on measure ?report
+  when
+    ?report total ?prior
+    sum ?x where { ?item formation Point { x: ?x, z: ?z } } as ?total
+  withdraw
+    ?report total ?prior
+  include
+    ?report total ?total
+
+on select ?item ?selected
+  when
+    ?item selected ?prior
+  withdraw
+    ?item selected ?prior
+  include
+    ?item selected ?selected
+
+on vitality ?item ?health
+  when
+    ?item health ?prior
+  withdraw
+    ?item health ?prior
+  include
+    ?item health ?health
+
+on living ?item ?alive
+  when
+    ?item alive ?prior
+  withdraw
+    ?item alive ?prior
+  include
+    ?item alive ?alive
+```
+
+## Checked laws inside checked laws
+
+An acyclic scalar law may call another typed scalar law in its premises. Both execution and feedback consume that definition. Nested laws retain their source origins, and bounded expansion rejects recursion or exhaustion rather than guessing a result.
+
+Catalog ID: `nested-readiness`
+
+```clause
+F64
+Bool
+Text
+Device
+
+device-readiness:
+  ?enabled shape Bool
+  ?charge shape F64
+  ?message shape Text
+  device enabled ?enabled charge ?charge reports ?message
+
+mode device-readiness given enabled charge yields message: maybe
+law device-readiness
+  if
+    ?enabled enabled with charge ?charge reports ?result
+  then
+    device enabled ?enabled charge ?charge reports ?result
+derive device-readiness
+
+readiness:
+  ?enabled shape Bool
+  ?charge shape F64
+  ?message shape Text
+  ?enabled enabled with charge ?charge reports ?message
+
+mode readiness given enabled charge yields message: maybe
+enabled:
+  ?device shape Device
+  ?value shape Bool
+  ?device:
+    enabled: ?value
+
+mode enabled given device yields value: one
+charge:
+  ?device shape Device
+  ?value shape F64
+  ?device:
+    charge: ?value
+
+mode charge given device yields value: one
+message:
+  ?device shape Device
+  ?value shape Text
+  ?device:
+    message: ?value
+
+mode message given device yields value: one
+
+law disabled
+  if
+    ?enabled = false
+  then
+    ?enabled enabled with charge ?charge reports "Disabled"
+law empty
+  if
+    ?enabled = true
+    ?charge <= 0.0
+  then
+    ?enabled enabled with charge ?charge reports "Empty"
+law ready
+  if
+    ?enabled = true
+    ?charge > 0.0
+  then
+    ?enabled enabled with charge ?charge reports "Ready"
+derive disabled
+derive empty
+derive ready
+
+device
+  member of: Device
+device enabled true
+device charge 1.0
+device message "Unchecked"
+
+on inspect ?device
+  when
+    ?device enabled ?enabled
+    ?device charge ?charge
+    ?device message ?prior
+    device enabled ?enabled charge ?charge reports ?message
+  withdraw
+    ?device message ?prior
+  include
+    ?device message ?message
+
+on use ?device
+  when
+    ?device enabled ?enabled
+    ?device charge ?charge
+    device enabled ?enabled charge ?charge reports ?message
+    ?message = "Ready"
+  withdraw
+    ?device charge ?charge
+  include
+    ?device charge ?charge - 1.0
 ```
 
 ## Composable text search
