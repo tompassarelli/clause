@@ -879,6 +879,8 @@ pub struct ExecutableCanonicalHandlerBindingV1 {
     pub trigger: CanonicalHandlerTriggerV1,
     pub argument_count: u16,
     pub entry: u16,
+    /// Explicit named invocation can combine rules whose scheduled entries differ.
+    pub invocation_entry: u16,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -976,6 +978,7 @@ pub fn lower_canonical_executable_program_v1(
             trigger: handler.trigger,
             argument_count: handler.argument_count,
             entry,
+            invocation_entry: entry,
         });
         for source_rule in &handler.rules {
             let predicates = source_rule
@@ -1037,6 +1040,28 @@ pub fn lower_canonical_executable_program_v1(
                     })
                     .collect::<Result<Vec<_>, _>>()?,
             });
+        }
+    }
+    let mut invocations = BTreeMap::<_, Vec<usize>>::new();
+    for (index, handler) in ordered_handlers.iter().enumerate() {
+        if handler.argument_count == 0
+            && matches!(handler.trigger, CanonicalHandlerTriggerV1::External | CanonicalHandlerTriggerV1::FixedTick)
+        {
+            invocations.entry(&handler.designation).or_default().push(index);
+        }
+    }
+    let mut next_entry = ordered_handlers.len();
+    for indices in invocations.values() {
+        let entries = indices.iter().map(|index| handler_bindings[*index].entry)
+            .collect::<BTreeSet<_>>();
+        if entries.len() < 2 { continue; }
+        let invocation_entry = u16::try_from(next_entry).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
+        next_entry += 1;
+        let invocation_rules = rules.iter().filter(|rule| entries.contains(&rule.entry))
+            .cloned().map(|mut rule| { rule.entry = invocation_entry; rule }).collect::<Vec<_>>();
+        rules.extend(invocation_rules);
+        for index in indices {
+            handler_bindings[*index].invocation_entry = invocation_entry;
         }
     }
     let projection = (!ordered_states.is_empty())

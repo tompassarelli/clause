@@ -223,7 +223,7 @@ impl ResidentSourceWorkbenchV1 {
             .flatten()
             .collect::<Vec<_>>();
         let Some(binding) = matching.first().filter(|first|
-            matching.iter().all(|binding| binding.entry == first.entry && binding.argument_count == first.argument_count)) else {
+            matching.iter().all(|binding| binding.invocation_entry == first.invocation_entry && binding.argument_count == first.argument_count)) else {
             return Err(ResidentSourceWorkbenchErrorV1(format!(
                 "source handler designation is missing or ambiguous: {}",
                 String::from_utf8_lossy(designation)
@@ -238,7 +238,7 @@ impl ResidentSourceWorkbenchV1 {
             )));
         }
         encode_executable_occurrence_v1(&ExecutableOccurrenceV1 {
-            entry: binding.entry,
+            entry: binding.invocation_entry,
             arguments: arguments.to_vec(),
         })
         .map_err(|error| boxed_error("source handler occurrence encode", error))
@@ -377,8 +377,13 @@ impl ResidentSourceWorkbenchV1 {
     /// Exact offered source occurrence; repeated handler designations are not
     /// identities. The caller must retain its generation with this address.
     pub fn diagnostic_handler_entry(&self, handler: clause_package::FormationLocalId) -> Result<u16, ResidentSourceWorkbenchErrorV1> {
-        self.handlers.values().flatten().find(|candidate| candidate.handler == handler).map(|candidate| candidate.entry)
-            .ok_or_else(|| ResidentSourceWorkbenchErrorV1("unknown diagnostic handler occurrence".into()))
+        let binding = self.handlers.values().flatten().find(|candidate| candidate.handler == handler)
+            .ok_or_else(|| ResidentSourceWorkbenchErrorV1("unknown diagnostic handler occurrence".into()))?;
+        if self.boundary.recorded_event(self.generation.handle, binding.invocation_entry)?.is_some() {
+            Ok(binding.invocation_entry)
+        } else {
+            Ok(binding.entry)
+        }
     }
 
     pub fn recorded_handler_event(&self, handler: clause_package::FormationLocalId) -> Result<Option<&clause_runtime::ExecutableRecordedEventV1>, ResidentSourceWorkbenchErrorV1> {
@@ -393,9 +398,9 @@ impl ResidentSourceWorkbenchV1 {
     /// requiring dummy arguments for a historical event query.
     fn diagnostic_entry(&self, designation: &[u8]) -> Result<u16, ResidentSourceWorkbenchErrorV1> {
         let bindings = self.handlers.get(designation).ok_or_else(|| ResidentSourceWorkbenchErrorV1("unknown diagnostic handler".into()))?;
-        let Some(binding) = bindings.first().filter(|first| bindings.iter().all(|binding| binding.entry == first.entry))
+        let Some(binding) = bindings.first().filter(|first| bindings.iter().all(|binding| binding.invocation_entry == first.invocation_entry))
             else { return Err(ResidentSourceWorkbenchErrorV1("ambiguous diagnostic handler".into())); };
-        Ok(binding.entry)
+        Ok(binding.invocation_entry)
     }
 
     pub fn intervene(&self, query: &clause_runtime::ExecutableInterventionQueryV1) -> Result<clause_runtime::ExecutableInterventionResultV1, ResidentSourceWorkbenchErrorV1> {
@@ -451,7 +456,7 @@ impl ResidentSourceWorkbenchV1 {
                         self.handlers.iter().find_map(|(designation, bindings)| {
                             bindings
                                 .iter()
-                                .any(|binding| binding.entry == entry)
+                                .any(|binding| binding.entry == entry || binding.invocation_entry == entry)
                                 .then_some(designation)
                         })
                     })
