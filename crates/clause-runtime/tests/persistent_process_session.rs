@@ -72,8 +72,43 @@ fn text_occurrence_transport_has_a_distinct_bounded_utf8_wire_identity() {
         Err(ExecutableErrorV1::MalformedProgram)
     );
     assert_eq!(
-        ExecutableValueV1::text(&"x".repeat(usize::from(u16::MAX) + 1)),
+        ExecutableValueV1::text(&"x".repeat(MAX_ATOM_FIELD_BYTES + 1)),
         Err(ExecutableErrorV1::ResourceLimit)
+    );
+}
+
+#[test]
+fn long_text_occurrences_preserve_utf8_and_canonical_lengths() {
+    for (value, tag) in [
+        ("x".repeat(usize::from(u16::MAX)), 4),
+        (format!("{}🚀", "x".repeat(65_532)), 7),
+        ("旅 🚀\n".repeat(51_200), 7),
+    ] {
+        let occurrence = ExecutableOccurrenceV1 {
+            entry: 7,
+            arguments: vec![ExecutableValueV1::text(&value).unwrap()],
+        };
+        let bytes = encode_executable_occurrence_v1(&occurrence).unwrap();
+        assert_eq!(bytes[8], tag);
+        let decoded = decode_executable_occurrence_v1(&bytes).unwrap();
+        assert_eq!(decoded, occurrence);
+        assert_eq!(encode_executable_occurrence_v1(&decoded).unwrap(), bytes);
+        assert!(decode_executable_occurrence_v1(&bytes[..bytes.len() - 1]).is_err());
+        if tag == 7 {
+            let mut malformed = bytes;
+            malformed[13] = 0xff;
+            assert!(decode_executable_occurrence_v1(&malformed).is_err());
+        }
+    }
+    let short = ExecutableOccurrenceV1 {
+        entry: 7,
+        arguments: vec![ExecutableValueV1::text("x").unwrap()],
+    };
+    let mut noncanonical = encode_executable_occurrence_v1(&short).unwrap();
+    noncanonical.splice(8..11, [7, 1, 0, 0, 0]);
+    assert_eq!(
+        decode_executable_occurrence_v1(&noncanonical),
+        Err(ExecutableErrorV1::MalformedProgram)
     );
 }
 

@@ -33,4 +33,4 @@ pub use identity::*;
 pub use nix_flake::*;
 pub use process::*;
 pub use provenance::*;
-pub use term::{Atom, EqualityContract, Term, TermError, TermScope, Triple};
+pub use term::{Atom, EqualityContract, MAX_ATOM_FIELD_BYTES, Term, TermError, TermScope, Triple};

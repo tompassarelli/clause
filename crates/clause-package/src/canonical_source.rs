@@ -34,7 +34,7 @@ pub use declared_frontend::{CanonicalDeclaredFrontendV1, DECLARED_FOCUSED_FRONTE
 const SOURCE_ARTIFACT_DOMAIN: &str = "clause/source-artifact/v1";
 const SOURCE_LOCAL_ALLOCATION_DOMAIN: &str = "clause/source-local-allocation/v1";
 const RESERVED_LOCAL_ID: u32 = 0;
-const MAX_CANONICAL_TEXT_BYTES: usize = u16::MAX as usize;
+const MAX_CANONICAL_TEXT_BYTES: usize = crate::MAX_ATOM_FIELD_BYTES;
 const MEMBERSHIP_ROLE: &[u8] = b"member of";
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

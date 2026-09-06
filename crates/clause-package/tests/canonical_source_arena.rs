@@ -543,6 +543,17 @@ fn one_referent_retains_explicit_semantic_applications() {
 }
 
 #[test]
+fn long_text_literal_preserves_exact_utf8_in_source_atoms() {
+    let value = "旅 🚀".repeat(57_600);
+    assert_eq!(value.len(), 450 * 1024);
+    let source = EXPLICIT_APPLICATIONS.replace("\"hello\"", &format!("\"{value}\""));
+    let compiled = compile_source(&source, 42).unwrap();
+    let greeting = compiled.applications.iter()
+        .find(|application| application.role == b"greeting").unwrap();
+    assert_eq!(greeting.object, CanonicalScalarValueV1::Text(value));
+}
+
+#[test]
 fn repeated_explicit_referent_declaration_remains_rejected() {
     let error = compile_source("iron-door\niron-door\n", 41)
         .expect_err("two explicit declarations still compete for one designation");

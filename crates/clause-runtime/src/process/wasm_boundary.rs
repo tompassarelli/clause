@@ -939,6 +939,15 @@ impl<'a> Decoder<'a> {
                     let length = usize::from(self.u16()?);
                     self.take(length)?;
                 }
+                7 => {
+                    let length = self.u32()? as usize;
+                    if length <= usize::from(u16::MAX)
+                        || length > clause_package::MAX_ATOM_FIELD_BYTES
+                    {
+                        return Err(WasmProcessStatusV1::MalformedRequest);
+                    }
+                    self.take(length)?;
+                }
                 _ => return Err(WasmProcessStatusV1::MalformedRequest),
             }
         }

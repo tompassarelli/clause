@@ -176,3 +176,33 @@ fn checkpoint_rejects_pending_corrupt_and_mismatched_source_without_reset() {
         w.project_current_world().unwrap()
     );
 }
+
+#[test]
+fn long_text_world_preserves_exact_bytes_and_identities_after_reopen() {
+    let title = format!("{}🚀", "x".repeat(65_532));
+    let objective = "旅 🚀\n".repeat(51_200);
+    assert_eq!(objective.len(), 450 * 1024);
+    let mut w = ResidentSourceWorkbenchV1::open_continuous(SOURCE).unwrap();
+    let before = run(&mut w, b"create-goal", &[text(&title), text(&objective)]);
+    let first = known(&before)[0].clone();
+    assert_eq!(table(&before, b"goal-title").rows()[&first], [text(&title)].into());
+    assert_eq!(table(&before, b"goal-objective").rows()[&first], [text(&objective)].into());
+    let bytes = w.checkpoint_admitted().unwrap();
+    let generation = w.generation().clone();
+    drop(w);
+    let mut reopened = ResidentSourceWorkbenchV1::reopen(SOURCE, &bytes).unwrap();
+    assert_eq!(reopened.generation(), &generation);
+    assert_eq!(reopened.project_current_world().unwrap(), before);
+    assert_eq!(reopened.checkpoint_admitted().unwrap(), bytes);
+    let after = run(&mut reopened, b"redirect-goal", &[
+        V::Referent(first.clone()), text(&format!("{objective}continued")),
+    ]);
+    assert_eq!(known(&after), vec![first.clone()]);
+    assert_eq!(table(&after, b"prior-goal-objective").rows()[&first], [text(&objective)].into());
+    assert_eq!(table(&after, b"goal-objective").rows()[&first], [text(&format!("{objective}continued"))].into());
+    let next = reopened.checkpoint_admitted().unwrap();
+    drop(reopened);
+    let reopened = ResidentSourceWorkbenchV1::reopen(SOURCE, &next).unwrap();
+    assert_eq!(reopened.project_current_world().unwrap(), after);
+    assert_eq!(reopened.checkpoint_admitted().unwrap(), next);
+}

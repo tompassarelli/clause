@@ -23,7 +23,7 @@ const PROJECTED_RELATION_TABLE_KIND: &[u8] = b"clause/process-projected-relation
 const PROJECTED_SET_KIND: &[u8] = b"clause/process-projected-set-v1";
 const PROJECTED_SET_END_KIND: &[u8] = b"clause/process-projected-set-end-v1";
 const MAX_EXECUTABLE_SYMBOL_BYTES: usize = 64;
-const MAX_EXECUTABLE_TEXT_BYTES: usize = u16::MAX as usize;
+const MAX_EXECUTABLE_TEXT_BYTES: usize = MAX_ATOM_FIELD_BYTES;
 const MAX_PROGRAM_ITEMS: usize = 65_536;
 const MAX_EXPRESSION_DEPTH: usize = 64;
 const MAX_INPUT_CODE_BYTES: usize = 64;
@@ -7186,8 +7186,19 @@ pub(super) fn encode_value(
             bytes.extend_from_slice(value.as_bytes());
         }
         ExecutableValueV1::Text(value) => {
-            bytes.push(4);
-            encode_count(bytes, value.as_str().len())?;
+            let length = value.as_str().len();
+            // Preserve the exact encoding of previously admitted Text values.
+            if length <= usize::from(u16::MAX) {
+                bytes.push(4);
+                encode_count(bytes, length)?;
+            } else {
+                bytes.push(7);
+                bytes.extend_from_slice(
+                    &u32::try_from(length)
+                        .map_err(|_| ExecutableErrorV1::ResourceLimit)?
+                        .to_le_bytes(),
+                );
+            }
             bytes.extend_from_slice(value.as_str().as_bytes());
         }
         ExecutableValueV1::Referent(value) => {
@@ -7479,8 +7490,16 @@ impl<'a> Decoder<'a> {
                 }
                 Ok(ExecutableValueV1::Set(set))
             }
-            4 => {
-                let length = self.count()?;
+            encoding @ (4 | 7) => {
+                let length = if encoding == 4 {
+                    self.count()?
+                } else {
+                    let length = self.u32()? as usize;
+                    if length <= usize::from(u16::MAX) {
+                        return Err(ExecutableErrorV1::MalformedProgram);
+                    }
+                    length
+                };
                 let value = std::str::from_utf8(self.take(length)?)
                     .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
                 ExecutableValueV1::text(value)

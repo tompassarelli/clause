@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use crate::{ClauseSemanticsId, UniverseId};
 
-const MAX_ATOM_FIELD_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum byte length of a canonical Atom kind or payload.
+pub const MAX_ATOM_FIELD_BYTES: usize = 16 * 1024 * 1024;
 pub(crate) const MAX_TERM_DEPTH: usize = 256;
 // Every canonical Term node contributes at least its one-octet tag, so a Term
 // within the canonical byte ceiling cannot contain more nodes than this.
