@@ -28,7 +28,7 @@ const EVENT_HEADER_BYTES: usize = 4 + 4 + 4 + 8 + 1;
 const ALLOCATION_EPOCH_BYTES_V1: usize = 304;
 
 pub const WASM_SESSION_COMMAND_LIMIT_V1: usize = 1024 * 1024;
-pub const WASM_SESSION_EVENT_LIMIT_V1: usize = WASM_SESSION_COMMAND_LIMIT_V1;
+pub const WASM_SESSION_EVENT_LIMIT_V1: usize = WASM_PROCESS_RESPONSE_LIMIT_V1;
 const WASM_SESSION_EVENT_FIELD_LIMIT_V1: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2016,12 +2016,25 @@ mod tests {
         let bytes = encode_wasm_session_event_v1(&event);
         assert!(bytes.len() > 64 * 1024);
         assert!(bytes.len() <= WASM_SESSION_EVENT_LIMIT_V1);
-        assert_eq!(decode_wasm_session_event_v1(&bytes).unwrap(), event);
+        let mut boundary = WasmPersistentSessionBoundaryV1::default();
+        boundary.install_event(event.clone()).unwrap();
+        assert_eq!(boundary.event(), bytes);
+        assert_eq!(decode_wasm_session_event_v1(boundary.event()).unwrap(), event);
     }
 
     #[test]
     fn session_event_aggregate_limit_plus_one_rejects() {
-        let bytes = vec![0; WASM_SESSION_EVENT_LIMIT_V1 + 1];
+        let event = WasmSessionEventV1 {
+            handle: WasmSessionHandleV1 { slot: 0, generation: 1 },
+            accepted_sequence: 1,
+            kind: WasmSessionEventKindV1::CandidateRejected {
+                diagnostic: vec![b'x'; WASM_SESSION_EVENT_LIMIT_V1 + 1 - EVENT_HEADER_BYTES - 4],
+            },
+        };
+        let bytes = encode_wasm_session_event_v1(&event);
+        assert_eq!(bytes.len(), WASM_SESSION_EVENT_LIMIT_V1 + 1);
+        let mut boundary = WasmPersistentSessionBoundaryV1::default();
+        assert_eq!(boundary.install_event(event), Err(WasmProcessStatusV1::ResponseOutOfBounds));
         assert_eq!(
             decode_wasm_session_event_v1(&bytes),
             Err(WasmProcessStatusV1::ResponseOutOfBounds)
