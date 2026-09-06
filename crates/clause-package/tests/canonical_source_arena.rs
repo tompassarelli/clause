@@ -959,6 +959,32 @@ on targeted-hit ?enemy
 }
 
 #[test]
+fn structured_handler_effect_round_trips_through_declared_reader_and_printer() {
+    let source = br#"F64
+Player
+Vec3:
+  x: F64
+  y: F64
+  z: F64
+position:
+  ?player shape Player
+  ?position shape Vec3
+  ?player:
+    position: ?position
+mode position given player yields position: one
+on reset ?player
+  when
+    ?player position Vec3 { x: 1.0, y: 2.0, z: 3.0 }
+  include
+    ?player position Vec3 { x: 4.0, y: 5.0, z: 6.0 }
+"#;
+    let cst = read_canonical_source_v1(source).expect("structured handler reads");
+    let canonical = print_canonical_source_v1(&cst).expect("declared printer emits structured effect");
+    let reparsed = read_canonical_source_v1(&canonical).expect("canonical structured effect rereads");
+    assert_eq!(print_canonical_source_v1(&reparsed).unwrap(), canonical);
+}
+
+#[test]
 fn transitive_referent_join_rejects_wrong_type_missing_cardinality_and_ambiguity() {
     let wrong_type = TRANSITIVE_REFERENT_WORLD.replacen(
         "  ?policy shape Policy",
