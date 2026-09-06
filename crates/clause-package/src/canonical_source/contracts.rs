@@ -15,8 +15,13 @@ pub(super) fn read(
             continue;
         }
         let origin = line_origin(artifact, block[0]);
-        let Some(focus) = parse_subject_focus(artifact, block, origin, frontend)? else { continue };
-        for edge in focus.edges {
+        let edges = if let Some(edges) = patterns::edge_focus(&logical_source_lines(artifact, block)?
+            .into_iter().filter(|line| !line.text.is_empty()).collect::<Vec<_>>(), frontend)? {
+            edges
+        } else if let Some(focus) = parse_subject_focus(artifact, block, origin, frontend)? {
+            focus.edges
+        } else { continue };
+        for edge in edges {
             let application = declared_application(&edge)?;
             if !matches!(application.role.as_slice(), b"domain" | b"range" | b"cardinality") { continue; }
             subjects.entry(application.subject.clone()).or_default().push(application);

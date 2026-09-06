@@ -2,10 +2,10 @@ Role
 Term
 
 focused-edge:
-  ?example:
-    relation: Role
-    object: Term
-    ?relation:
-      : ?object
+  ?relation:
+    shape: Role
+    : ?object
+  ?object:
+    shape: Term
 
 mode focused-edge given relation yields object: one

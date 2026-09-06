@@ -2,10 +2,9 @@ F64
 Meter
 
 magnitude:
-  ?example:
-    input: F64
-    output: F64
-    | ?input | = ?output
+  (shape: F64):
+    ?input ?output
+  | ?input | = ?output
 
 mode magnitude given input yields output: maybe
 
@@ -25,11 +24,10 @@ derive negative-magnitude
 derive nonnegative-magnitude
 
 reading:
-  ?example:
-    meter: Meter
-    reading: F64
-    ?meter:
-      reading: ?reading
+  ?meter shape Meter
+  ?reading shape F64
+  ?meter:
+    reading: ?reading
 
 mode reading given meter yields reading: one
 

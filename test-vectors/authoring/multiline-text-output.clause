@@ -2,11 +2,10 @@ Document
 Text
 
 output:
-  ?example:
-    document: Document
-    output: Text
-    ?document:
-      output: ?output
+  ?document shape Document
+  ?output shape Text
+  ?document:
+    output: ?output
 
 mode output given document yields output: one
 

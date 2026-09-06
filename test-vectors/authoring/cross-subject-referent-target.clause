@@ -3,19 +3,17 @@ Controller
 Target
 
 chosen-target:
-  ?example:
-    controller: Controller
-    chosen-target: Target
-    ?controller:
-      chosen target: ?chosen-target
+  ?controller shape Controller
+  ?chosen-target shape Target
+  ?controller:
+    chosen target: ?chosen-target
 
 mode chosen-target given controller yields chosen-target: one
 hostile:
-  ?example:
-    target: Target
-    hostile: Bool
-    ?target:
-      hostile: ?hostile
+  ?target shape Target
+  ?hostile shape Bool
+  ?target:
+    hostile: ?hostile
 
 mode hostile given target yields hostile: one
 

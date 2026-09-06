@@ -3,20 +3,18 @@ Item
 F64
 
 known:
-  ?example:
-    root: Root
-    known: Item
-    ?root:
-      known: ?known
+  ?root shape Root
+  ?known shape Item
+  ?root:
+    known: ?known
 
 mode known given root yields known: many
 
 count:
-  ?example:
-    root: Root
-    count: F64
-    ?root:
-      count: ?count
+  ?root shape Root
+  ?count shape F64
+  ?root:
+    count: ?count
 
 mode count given root yields count: one
 

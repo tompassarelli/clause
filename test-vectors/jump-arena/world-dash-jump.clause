@@ -4,126 +4,110 @@ Player
 Arena
 
 Vec3:
-  ?example:
-    x: F64
-    y: F64
-    z: F64
+  x: F64
+  y: F64
+  z: F64
 
 clamped-between:
-  ?example:
-    value: F64
-    lower: F64
-    upper: F64
-    result: F64
-    ?value clamped between ?lower and ?upper as ?result
+  (shape: F64):
+    ?value ?lower ?upper ?result
+  ?value clamped between ?lower and ?upper as ?result
 
 mode clamped-between given value lower upper yields result: maybe
 
 position:
-  ?example:
-    player: Player
-    position: Vec3
-    ?player:
-      position: ?position
+  ?player shape Player
+  ?position shape Vec3
+  ?player:
+    position: ?position
 
 mode position given player yields position: one
 
 velocity:
-  ?example:
-    player: Player
-    velocity: Vec3
-    ?player:
-      velocity: ?velocity
+  ?player shape Player
+  ?velocity shape Vec3
+  ?player:
+    velocity: ?velocity
 
 mode velocity given player yields velocity: one
 
 grounded:
-  ?example:
-    player: Player
-    grounded: Bool
-    ?player:
-      grounded: ?grounded
+  ?player shape Player
+  ?grounded shape Bool
+  ?player:
+    grounded: ?grounded
 
 mode grounded given player yields grounded: one
 
 horizontal-intent:
-  ?example:
-    player: Player
-    horizontal-intent: Vec3
-    ?player:
-      horizontal intent: ?horizontal-intent
+  ?player shape Player
+  ?horizontal-intent shape Vec3
+  ?player:
+    horizontal intent: ?horizontal-intent
 
 mode horizontal-intent given player yields horizontal-intent: one
 
 gravity:
-  ?example:
-    arena: Arena
-    gravity: F64
-    ?arena:
-      gravity: ?gravity
+  ?arena shape Arena
+  ?gravity shape F64
+  ?arena:
+    gravity: ?gravity
 
 mode gravity given arena yields gravity: one
 
 jump-speed:
-  ?example:
-    arena: Arena
-    jump-speed: F64
-    ?arena:
-      jump speed: ?jump-speed
+  ?arena shape Arena
+  ?jump-speed shape F64
+  ?arena:
+    jump speed: ?jump-speed
 
 mode jump-speed given arena yields jump-speed: one
 
 move-speed:
-  ?example:
-    arena: Arena
-    move-speed: F64
-    ?arena:
-      move speed: ?move-speed
+  ?arena shape Arena
+  ?move-speed shape F64
+  ?arena:
+    move speed: ?move-speed
 
 mode move-speed given arena yields move-speed: one
 
 floor-height:
-  ?example:
-    arena: Arena
-    floor-height: F64
-    ?arena:
-      floor height: ?floor-height
+  ?arena shape Arena
+  ?floor-height shape F64
+  ?arena:
+    floor height: ?floor-height
 
 mode floor-height given arena yields floor-height: one
 
 min-x:
-  ?example:
-    arena: Arena
-    min-x: F64
-    ?arena:
-      minimum x: ?min-x
+  ?arena shape Arena
+  ?min-x shape F64
+  ?arena:
+    minimum x: ?min-x
 
 mode min-x given arena yields min-x: one
 
 max-x:
-  ?example:
-    arena: Arena
-    max-x: F64
-    ?arena:
-      maximum x: ?max-x
+  ?arena shape Arena
+  ?max-x shape F64
+  ?arena:
+    maximum x: ?max-x
 
 mode max-x given arena yields max-x: one
 
 min-z:
-  ?example:
-    arena: Arena
-    min-z: F64
-    ?arena:
-      minimum z: ?min-z
+  ?arena shape Arena
+  ?min-z shape F64
+  ?arena:
+    minimum z: ?min-z
 
 mode min-z given arena yields min-z: one
 
 max-z:
-  ?example:
-    arena: Arena
-    max-z: F64
-    ?arena:
-      maximum z: ?max-z
+  ?arena shape Arena
+  ?max-z shape F64
+  ?arena:
+    maximum z: ?max-z
 
 mode max-z given arena yields max-z: one
 

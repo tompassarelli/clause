@@ -34,24 +34,21 @@ fn wide_source_projection_fixture() -> String {
         "Meter\n",
         "\n",
         "Vec3:\n",
-        "  ?example:\n",
-        "    x: F64\n",
-        "    y: F64\n",
-        "    z: F64\n",
+        "  x: F64\n",
+        "  y: F64\n",
+        "  z: F64\n",
         "\n",
         "reading-with-a-source-owned-designation-that-makes-the-canonical-projection-wide-enough-for-real-programs:\n",
-        "  ?example:\n",
-        "    meter: Meter\n",
-        "    reading: Vec3\n",
-        "    ?meter:\n",
-        "      reading: ?reading\n",
+        "  ?meter shape Meter\n",
+        "  ?reading shape Vec3\n",
+        "  ?meter:\n",
+        "    reading: ?reading\n",
         "mode reading-with-a-source-owned-designation-that-makes-the-canonical-projection-wide-enough-for-real-programs given meter yields reading: one\n",
         "charge-with-a-source-owned-designation-that-makes-the-canonical-projection-wide-enough-for-real-programs:\n",
-        "  ?example:\n",
-        "    meter: Meter\n",
-        "    charge: F64\n",
-        "    ?meter:\n",
-        "      charge: ?charge\n",
+        "  ?meter shape Meter\n",
+        "  ?charge shape F64\n",
+        "  ?meter:\n",
+        "    charge: ?charge\n",
         "mode charge-with-a-source-owned-designation-that-makes-the-canonical-projection-wide-enough-for-real-programs given meter yields charge: one\n",
     ));
     for index in 0..90 {
@@ -809,34 +806,30 @@ policy-a
 policy-b
 
 PolicyParameters:
-  ?example:
-    adjustment: F64
-    floor: F64
+  adjustment: F64
+  floor: F64
 
 balance:
-  ?example:
-    root: Root
-    balance: F64
-    ?root:
-      balance: ?balance
+  ?root shape Root
+  ?balance shape F64
+  ?root:
+    balance: ?balance
 
 mode balance given root yields balance: one
 
 selected-policy:
-  ?example:
-    root: Root
-    policy: Policy
-    ?root:
-      selected policy: ?policy
+  ?root shape Root
+  ?policy shape Policy
+  ?root:
+    selected policy: ?policy
 
 mode selected-policy given root yields policy: one
 
 policy-parameters:
-  ?example:
-    policy: Policy
-    policy-parameters: PolicyParameters
-    ?policy:
-      policy parameters: ?policy-parameters
+  ?policy shape Policy
+  ?policy-parameters shape PolicyParameters
+  ?policy:
+    policy parameters: ?policy-parameters
 
 mode policy-parameters given policy yields policy-parameters: one
 
@@ -873,39 +866,35 @@ on apply-selected-policy ?root
 "#;
 const SOURCE_ONLY_AUTOMATIC_EXTENSION: &[u8] = br#"
 pulse-count:
-  ?example:
-    objective: Objective
-    pulse-count: F64
-    ?objective:
-      pulse count: ?pulse-count
+  ?objective shape Objective
+  ?pulse-count shape F64
+  ?objective:
+    pulse count: ?pulse-count
 
 mode pulse-count given objective yields pulse-count: one
 
 pulse-radius:
-  ?example:
-    objective: Objective
-    pulse-radius: F64
-    ?objective:
-      pulse radius: ?pulse-radius
+  ?objective shape Objective
+  ?pulse-radius shape F64
+  ?objective:
+    pulse radius: ?pulse-radius
 
 mode pulse-radius given objective yields pulse-radius: one
 
 pulse-echo:
-  ?example:
-    player: Player
-    pulse-echo: F64
-    ?player:
-      pulse echo: ?pulse-echo
+  ?player shape Player
+  ?pulse-echo shape F64
+  ?player:
+    pulse echo: ?pulse-echo
 
 mode pulse-echo given player yields pulse-echo: one
 
 pulse-contact:
-  ?example:
-    objective: Objective
-    player: Player
-    pulse-contact: Bool
-    ?objective:
-      has pulse contact with ?player as: ?pulse-contact
+  ?objective shape Objective
+  ?player shape Player
+  ?pulse-contact shape Bool
+  ?objective:
+    has pulse contact with ?player as: ?pulse-contact
 
 mode pulse-contact given objective player yields pulse-contact: one
 
@@ -955,11 +944,10 @@ on planar-burst ?player
 "#;
 const SOURCE_SCALAR_CAMERA_EXTENSION: &[u8] = br#"
 camera-heading:
-  ?example:
-    player: Player
-    camera-heading: F64
-    ?player:
-      camera heading: ?camera-heading
+  ?player shape Player
+  ?camera-heading shape F64
+  ?player:
+    camera heading: ?camera-heading
 
 mode camera-heading given player yields camera-heading: one
 
@@ -980,38 +968,34 @@ Actor
 Move
 
 vitality:
-  ?example:
-    actor: Actor
-    vitality: F64
-    ?actor:
-      vitality: ?vitality
+  ?actor shape Actor
+  ?vitality shape F64
+  ?actor:
+    vitality: ?vitality
 
 mode vitality given actor yields vitality: one
 
 destabilization:
-  ?example:
-    actor: Actor
-    destabilization: F64
-    ?actor:
-      destabilization: ?destabilization
+  ?actor shape Actor
+  ?destabilization shape F64
+  ?actor:
+    destabilization: ?destabilization
 
 mode destabilization given actor yields destabilization: one
 
 damage:
-  ?example:
-    move: Move
-    damage: F64
-    ?move:
-      damage: ?damage
+  ?move shape Move
+  ?damage shape F64
+  ?move:
+    damage: ?damage
 
 mode damage given move yields damage: one
 
 move-destabilization:
-  ?example:
-    move: Move
-    move-destabilization: F64
-    ?move:
-      move destabilization: ?move-destabilization
+  ?move shape Move
+  ?move-destabilization shape F64
+  ?move:
+    move destabilization: ?move-destabilization
 
 mode move-destabilization given move yields move-destabilization: one
 
@@ -1064,93 +1048,81 @@ Move
 CombatRules
 
 clamped-between:
-  ?example:
-    value: F64
-    lower: F64
-    upper: F64
-    result: F64
-    ?value clamped between ?lower and ?upper as ?result
+  (shape: F64):
+    ?value ?lower ?upper ?result
+  ?value clamped between ?lower and ?upper as ?result
 
 mode clamped-between given value lower upper yields result: maybe
 
 vitality:
-  ?example:
-    actor: Actor
-    vitality: F64
-    ?actor:
-      vitality: ?vitality
+  ?actor shape Actor
+  ?vitality shape F64
+  ?actor:
+    vitality: ?vitality
 
 mode vitality given actor yields vitality: one
 
 destabilization:
-  ?example:
-    actor: Actor
-    destabilization: F64
-    ?actor:
-      destabilization: ?destabilization
+  ?actor shape Actor
+  ?destabilization shape F64
+  ?actor:
+    destabilization: ?destabilization
 
 mode destabilization given actor yields destabilization: one
 
 mass:
-  ?example:
-    actor: Actor
-    mass: F64
-    ?actor:
-      mass: ?mass
+  ?actor shape Actor
+  ?mass shape F64
+  ?actor:
+    mass: ?mass
 
 mode mass given actor yields mass: one
 
 launch-velocity:
-  ?example:
-    actor: Actor
-    launch-velocity: F64
-    ?actor:
-      launch velocity: ?launch-velocity
+  ?actor shape Actor
+  ?launch-velocity shape F64
+  ?actor:
+    launch velocity: ?launch-velocity
 
 mode launch-velocity given actor yields launch-velocity: one
 
 damage:
-  ?example:
-    move: Move
-    damage: F64
-    ?move:
-      damage: ?damage
+  ?move shape Move
+  ?damage shape F64
+  ?move:
+    damage: ?damage
 
 mode damage given move yields damage: one
 
 destabilization-gain:
-  ?example:
-    move: Move
-    destabilization-gain: F64
-    ?move:
-      destabilization gain: ?destabilization-gain
+  ?move shape Move
+  ?destabilization-gain shape F64
+  ?move:
+    destabilization gain: ?destabilization-gain
 
 mode destabilization-gain given move yields destabilization-gain: one
 
 base-impulse:
-  ?example:
-    move: Move
-    base-impulse: F64
-    ?move:
-      base impulse: ?base-impulse
+  ?move shape Move
+  ?base-impulse shape F64
+  ?move:
+    base impulse: ?base-impulse
 
 mode base-impulse given move yields base-impulse: one
 
 launch-growth:
-  ?example:
-    move: Move
-    launch-growth: F64
-    ?move:
-      launch growth: ?launch-growth
+  ?move shape Move
+  ?launch-growth shape F64
+  ?move:
+    launch growth: ?launch-growth
 
 mode launch-growth given move yields launch-growth: one
 
 destabilization-threshold:
-  ?example:
-    rules: CombatRules
-    destabilization-threshold: F64
-    ?rules:
-      destabilization threshold: ?destabilization-threshold
+  ?rules shape CombatRules
+  ?destabilization-threshold shape F64
+  ?rules:
+    destabilization threshold: ?destabilization-threshold
 
 mode destabilization-threshold given rules yields destabilization-threshold: one
 
@@ -1232,35 +1204,31 @@ ready
 committed
 
 Vec3:
-  ?example:
-    x: F64
-    y: F64
-    z: F64
+  x: F64
+  y: F64
+  z: F64
 
 phase:
-  ?example:
-    actor: Actor
-    phase: Phase
-    ?actor:
-      phase: ?phase
+  ?actor shape Actor
+  ?phase shape Phase
+  ?actor:
+    phase: ?phase
 
 mode phase given actor yields phase: one
 
 position:
-  ?example:
-    actor: Actor
-    position: Vec3
-    ?actor:
-      position: ?position
+  ?actor shape Actor
+  ?position shape Vec3
+  ?actor:
+    position: ?position
 
 mode position given actor yields position: one
 
 anchor:
-  ?example:
-    actor: Actor
-    position: Vec3
-    ?actor:
-      anchor: ?position
+  ?actor shape Actor
+  ?position shape Vec3
+  ?actor:
+    anchor: ?position
 
 mode anchor given actor yields position: maybe
 
@@ -1315,20 +1283,18 @@ alpha
 beta
 
 phase:
-  ?example:
-    root: Root
-    phase: Item
-    ?root:
-      phase: ?phase
+  ?root shape Root
+  ?phase shape Item
+  ?root:
+    phase: ?phase
 
 mode phase given root yields phase: one
 
 known:
-  ?example:
-    root: Root
-    known: Item
-    ?root:
-      known: ?known
+  ?root shape Root
+  ?known shape Item
+  ?root:
+    known: ?known
 
 mode known given root yields known: many
 
@@ -2488,9 +2454,6 @@ fn declared_scalar_laws_compose_without_formula_or_binder_spelling_dispatch() {
         .replace("?lower", "?low")
         .replace("?upper", "?high")
         .replace("?value", "?sample")
-        .replace("    lower:", "    low:")
-        .replace("    upper:", "    high:")
-        .replace("    value:", "    sample:")
         .replace("given value lower upper", "given sample low high");
     let mut workbench = ResidentSourceWorkbenchV1::open(renamed.as_bytes()).unwrap();
     let hit = workbench.handler_occurrence(b"blade-two-hit", &[]).unwrap();
@@ -2507,10 +2470,9 @@ fn guarded_law_results_are_not_evaluated_outside_their_domain() {
     let source = br#"F64
 Meter
 reciprocal:
-  ?example:
-    input: F64
-    output: F64
-    reciprocal ?input is ?output
+  (shape: F64):
+    ?input ?output
+  reciprocal ?input is ?output
 
 mode reciprocal given input yields output: maybe
 law positive-reciprocal
@@ -2520,11 +2482,10 @@ law positive-reciprocal
     reciprocal ?x is (1.0 / ?x)
 derive positive-reciprocal
 reading:
-  ?example:
-    meter: Meter
-    reading: F64
-    ?meter:
-      reading: ?reading
+  ?meter shape Meter
+  ?reading shape F64
+  ?meter:
+    reading: ?reading
 
 mode reading given meter yields reading: one
 meter-1 reading 0.0
@@ -2566,8 +2527,8 @@ fn scalar_laws_reject_unbound_results_and_unproved_unique_outputs() {
         source.replace("(0.0 - ?x)", "?unbound"),
         source.replace("?x >= 0.0", "?x <= 0.0"),
         source.replace(
-            "    output: F64",
-            "    output: Text",
+            "    ?input ?output",
+            "    ?input\n  ?output shape Text",
         ),
     ] {
         assert!(ResidentSourceWorkbenchV1::open(invalid.as_bytes()).is_err());

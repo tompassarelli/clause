@@ -104,6 +104,7 @@ fn sum_query(source: &GeneralHandlerCst, sum: &GeneralSumCst) -> Result<GeneralH
         derivation: false,
         origin: sum.origin, producer: source.producer.clone(),
         designation: source.designation.clone(), subject: Vec::new(), premises: Vec::new(),
+        binding_constraints: vec![],
         arguments, creations: vec![], parameter_sources: sum.parameter_sources.clone(),
         membership_sources: vec![], required_sources: vec![], selectors: sum.selectors.clone(),
         scalar_bindings: sum.scalar_bindings.clone(), sums: vec![], predicates: sum.predicates.clone(),
@@ -760,6 +761,7 @@ fn check_domains_with_inputs(
             check_expression(&input.value, domain, &mut domains, sum.origin)?;
         }
     }
+    check_binding_constraints(&source.binding_constraints, &domains)?;
     Ok(domains)
 }
 

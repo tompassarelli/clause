@@ -107,10 +107,22 @@ fn one_binding_contract_checks_runs_prints_and_edits_structured_state() {
 #[test]
 fn declared_focus_changes_contracts_patterns_and_printing_together() {
     let declared = std::str::from_utf8(DECLARED_FOCUSED_FRONTEND_SOURCE_V1).unwrap()
-        .replace("      : ?object", "      means: ?object");
-    let source = SOURCE.lines().map(|line| {
+        .replace("    : ?object", "    means: ?object");
+    let grouped = SOURCE.replace("first charge 9.0", "(charge: 9.0):\n  first first")
+        .replace("?amount ?minimum ?maximum ?result", "?amount ?amount ?minimum ?maximum ?result");
+    let native = read_canonical_source_v1(grouped.as_bytes()).unwrap();
+    let equal = native.applications().iter().filter(|a| a.subject == b"first" && a.role == b"charge").collect::<Vec<_>>();
+    assert_eq!(equal.len(), 2);
+    assert_eq!(equal[0].object, equal[1].object);
+    assert_ne!(equal[0].origin, equal[1].origin);
+    for emission in equal {
+        assert_eq!(&grouped.as_bytes()[emission.origin.start as usize..emission.origin.end as usize], b"first");
+    }
+    assert_eq!(native.declarations().find(|d| d.designation == b"limited").unwrap().bindings.len(), 4);
+    assert!(read_canonical_source_v1(b"charge: 9.0\n  first\n").is_err());
+    let source = grouped.lines().map(|line| {
         if line.starts_with(' ') { line.replace(": ", " means ") } else { line.to_owned() }
-    }).collect::<Vec<_>>().join("\n") + "\n";
+    }).collect::<Vec<_>>().join("\n").replace("(charge: 9.0):", "(charge means 9.0):") + "\n";
     assert!(ResidentSourceWorkbenchV1::open(source.as_bytes()).is_err());
     let frontend = CanonicalDeclaredFrontendV1::read(declared.as_bytes()).unwrap();
     let cst = read_canonical_source_with_declared_frontend_v1(source.as_bytes(), &frontend).unwrap();
@@ -132,12 +144,16 @@ fn declared_focus_changes_contracts_patterns_and_printing_together() {
 #[test]
 fn declaration_constraints_reject_missing_mistyped_and_duplicate_bindings() {
     for invalid in [
-        SOURCE.replace("    maximum: F64\n", ""),
-        SOURCE.replace("    maximum: F64", "    maximum: Bool"),
-        SOURCE.replace("    maximum: F64", "    maximum: F64\n    maximum: F64"),
-        SOURCE.replace("    y: F64", "    y: Bool"),
+        SOURCE.replace("?amount ?minimum ?maximum ?result", "?amount ?minimum ?result"),
+        SOURCE.replace("?amount ?minimum ?maximum ?result", "?amount ?minimum ?result\n  ?maximum:\n    shape: Bool"),
+        SOURCE.replace("?amount ?minimum ?maximum ?result", "?amount ?minimum ?maximum ?result\n  ?maximum:\n    shape: Bool"),
+        SOURCE.replace("and ?maximum as: ?result", "and ?minimum as: ?result"),
+        SOURCE.replace("  y: F64", "  y: Bool"),
+        SOURCE.replace("  y: F64", "  y: F64\n  y: F64"),
         SOURCE.replace("y: 3.0", "y: true"),
         SOURCE.replace("given amount minimum maximum", "given amount minimum"),
+        SOURCE.replace("?charge ?limited", "?charge ?position"),
+        SOURCE.replace("(shape: F64):", "shape: F64"),
     ] {
         assert_ne!(invalid, SOURCE);
         assert!(ResidentSourceWorkbenchV1::open(invalid.as_bytes()).is_err());

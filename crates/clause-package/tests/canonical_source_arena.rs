@@ -146,53 +146,47 @@ alive
 telegraph
 
 Vec3:
-  ?example:
-    x: F64
-    y: F64
-    z: F64
+  x: F64
+  y: F64
+  z: F64
 
 score:
-  ?example:
-    player: Player
-    score: F64
-    ?player:
-      score: ?score
+  ?player shape Player
+  ?score shape F64
+  ?player:
+    score: ?score
 
 mode score given player yields score: one
 
 pressure-clock:
-  ?example:
-    enemy: Enemy
-    pressure-clock: F64
-    ?enemy:
-      pressure clock: ?pressure-clock
+  ?enemy shape Enemy
+  ?pressure-clock shape F64
+  ?enemy:
+    pressure clock: ?pressure-clock
 
 mode pressure-clock given enemy yields pressure-clock: one
 
 pressure-state:
-  ?example:
-    enemy: Enemy
-    pressure-state: CombatState
-    ?enemy:
-      pressure state: ?pressure-state
+  ?enemy shape Enemy
+  ?pressure-state shape CombatState
+  ?enemy:
+    pressure state: ?pressure-state
 
 mode pressure-state given enemy yields pressure-state: one
 
 grounded:
-  ?example:
-    player: Player
-    grounded: Bool
-    ?player:
-      grounded: ?grounded
+  ?player shape Player
+  ?grounded shape Bool
+  ?player:
+    grounded: ?grounded
 
 mode grounded given player yields grounded: one
 
 spawn-position:
-  ?example:
-    enemy: Enemy
-    spawn-position: Vec3
-    ?enemy:
-      spawn position: ?spawn-position
+  ?enemy shape Enemy
+  ?spawn-position shape Vec3
+  ?enemy:
+    spawn position: ?spawn-position
 
 mode spawn-position given enemy yields spawn-position: one
 
@@ -224,20 +218,18 @@ const GENERAL_HANDLER_ARGUMENT_WORLD: &str = r#"F64
 Player
 
 score:
-  ?example:
-    player: Player
-    score: F64
-    ?player:
-      score: ?score
+  ?player shape Player
+  ?score shape F64
+  ?player:
+    score: ?score
 
 mode score given player yields score: one
 
 reserve:
-  ?example:
-    player: Player
-    reserve: F64
-    ?player:
-      reserve: ?reserve
+  ?player shape Player
+  ?reserve shape F64
+  ?player:
+    reserve: ?reserve
 
 mode reserve given player yields reserve: one
 
@@ -263,29 +255,26 @@ Command
 Text
 
 phase:
-  ?example:
-    root: Root
-    phase: Text
-    ?root:
-      phase: ?phase
+  ?root shape Root
+  ?phase shape Text
+  ?root:
+    phase: ?phase
 
 mode phase given root yields phase: one
 
 known-command:
-  ?example:
-    root: Root
-    known-command: Command
-    ?root:
-      known command: ?known-command
+  ?root shape Root
+  ?known-command shape Command
+  ?root:
+    known command: ?known-command
 
 mode known-command given root yields known-command: many
 
 command-description:
-  ?example:
-    command: Command
-    command-description: Text
-    ?command:
-      description: ?command-description
+  ?command shape Command
+  ?command-description shape Text
+  ?command:
+    description: ?command-description
 
 mode command-description given command yields command-description: maybe
 
@@ -312,29 +301,26 @@ Root
 Policy
 
 balance:
-  ?example:
-    root: Root
-    balance: F64
-    ?root:
-      balance: ?balance
+  ?root shape Root
+  ?balance shape F64
+  ?root:
+    balance: ?balance
 
 mode balance given root yields balance: one
 
 selected-policy:
-  ?example:
-    root: Root
-    policy: Policy
-    ?root:
-      selected policy: ?policy
+  ?root shape Root
+  ?policy shape Policy
+  ?root:
+    selected policy: ?policy
 
 mode selected-policy given root yields policy: one
 
 policy-adjustment:
-  ?example:
-    policy: Policy
-    policy-adjustment: F64
-    ?policy:
-      policy adjustment: ?policy-adjustment
+  ?policy shape Policy
+  ?policy-adjustment shape F64
+  ?policy:
+    policy adjustment: ?policy-adjustment
 
 mode policy-adjustment given policy yields policy-adjustment: one
 
@@ -366,62 +352,55 @@ ProjectileFaction
 Arena
 
 Vec3:
-  ?example:
-    x: F64
-    y: F64
-    z: F64
+  x: F64
+  y: F64
+  z: F64
 
 player-position:
-  ?example:
-    player: Player
-    player-position: Vec3
-    ?player:
-      player position: ?player-position
+  ?player shape Player
+  ?player-position shape Vec3
+  ?player:
+    player position: ?player-position
 
 mode player-position given player yields player-position: one
 
 projectile-position:
-  ?example:
-    projectile: Projectile
-    projectile-position: Vec3
-    ?projectile:
-      projectile position: ?projectile-position
+  ?projectile shape Projectile
+  ?projectile-position shape Vec3
+  ?projectile:
+    projectile position: ?projectile-position
 
 mode projectile-position given projectile yields projectile-position: one
 
 projectile-state:
-  ?example:
-    projectile: Projectile
-    projectile-state: ProjectileState
-    ?projectile:
-      projectile state: ?projectile-state
+  ?projectile shape Projectile
+  ?projectile-state shape ProjectileState
+  ?projectile:
+    projectile state: ?projectile-state
 
 mode projectile-state given projectile yields projectile-state: one
 
 projectile-faction:
-  ?example:
-    projectile: Projectile
-    projectile-faction: ProjectileFaction
-    ?projectile:
-      projectile faction: ?projectile-faction
+  ?projectile shape Projectile
+  ?projectile-faction shape ProjectileFaction
+  ?projectile:
+    projectile faction: ?projectile-faction
 
 mode projectile-faction given projectile yields projectile-faction: one
 
 contact-radius:
-  ?example:
-    arena: Arena
-    contact-radius: F64
-    ?arena:
-      contact radius: ?contact-radius
+  ?arena shape Arena
+  ?contact-radius shape F64
+  ?arena:
+    contact radius: ?contact-radius
 
 mode contact-radius given arena yields contact-radius: one
 
 hostile-contact:
-  ?example:
-    player: Player
-    hostile-contact: Bool
-    ?player:
-      hostile contact: ?hostile-contact
+  ?player shape Player
+  ?hostile-contact shape Bool
+  ?player:
+    hostile contact: ?hostile-contact
 
 mode hostile-contact given player yields hostile-contact: one
 
@@ -791,7 +770,7 @@ fn boolean_law_selector_rejects_wrong_domain_missing_value_and_non_singleton_sta
 fn boolean_law_selector_preserves_ambiguous_relation_rejection() {
     let ambiguous = MULTI_SUBJECT_BOOLEAN_LAW_WORLD.replacen(
         "contact-radius:\n",
-        "alternate-projectile-faction:\n  ?example:\n    projectile: Projectile\n    faction: ProjectileFaction\n    ?projectile:\n      projectile faction: ?faction\n\nmode alternate-projectile-faction given projectile yields faction: one\n\ncontact-radius:\n",
+        "alternate-projectile-faction:\n  ?projectile shape Projectile\n  ?faction shape ProjectileFaction\n  ?projectile:\n    projectile faction: ?faction\n\nmode alternate-projectile-faction given projectile yields faction: one\n\ncontact-radius:\n",
         1,
     );
     assert!(matches!(
@@ -853,45 +832,38 @@ Player
 Enemy
 
 Vec3:
-  ?example:
-    x: F64
-    y: F64
-    z: F64
+  x: F64
+  y: F64
+  z: F64
 
 clamped-between:
-  ?example:
-    value: F64
-    lower: F64
-    upper: F64
-    result: F64
-    ?value clamped between ?lower and ?upper as ?result
+  (shape: F64):
+    ?value ?lower ?upper ?result
+  ?value clamped between ?lower and ?upper as ?result
 
 mode clamped-between given value lower upper yields result: maybe
 
 combat-target:
-  ?example:
-    player: Player
-    enemy: Enemy
-    ?player:
-      combat target: ?enemy
+  ?player shape Player
+  ?enemy shape Enemy
+  ?player:
+    combat target: ?enemy
 
 mode combat-target given player yields enemy: one
 
 target-active:
-  ?example:
-    player: Player
-    target-active: Bool
-    ?player:
-      target active: ?target-active
+  ?player shape Player
+  ?target-active shape Bool
+  ?player:
+    target active: ?target-active
 
 mode target-active given player yields target-active: one
 
 vitals:
-  ?example:
-    enemy: Enemy
-    vitals: Vec3
-    ?enemy:
-      vitals: ?vitals
+  ?enemy shape Enemy
+  ?vitals shape Vec3
+  ?enemy:
+    vitals: ?vitals
 
 mode vitals given enemy yields vitals: one
 
@@ -989,8 +961,8 @@ on targeted-hit ?enemy
 #[test]
 fn transitive_referent_join_rejects_wrong_type_missing_cardinality_and_ambiguity() {
     let wrong_type = TRANSITIVE_REFERENT_WORLD.replacen(
-        "    policy: Policy",
-        "    policy: Root",
+        "  ?policy shape Policy",
+        "  ?policy shape Root",
         1,
     );
     assert!(matches!(
@@ -1069,11 +1041,10 @@ fn general_tick_handler_specializes_every_subject_and_receives_delta_time() {
 Unit
 
 clock:
-  ?example:
-    unit: Unit
-    clock: F64
-    ?unit:
-      clock: ?clock
+  ?unit shape Unit
+  ?clock shape F64
+  ?unit:
+    clock: ?clock
 
 mode clock given unit yields clock: one
 
@@ -1156,29 +1127,26 @@ fn source_keyboard_bindings_leave_unbound_actor_relative_scalar_handlers_on_fixe
         br#"
 
 recovery-clock:
-  ?example:
-    player: Player
-    recovery-clock: F64
-    ?player:
-      recovery clock: ?recovery-clock
+  ?player shape Player
+  ?recovery-clock shape F64
+  ?player:
+    recovery clock: ?recovery-clock
 
 mode recovery-clock given player yields recovery-clock: one
 
 recovery-rate:
-  ?example:
-    player: Player
-    recovery-rate: F64
-    ?player:
-      recovery rate: ?recovery-rate
+  ?player shape Player
+  ?recovery-rate shape F64
+  ?player:
+    recovery rate: ?recovery-rate
 
 mode recovery-rate given player yields recovery-rate: one
 
 heat:
-  ?example:
-    player: Player
-    heat: F64
-    ?player:
-      heat: ?heat
+  ?player shape Player
+  ?heat shape F64
+  ?player:
+    heat: ?heat
 
 mode heat given player yields heat: one
 
@@ -1247,7 +1215,7 @@ fn tick_rules_accept_typed_state_equality_guards() {
         .expect("canonical arena source is UTF-8")
         .replacen(
             "position:\n",
-            "reset-gate:\n  ?example:\n    arena: Arena\n    gate: Vec3\n    ?arena:\n      reset gate: ?gate\n\nmode reset-gate given arena yields gate: one\n\nposition:\n",
+            "reset-gate:\n  ?arena shape Arena\n  ?gate shape Vec3\n  ?arena:\n    reset gate: ?gate\n\nmode reset-gate given arena yields gate: one\n\nposition:\n",
             1,
         )
         .replacen(
@@ -1750,20 +1718,18 @@ fn duplicate_declared_readings_are_an_explicit_ambiguity() {
 Term
 
 first-edge:
-  ?example:
-    relation: Role
-    object: Term
-    ?relation:
-      : ?object
+  ?relation shape Role
+  ?object shape Term
+  ?relation:
+    : ?object
 
 mode first-edge given relation yields object: one
 
 second-edge:
-  ?example:
-    relation: Role
-    object: Term
-    ?relation:
-      : ?object
+  ?relation shape Role
+  ?object shape Term
+  ?relation:
+    : ?object
 
 mode second-edge given relation yields object: one
 "#;

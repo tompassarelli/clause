@@ -3,38 +3,34 @@ Bool
 Document
 
 cleaned:
-  ?example:
-    document: Document
-    cleaned: Text
-    ?document:
-      cleaned: ?cleaned
+  ?document shape Document
+  ?cleaned shape Text
+  ?document:
+    cleaned: ?cleaned
 
 mode cleaned given document yields cleaned: one
 
 first-word:
-  ?example:
-    document: Document
-    first-word: Text
-    ?document:
-      first word: ?first-word
+  ?document shape Document
+  ?first-word shape Text
+  ?document:
+    first word: ?first-word
 
 mode first-word given document yields first-word: one
 
 remaining-words:
-  ?example:
-    document: Document
-    remaining-words: Text
-    ?document:
-      remaining words: ?remaining-words
+  ?document shape Document
+  ?remaining-words shape Text
+  ?document:
+    remaining words: ?remaining-words
 
 mode remaining-words given document yields remaining-words: one
 
 prefixed:
-  ?example:
-    document: Document
-    prefixed: Bool
-    ?document:
-      prefixed: ?prefixed
+  ?document shape Document
+  ?prefixed shape Bool
+  ?document:
+    prefixed: ?prefixed
 
 mode prefixed given document yields prefixed: one
 

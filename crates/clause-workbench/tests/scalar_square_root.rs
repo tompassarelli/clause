@@ -34,8 +34,8 @@ fn square_root_accepts_zero_and_nonnegative_finite_scalars() {
 #[test]
 fn square_root_composes_with_law_bindings_and_nested_arithmetic() {
     let source = SOURCE.replace("reading:\n", concat!(
-        "magnitude:\n  ?example:\n",
-        "    input: F64\n    result: F64\n    ?input magnitude ?result\n",
+        "magnitude:\n",
+        "  (shape: F64):\n    ?input ?result\n  ?input magnitude ?result\n",
         "mode magnitude given input yields result: maybe\n",
         "law root-magnitude\n",
         "  if\n    ?input >= 0.0\n",

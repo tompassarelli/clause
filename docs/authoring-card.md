@@ -12,7 +12,7 @@ Live source tooling offers an explicit checked scalar-effect replacement, not ar
 
 ## Bindings, focus, and structured values
 
-Each example constrains its named bindings once. A Reading uses ordinary flat or focused clauses; its executable direction remains a separate Mode. A four-binding numeric law and typed record copy share one atomic transition, and checked scalar-effect edits retain the live state identities.
+Ordinary conformance premises constrain the same bindings in declarations, laws, and handlers. Shared-edge focus states a common constraint once and keeps the Reading clean; executable direction remains a separate Mode. A four-binding numeric law and typed record copy share one atomic transition, and checked scalar-effect edits retain the live state identities.
 
 Catalog ID: `coherent-declarations`
 
@@ -22,23 +22,21 @@ Bool
 Item
 
 Point:
-  ?example:
-    x: F64
-    y: F64
+  x: F64
+  y: F64
 
 limited:
-  ?example:
-    amount: F64
-    minimum: F64
-    maximum: F64
-    result: F64
-    ?amount:
-      limited between ?minimum and ?maximum as: ?result
+  (shape: F64):
+    ?amount ?minimum ?maximum ?result
+  ?amount:
+    limited between ?minimum and ?maximum as: ?result
 
 mode limited given amount minimum maximum yields result: maybe
 
 law below
   if
+    ?minimum:
+      shape: F64
     ?minimum <= ?maximum
     ?amount < ?minimum
   then
@@ -87,6 +85,8 @@ on settle ?item
       position: ?position
       destination: ?destination
       charge: ?charge
+    (shape: F64):
+      ?charge ?limited
     (?charge + 3.0) limited between 0.0 and 10.0 as ?limited
   withdraw
     ?item:
@@ -110,19 +110,17 @@ Bool
 Document
 
 text:
-  ?example:
-    document: Document
-    text: Text
-    ?document:
-      text: ?text
+  ?document shape Document
+  ?text shape Text
+  ?document:
+    text: ?text
 
 mode text given document yields text: one
 matches:
-  ?example:
-    document: Document
-    matches: Bool
-    ?document:
-      matches: ?matches
+  ?document shape Document
+  ?matches shape Bool
+  ?document:
+    matches: ?matches
 
 mode matches given document yields matches: one
 
@@ -155,20 +153,18 @@ Bool
 Item
 
 status:
-  ?example:
-    item: Item
-    status: Text
-    ?item:
-      status: ?status
+  ?item shape Item
+  ?status shape Text
+  ?item:
+    status: ?status
 
 mode status given item yields status: one
 
 selected:
-  ?example:
-    item: Item
-    selected: Bool
-    ?item:
-      selected: ?selected
+  ?item shape Item
+  ?selected shape Bool
+  ?item:
+    selected: ?selected
 
 mode selected given item yields selected: one
 
@@ -329,38 +325,34 @@ Bool
 Document
 
 cleaned:
-  ?example:
-    document: Document
-    cleaned: Text
-    ?document:
-      cleaned: ?cleaned
+  ?document shape Document
+  ?cleaned shape Text
+  ?document:
+    cleaned: ?cleaned
 
 mode cleaned given document yields cleaned: one
 
 first-word:
-  ?example:
-    document: Document
-    first-word: Text
-    ?document:
-      first word: ?first-word
+  ?document shape Document
+  ?first-word shape Text
+  ?document:
+    first word: ?first-word
 
 mode first-word given document yields first-word: one
 
 remaining-words:
-  ?example:
-    document: Document
-    remaining-words: Text
-    ?document:
-      remaining words: ?remaining-words
+  ?document shape Document
+  ?remaining-words shape Text
+  ?document:
+    remaining words: ?remaining-words
 
 mode remaining-words given document yields remaining-words: one
 
 prefixed:
-  ?example:
-    document: Document
-    prefixed: Bool
-    ?document:
-      prefixed: ?prefixed
+  ?document shape Document
+  ?prefixed shape Bool
+  ?document:
+    prefixed: ?prefixed
 
 mode prefixed given document yields prefixed: one
 
@@ -399,10 +391,9 @@ Item
 Report
 
 magnitude:
-  ?example:
-    input: F64
-    output: F64
-    magnitude of ?input as ?output
+  (shape: F64):
+    ?input ?output
+  magnitude of ?input as ?output
 
 mode magnitude given input yields output: maybe
 law negative
@@ -419,19 +410,17 @@ derive negative
 derive positive
 
 amount:
-  ?example:
-    item: Item
-    amount: F64
-    ?item:
-      amount: ?amount
+  ?item shape Item
+  ?amount shape F64
+  ?item:
+    amount: ?amount
 
 mode amount given item yields amount: one
 total:
-  ?example:
-    report: Report
-    total: F64
-    ?report:
-      total: ?total
+  ?report shape Report
+  ?total shape F64
+  ?report:
+    total: ?total
 
 mode total given report yields total: one
 
@@ -466,11 +455,10 @@ F64
 Meter
 
 reading:
-  ?example:
-    meter: Meter
-    reading: F64
-    ?meter:
-      reading: ?reading
+  ?meter shape Meter
+  ?reading shape F64
+  ?meter:
+    reading: ?reading
 
 mode reading given meter yields reading: one
 
@@ -507,19 +495,17 @@ Bool
 Device
 
 charge:
-  ?example:
-    device: Device
-    charge: F64
-    ?device:
-      charge: ?charge
+  ?device shape Device
+  ?charge shape F64
+  ?device:
+    charge: ?charge
 
 mode charge given device yields charge: maybe
 available:
-  ?example:
-    device: Device
-    available: Bool
-    ?device:
-      available: ?available
+  ?device shape Device
+  ?available shape Bool
+  ?device:
+    available: ?available
 
 mode available given device yields available: one
 
@@ -568,11 +554,10 @@ Bool
 Item
 
 selected:
-  ?example:
-    item: Item
-    selected: Bool
-    ?item:
-      selected: ?selected
+  ?item shape Item
+  ?selected shape Bool
+  ?item:
+    selected: ?selected
 
 mode selected given item yields selected: one
 
@@ -601,19 +586,17 @@ Bool
 Meter
 
 reading:
-  ?example:
-    meter: Meter
-    reading: F64
-    ?meter:
-      reading: ?reading
+  ?meter shape Meter
+  ?reading shape F64
+  ?meter:
+    reading: ?reading
 
 mode reading given meter yields reading: one
 positive:
-  ?example:
-    meter: Meter
-    positive: Bool
-    ?meter:
-      positive: ?positive
+  ?meter shape Meter
+  ?positive shape Bool
+  ?meter:
+    positive: ?positive
 
 mode positive given meter yields positive: one
 
@@ -646,32 +629,28 @@ Bool
 Item
 
 Point:
-  ?example:
-    x: F64
-    y: F64
+  x: F64
+  y: F64
 
 position:
-  ?example:
-    item: Item
-    position: Point
-    ?item:
-      position: ?position
+  ?item shape Item
+  ?position shape Point
+  ?item:
+    position: ?position
 
 mode position given item yields position: one
 destination:
-  ?example:
-    item: Item
-    destination: Point
-    ?item:
-      destination: ?destination
+  ?item shape Item
+  ?destination shape Point
+  ?item:
+    destination: ?destination
 
 mode destination given item yields destination: one
 moving:
-  ?example:
-    item: Item
-    moving: Bool
-    ?item:
-      moving: ?moving
+  ?item shape Item
+  ?moving shape Bool
+  ?item:
+    moving: ?moving
 
 mode moving given item yields moving: one
 
@@ -705,11 +684,10 @@ F64
 Meter
 
 reading:
-  ?example:
-    meter: Meter
-    reading: F64
-    ?meter:
-      reading: ?reading
+  ?meter shape Meter
+  ?reading shape F64
+  ?meter:
+    reading: ?reading
 
 mode reading given meter yields reading: one
 
@@ -747,35 +725,31 @@ Item
 Report
 
 enabled:
-  ?example:
-    item: Item
-    enabled: Bool
-    ?item:
-      enabled: ?enabled
+  ?item shape Item
+  ?enabled shape Bool
+  ?item:
+    enabled: ?enabled
 
 mode enabled given item yields enabled: one
 amount:
-  ?example:
-    item: Item
-    amount: F64
-    ?item:
-      amount: ?amount
+  ?item shape Item
+  ?amount shape F64
+  ?item:
+    amount: ?amount
 
 mode amount given item yields amount: one
 total:
-  ?example:
-    report: Report
-    total: F64
-    ?report:
-      total: ?total
+  ?report shape Report
+  ?total shape F64
+  ?report:
+    total: ?total
 
 mode total given report yields total: one
 count:
-  ?example:
-    report: Report
-    count: F64
-    ?report:
-      count: ?count
+  ?report shape Report
+  ?count shape F64
+  ?report:
+    count: ?count
 
 mode count given report yields count: one
 
@@ -858,11 +832,10 @@ F64
 Account
 
 balance:
-  ?example:
-    account: Account
-    balance: F64
-    ?account:
-      balance: ?balance
+  ?account shape Account
+  ?balance shape F64
+  ?account:
+    balance: ?balance
 
 mode balance given account yields balance: one
 
@@ -889,26 +862,23 @@ Bool
 Player
 
 Vec3:
-  ?example:
-    x: F64
-    y: F64
-    z: F64
+  x: F64
+  y: F64
+  z: F64
 
 velocity:
-  ?example:
-    player: Player
-    velocity: Vec3
-    ?player:
-      velocity: ?velocity
+  ?player shape Player
+  ?velocity shape Vec3
+  ?player:
+    velocity: ?velocity
 
 mode velocity given player yields velocity: one
 
 empowered:
-  ?example:
-    player: Player
-    empowered: Bool
-    ?player:
-      empowered: ?empowered
+  ?player shape Player
+  ?empowered shape Bool
+  ?player:
+    empowered: ?empowered
 
 mode empowered given player yields empowered: one
 
@@ -941,11 +911,10 @@ F64
 Player
 
 camera-heading:
-  ?example:
-    player: Player
-    camera-heading: F64
-    ?player:
-      camera heading: ?camera-heading
+  ?player shape Player
+  ?camera-heading shape F64
+  ?player:
+    camera heading: ?camera-heading
 
 mode camera-heading given player yields camera-heading: one
 
@@ -975,20 +944,18 @@ Root
 Item
 
 active:
-  ?example:
-    root: Root
-    active: Item
-    ?root:
-      active: ?active
+  ?root shape Root
+  ?active shape Item
+  ?root:
+    active: ?active
 
 mode active given root yields active: one
 
 known:
-  ?example:
-    root: Root
-    known: Item
-    ?root:
-      known: ?known
+  ?root shape Root
+  ?known shape Item
+  ?root:
+    known: ?known
 
 mode known given root yields known: many
 
@@ -1026,29 +993,26 @@ Item
 ItemClass
 
 item-class:
-  ?example:
-    item: Item
-    item-class: ItemClass
-    ?item:
-      item class: ?item-class
+  ?item shape Item
+  ?item-class shape ItemClass
+  ?item:
+    item class: ?item-class
 
 mode item-class given item yields item-class: one
 
 selected:
-  ?example:
-    item: Item
-    selected: Bool
-    ?item:
-      selected: ?selected
+  ?item shape Item
+  ?selected shape Bool
+  ?item:
+    selected: ?selected
 
 mode selected given item yields selected: one
 
 progress:
-  ?example:
-    item: Item
-    progress: F64
-    ?item:
-      progress: ?progress
+  ?item shape Item
+  ?progress shape F64
+  ?item:
+    progress: ?progress
 
 mode progress given item yields progress: one
 
@@ -1100,51 +1064,45 @@ Contributor
 Account
 
 chosen-account:
-  ?example:
-    controller: Controller
-    chosen-account: Account
-    ?controller:
-      chosen account: ?chosen-account
+  ?controller shape Controller
+  ?chosen-account shape Account
+  ?controller:
+    chosen account: ?chosen-account
 
 mode chosen-account given controller yields chosen-account: one
 balance:
-  ?example:
-    account: Account
-    balance: F64
-    ?account:
-      balance: ?balance
+  ?account shape Account
+  ?balance shape F64
+  ?account:
+    balance: ?balance
 
 mode balance given account yields balance: one
 enabled:
-  ?example:
-    account: Account
-    enabled: Bool
-    ?account:
-      enabled: ?enabled
+  ?account shape Account
+  ?enabled shape Bool
+  ?account:
+    enabled: ?enabled
 
 mode enabled given account yields enabled: one
 selected:
-  ?example:
-    contributor: Contributor
-    selected: Bool
-    ?contributor:
-      selected: ?selected
+  ?contributor shape Contributor
+  ?selected shape Bool
+  ?contributor:
+    selected: ?selected
 
 mode selected given contributor yields selected: one
 contribution:
-  ?example:
-    contributor: Contributor
-    contribution: F64
-    ?contributor:
-      contribution: ?contribution
+  ?contributor shape Contributor
+  ?contribution shape F64
+  ?contributor:
+    contribution: ?contribution
 
 mode contribution given contributor yields contribution: one
 cooldown:
-  ?example:
-    contributor: Contributor
-    cooldown: F64
-    ?contributor:
-      cooldown: ?cooldown
+  ?contributor shape Contributor
+  ?cooldown shape F64
+  ?contributor:
+    cooldown: ?cooldown
 
 mode cooldown given contributor yields cooldown: one
 
@@ -1235,47 +1193,42 @@ GoalState
 Text
 
 goal-state:
-  ?example:
-    north: North
-    goal-state: GoalState
-    ?north:
-      goal state: ?goal-state
+  ?north shape North
+  ?goal-state shape GoalState
+  ?north:
+    goal state: ?goal-state
 
 mode goal-state given north yields goal-state: one
 
 goal-title:
-  ?example:
-    north: North
-    goal-title: Text
-    ?north:
-      goal title: ?goal-title
+  ?north shape North
+  ?goal-title shape Text
+  ?north:
+    goal title: ?goal-title
 
 mode goal-title given north yields goal-title: maybe
 
 goal-objective:
-  ?example:
-    north: North
-    goal-objective: Text
-    ?north:
-      goal objective: ?goal-objective
+  ?north shape North
+  ?goal-objective shape Text
+  ?north:
+    goal objective: ?goal-objective
 
 mode goal-objective given north yields goal-objective: maybe
 
 goal-tags:
-  ?example:
-    north: North
-    goal-tags: Text
-    ?north:
-      goal tags: ?goal-tags
+  ?north shape North
+  ?goal-tags shape Text
+  ?north:
+    goal tags: ?goal-tags
 
 mode goal-tags given north yields goal-tags: many
 
 banner:
-  ?example:
-    north: North
-    banner: Text
-    ?north:
-      banner: ?banner
+  ?north shape North
+  ?banner shape Text
+  ?north:
+    banner: ?banner
 
 mode banner given north yields banner: one
 
@@ -1331,11 +1284,10 @@ Document
 Text
 
 output:
-  ?example:
-    document: Document
-    output: Text
-    ?document:
-      output: ?output
+  ?document shape Document
+  ?output shape Text
+  ?document:
+    output: ?output
 
 mode output given document yields output: one
 
@@ -1370,56 +1322,50 @@ GoalStatus
 Text
 
 known-goal:
-  ?example:
-    north: North
-    known-goal: Goal
-    ?north:
-      known goal: ?known-goal
+  ?north shape North
+  ?known-goal shape Goal
+  ?north:
+    known goal: ?known-goal
 
 mode known-goal given north yields known-goal: many
 
 goal-title:
-  ?example:
-    goal: Goal
-    goal-title: Text
-    ?goal:
-      title: ?goal-title
+  ?goal shape Goal
+  ?goal-title shape Text
+  ?goal:
+    title: ?goal-title
 
 mode goal-title given goal yields goal-title: maybe
 
 goal-objective:
-  ?example:
-    goal: Goal
-    goal-objective: Text
-    ?goal:
-      objective: ?goal-objective
+  ?goal shape Goal
+  ?goal-objective shape Text
+  ?goal:
+    objective: ?goal-objective
 
 mode goal-objective given goal yields goal-objective: maybe
 
 goal-status:
-  ?example:
-    goal: Goal
-    goal-status: GoalStatus
-    ?goal:
-      status: ?goal-status
+  ?goal shape Goal
+  ?goal-status shape GoalStatus
+  ?goal:
+    status: ?goal-status
 
 mode goal-status given goal yields goal-status: maybe
 
 prior-goal-objective:
-  ?example:
-    goal: Goal
-    prior-goal-objective: Text
-    ?goal:
-      prior objective: ?prior-goal-objective
+  ?goal shape Goal
+  ?prior-goal-objective shape Text
+  ?goal:
+    prior objective: ?prior-goal-objective
 
 mode prior-goal-objective given goal yields prior-goal-objective: many
 
 goal-catalog-state:
-  ?example:
-    north: North
-    goal-catalog-state: GoalStatus
-    ?north:
-      goal catalog state: ?goal-catalog-state
+  ?north shape North
+  ?goal-catalog-state shape GoalStatus
+  ?north:
+    goal catalog state: ?goal-catalog-state
 
 mode goal-catalog-state given north yields goal-catalog-state: one
 
@@ -1471,35 +1417,31 @@ Account
 Goal
 
 balance:
-  ?example:
-    account: Account
-    balance: F64
-    ?account:
-      balance: ?balance
+  ?account shape Account
+  ?balance shape F64
+  ?account:
+    balance: ?balance
 
 mode balance given account yields balance: one
 known-goal:
-  ?example:
-    account: Account
-    known-goal: Goal
-    ?account:
-      known goal: ?known-goal
+  ?account shape Account
+  ?known-goal shape Goal
+  ?account:
+    known goal: ?known-goal
 
 mode known-goal given account yields known-goal: many
 contribution:
-  ?example:
-    goal: Goal
-    contribution: F64
-    ?goal:
-      contribution: ?contribution
+  ?goal shape Goal
+  ?contribution shape F64
+  ?goal:
+    contribution: ?contribution
 
 mode contribution given goal yields contribution: one
 remaining:
-  ?example:
-    goal: Goal
-    remaining: F64
-    ?goal:
-      remaining: ?remaining
+  ?goal shape Goal
+  ?remaining shape F64
+  ?goal:
+    remaining: ?remaining
 
 mode remaining given goal yields remaining: one
 
@@ -1562,93 +1504,81 @@ Move
 CombatRules
 
 clamped-between:
-  ?example:
-    value: F64
-    lower: F64
-    upper: F64
-    result: F64
-    ?value clamped between ?lower and ?upper as ?result
+  (shape: F64):
+    ?value ?lower ?upper ?result
+  ?value clamped between ?lower and ?upper as ?result
 
 mode clamped-between given value lower upper yields result: maybe
 
 vitality:
-  ?example:
-    actor: Actor
-    vitality: F64
-    ?actor:
-      vitality: ?vitality
+  ?actor shape Actor
+  ?vitality shape F64
+  ?actor:
+    vitality: ?vitality
 
 mode vitality given actor yields vitality: one
 
 destabilization:
-  ?example:
-    actor: Actor
-    destabilization: F64
-    ?actor:
-      destabilization: ?destabilization
+  ?actor shape Actor
+  ?destabilization shape F64
+  ?actor:
+    destabilization: ?destabilization
 
 mode destabilization given actor yields destabilization: one
 
 mass:
-  ?example:
-    actor: Actor
-    mass: F64
-    ?actor:
-      mass: ?mass
+  ?actor shape Actor
+  ?mass shape F64
+  ?actor:
+    mass: ?mass
 
 mode mass given actor yields mass: one
 
 launch-velocity:
-  ?example:
-    actor: Actor
-    launch-velocity: F64
-    ?actor:
-      launch velocity: ?launch-velocity
+  ?actor shape Actor
+  ?launch-velocity shape F64
+  ?actor:
+    launch velocity: ?launch-velocity
 
 mode launch-velocity given actor yields launch-velocity: one
 
 damage:
-  ?example:
-    move: Move
-    damage: F64
-    ?move:
-      damage: ?damage
+  ?move shape Move
+  ?damage shape F64
+  ?move:
+    damage: ?damage
 
 mode damage given move yields damage: one
 
 destabilization-gain:
-  ?example:
-    move: Move
-    destabilization-gain: F64
-    ?move:
-      destabilization gain: ?destabilization-gain
+  ?move shape Move
+  ?destabilization-gain shape F64
+  ?move:
+    destabilization gain: ?destabilization-gain
 
 mode destabilization-gain given move yields destabilization-gain: one
 
 base-impulse:
-  ?example:
-    move: Move
-    base-impulse: F64
-    ?move:
-      base impulse: ?base-impulse
+  ?move shape Move
+  ?base-impulse shape F64
+  ?move:
+    base impulse: ?base-impulse
 
 mode base-impulse given move yields base-impulse: one
 
 launch-growth:
-  ?example:
-    move: Move
-    launch-growth: F64
-    ?move:
-      launch growth: ?launch-growth
+  ?move shape Move
+  ?launch-growth shape F64
+  ?move:
+    launch growth: ?launch-growth
 
 mode launch-growth given move yields launch-growth: one
 
 destabilization-threshold:
-  ?example:
-    rules: CombatRules
-    destabilization-threshold: F64
-    ?rules:
-      destabilization threshold: ?destabilization-threshold
+  ?rules shape CombatRules
+  ?destabilization-threshold shape F64
+  ?rules:
+    destabilization threshold: ?destabilization-threshold
 
 mode destabilization-threshold given rules yields destabilization-threshold: one
 
@@ -1764,10 +1694,9 @@ F64
 Meter
 
 magnitude:
-  ?example:
-    input: F64
-    output: F64
-    | ?input | = ?output
+  (shape: F64):
+    ?input ?output
+  | ?input | = ?output
 
 mode magnitude given input yields output: maybe
 
@@ -1787,11 +1716,10 @@ derive negative-magnitude
 derive nonnegative-magnitude
 
 reading:
-  ?example:
-    meter: Meter
-    reading: F64
-    ?meter:
-      reading: ?reading
+  ?meter shape Meter
+  ?reading shape F64
+  ?meter:
+    reading: ?reading
 
 mode reading given meter yields reading: one
 

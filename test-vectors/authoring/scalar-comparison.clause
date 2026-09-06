@@ -3,19 +3,17 @@ Bool
 Meter
 
 reading:
-  ?example:
-    meter: Meter
-    reading: F64
-    ?meter:
-      reading: ?reading
+  ?meter shape Meter
+  ?reading shape F64
+  ?meter:
+    reading: ?reading
 
 mode reading given meter yields reading: one
 positive:
-  ?example:
-    meter: Meter
-    positive: Bool
-    ?meter:
-      positive: ?positive
+  ?meter shape Meter
+  ?positive shape Bool
+  ?meter:
+    positive: ?positive
 
 mode positive given meter yields positive: one
 

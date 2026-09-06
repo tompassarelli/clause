@@ -2,11 +2,10 @@ F64
 Player
 
 score:
-  ?example:
-    player: Player
-    score: F64
-    ?player:
-      score: ?score
+  ?player shape Player
+  ?score shape F64
+  ?player:
+    score: ?score
 
 mode score given player yields score: one
 

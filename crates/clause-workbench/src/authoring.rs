@@ -18,7 +18,7 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
         slug: "coherent-declarations",
         title: "Bindings, focus, and structured values",
-        summary: "Each example constrains its named bindings once. A Reading uses ordinary flat or focused clauses; its executable direction remains a separate Mode. A four-binding numeric law and typed record copy share one atomic transition, and checked scalar-effect edits retain the live state identities.",
+        summary: "Ordinary conformance premises constrain the same bindings in declarations, laws, and handlers. Shared-edge focus states a common constraint once and keeps the Reading clean; executable direction remains a separate Mode. A four-binding numeric law and typed record copy share one atomic transition, and checked scalar-effect edits retain the live state identities.",
         source: include_str!("../../../test-vectors/authoring/coherent-declarations.clause"),
     },
     AuthoringExampleV1 {

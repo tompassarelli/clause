@@ -81,6 +81,7 @@ impl ScalarLawEnvironment {
             )?;
             let mut section = "";
             let mut predicates = Vec::new();
+            let mut binding_constraints = Vec::new();
             let mut result = None;
             let mut supported = true;
             let mut sections = BTreeSet::new();
@@ -93,7 +94,9 @@ impl ScalarLawEnvironment {
                 if line.indent == 2 && matches!(text, "if" | "then") && sections.insert(text) {
                     section = text;
                 } else if line.indent == 4 && section == "if" {
-                    if let Some(predicate) = parse_scalar_predicate(text, "") {
+                    if let Some(constraint) = parse_binding_constraint(text, line.origin)? {
+                        binding_constraints.push(constraint);
+                    } else if let Some(predicate) = parse_scalar_predicate(text, "") {
                         predicates.push(predicate);
                     } else {
                         supported = false;
@@ -133,6 +136,7 @@ impl ScalarLawEnvironment {
                 relational::check_expression(b, &domain, &mut domains, origin)?;
             }
             let relation = relation.designation.clone();
+            check_binding_constraints(&binding_constraints, &domains)?;
             environment.laws.push(ScalarLawCst {
                 origin,
                 designation: designation_bytes(name, origin)?,

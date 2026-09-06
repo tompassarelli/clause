@@ -4,44 +4,39 @@ Encounter
 Scenario
 
 Vec3:
-  ?example:
-    x: F64
-    y: F64
-    z: F64
+  x: F64
+  y: F64
+  z: F64
 
 actor-position:
-  ?example:
-    actor: Actor
-    position: Vec3
-    ?actor:
-      actor position: ?position
+  ?actor shape Actor
+  ?position shape Vec3
+  ?actor:
+    actor position: ?position
 
 mode actor-position given actor yields position: one
 
 journey-destination:
-  ?example:
-    actor: Actor
-    destination: Vec3
-    ?actor:
-      journey destination: ?destination
+  ?actor shape Actor
+  ?destination shape Vec3
+  ?actor:
+    journey destination: ?destination
 
 mode journey-destination given actor yields destination: one
 
 journey-speed:
-  ?example:
-    actor: Actor
-    speed: F64
-    ?actor:
-      journey speed: ?speed
+  ?actor shape Actor
+  ?speed shape F64
+  ?actor:
+    journey speed: ?speed
 
 mode journey-speed given actor yields speed: one
 
 encounter-scenario:
-  ?example:
-    encounter: Encounter
-    scenario: Scenario
-    ?encounter:
-      encounter scenario: ?scenario
+  ?encounter shape Encounter
+  ?scenario shape Scenario
+  ?encounter:
+    encounter scenario: ?scenario
 
 mode encounter-scenario given encounter yields scenario: one
 

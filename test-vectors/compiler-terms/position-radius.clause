@@ -5,47 +5,42 @@ metric-SignedQ16
 metric-NonnegativeQ16
 
 metric-Point2Q16:
-  ?example:
-    x: metric-SignedQ16
-    y: metric-SignedQ16
+  x: metric-SignedQ16
+  y: metric-SignedQ16
 
 world-observer-position-v1:
-  ?example:
-    observer: Observer
-    point: metric-Point2Q16
-    space: Space
-    ?observer:
-      has observer-position ?point in: ?space
+  ?observer shape Observer
+  ?point shape metric-Point2Q16
+  ?space shape Space
+  ?observer:
+    has observer-position ?point in: ?space
 
 mode world-observer-position-v1 given observer space yields point: one
 
 world-target-position-v1:
-  ?example:
-    target: Target
-    point: metric-Point2Q16
-    space: Space
-    ?target:
-      has target-position ?point in: ?space
+  ?target shape Target
+  ?point shape metric-Point2Q16
+  ?space shape Space
+  ?target:
+    has target-position ?point in: ?space
 
 mode world-target-position-v1 given target space yields point: one
 
 world-proximity-radius-v1:
-  ?example:
-    observer: Observer
-    radius: metric-NonnegativeQ16
-    space: Space
-    ?observer:
-      has proximity-radius ?radius in: ?space
+  ?observer shape Observer
+  ?radius shape metric-NonnegativeQ16
+  ?space shape Space
+  ?observer:
+    has proximity-radius ?radius in: ?space
 
 mode world-proximity-radius-v1 given observer space yields radius: one
 
 world-in-proximity-v1:
-  ?example:
-    observer: Observer
-    target: Target
-    space: Space
-    ?observer:
-      has in-proximity ?target in: ?space
+  ?observer shape Observer
+  ?target shape Target
+  ?space shape Space
+  ?observer:
+    has in-proximity ?target in: ?space
 
 mode world-in-proximity-v1 given observer space yields target: many
 

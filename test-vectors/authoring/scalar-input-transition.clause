@@ -2,11 +2,10 @@ F64
 Player
 
 camera-heading:
-  ?example:
-    player: Player
-    camera-heading: F64
-    ?player:
-      camera heading: ?camera-heading
+  ?player shape Player
+  ?camera-heading shape F64
+  ?player:
+    camera heading: ?camera-heading
 
 mode camera-heading given player yields camera-heading: one
 

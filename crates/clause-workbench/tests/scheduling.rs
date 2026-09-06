@@ -97,8 +97,8 @@ fn scheduling_uses_a_changed_declared_reading_without_a_host_reader_change() {
     let declared_frontend = std::str::from_utf8(DECLARED_FOCUSED_FRONTEND_SOURCE_V1)
         .unwrap()
         .replace(
-            "      : ?object",
-            "      means: ?object",
+            "    : ?object",
+            "    means: ?object",
         );
     let source = SOURCE.replace(": ", " means ");
 

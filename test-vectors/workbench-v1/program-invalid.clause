@@ -3,11 +3,10 @@ Number
 answer := 41 + 1
 
 successor:
-  ?example:
-    before: Number
-    after: Number
-    ?before:
-      succeeds to: ?after
+  (shape: Number):
+    ?before ?after
+  ?before:
+    succeeds to: ?after
 
 41 succeeds to 42
 

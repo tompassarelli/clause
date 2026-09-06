@@ -3,47 +3,42 @@ GoalState
 Text
 
 goal-state:
-  ?example:
-    north: North
-    goal-state: GoalState
-    ?north:
-      goal state: ?goal-state
+  ?north shape North
+  ?goal-state shape GoalState
+  ?north:
+    goal state: ?goal-state
 
 mode goal-state given north yields goal-state: one
 
 goal-title:
-  ?example:
-    north: North
-    goal-title: Text
-    ?north:
-      goal title: ?goal-title
+  ?north shape North
+  ?goal-title shape Text
+  ?north:
+    goal title: ?goal-title
 
 mode goal-title given north yields goal-title: maybe
 
 goal-objective:
-  ?example:
-    north: North
-    goal-objective: Text
-    ?north:
-      goal objective: ?goal-objective
+  ?north shape North
+  ?goal-objective shape Text
+  ?north:
+    goal objective: ?goal-objective
 
 mode goal-objective given north yields goal-objective: maybe
 
 goal-tags:
-  ?example:
-    north: North
-    goal-tags: Text
-    ?north:
-      goal tags: ?goal-tags
+  ?north shape North
+  ?goal-tags shape Text
+  ?north:
+    goal tags: ?goal-tags
 
 mode goal-tags given north yields goal-tags: many
 
 banner:
-  ?example:
-    north: North
-    banner: Text
-    ?north:
-      banner: ?banner
+  ?north shape North
+  ?banner shape Text
+  ?north:
+    banner: ?banner
 
 mode banner given north yields banner: one
 

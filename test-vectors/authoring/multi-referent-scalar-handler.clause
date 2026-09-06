@@ -5,20 +5,18 @@ hidden
 acquired
 
 carried-distance:
-  ?example:
-    loot: Loot
-    carried-distance: F64
-    ?loot:
-      carried distance: ?carried-distance
+  ?loot shape Loot
+  ?carried-distance shape F64
+  ?loot:
+    carried distance: ?carried-distance
 
 mode carried-distance given loot yields carried-distance: one
 
 loot-state:
-  ?example:
-    loot: Loot
-    loot-state: LootState
-    ?loot:
-      loot state: ?loot-state
+  ?loot shape Loot
+  ?loot-state shape LootState
+  ?loot:
+    loot state: ?loot-state
 
 mode loot-state given loot yields loot-state: one
 

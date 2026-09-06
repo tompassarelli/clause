@@ -30,14 +30,23 @@ premises and conclusions, handler conditions, withdrawals, inclusions, and
 contributions. Flat and focused forms compile to the same bindings. This is a
 bounded reader feature, not the uniform extensible frontend.
 
-Named declarations constrain bindings under `?example:`. Their optional
-Reading uses ordinary flat or focused clauses; declarations without a Reading
-define structured fields. Modes remain separate. The declared focused-edge
-grammar drives declaration constraints, facts, patterns, and canonical
-printing. A four-binding scalar law and structured state journey exercises
-checking, execution, independent re-reading, and checked scalar-effect edits.
-Declaration discovery, scalar expressions, laws, handlers, and their lowering
+Named declarations constrain bindings with the same ordinary `shape` premises
+checked in laws and handlers. Explicit shared-edge focus `(shape: F64):`
+applies one bound role/object to each named subject; it introduces no type
+default or membership fact. Plain structured fields need no unused binders.
+Readings remain clean ordinary clauses and Modes remain separate. The declared
+edge grammar drives constraints, facts, patterns, and printing, including a
+changed-grammar checked live edit. A four-binding scalar law and structured
+state journey exercises execution, re-reading, and identity continuity.
+The grouping delimiter, declaration discovery and conformance interpretation,
+record construction/patterns, scalar expressions, laws, handlers, and lowering
 still contain host bootstrap cases; this does not complete the frontend below.
+In the coherent-declarations specimen, replacing `first position Point { x:
+2.0, y: 3.0 }` with subject focus `first`, then `position:`, then field edges
+`x: 2.0` and `y: 3.0` is still rejected by the reader. The next owning seam is
+contextual structured objects and patterns: the existing role range must select
+the field contract, and those fields must reach typed construction/matching
+without a parallel record reader or a rewrite into brace source.
 Custom focused grammars read, print, execute, reload, and perform checked scalar
 edits. Edit witnesses carry the exact selected frontend through package and
 runtime checking.

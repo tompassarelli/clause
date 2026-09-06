@@ -3,32 +3,28 @@ Bool
 Item
 
 Point:
-  ?example:
-    x: F64
-    y: F64
+  x: F64
+  y: F64
 
 position:
-  ?example:
-    item: Item
-    position: Point
-    ?item:
-      position: ?position
+  ?item shape Item
+  ?position shape Point
+  ?item:
+    position: ?position
 
 mode position given item yields position: one
 destination:
-  ?example:
-    item: Item
-    destination: Point
-    ?item:
-      destination: ?destination
+  ?item shape Item
+  ?destination shape Point
+  ?item:
+    destination: ?destination
 
 mode destination given item yields destination: one
 moving:
-  ?example:
-    item: Item
-    moving: Bool
-    ?item:
-      moving: ?moving
+  ?item shape Item
+  ?moving shape Bool
+  ?item:
+    moving: ?moving
 
 mode moving given item yields moving: one
 

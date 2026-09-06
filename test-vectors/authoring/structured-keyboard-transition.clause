@@ -3,26 +3,23 @@ Bool
 Player
 
 Vec3:
-  ?example:
-    x: F64
-    y: F64
-    z: F64
+  x: F64
+  y: F64
+  z: F64
 
 velocity:
-  ?example:
-    player: Player
-    velocity: Vec3
-    ?player:
-      velocity: ?velocity
+  ?player shape Player
+  ?velocity shape Vec3
+  ?player:
+    velocity: ?velocity
 
 mode velocity given player yields velocity: one
 
 empowered:
-  ?example:
-    player: Player
-    empowered: Bool
-    ?player:
-      empowered: ?empowered
+  ?player shape Player
+  ?empowered shape Bool
+  ?player:
+    empowered: ?empowered
 
 mode empowered given player yields empowered: one
 

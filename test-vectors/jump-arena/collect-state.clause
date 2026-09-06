@@ -5,11 +5,10 @@ collected
 spent
 
 state:
-  ?example:
-    collectible: Collectible
-    state: State
-    ?collectible:
-      state: ?state
+  ?collectible shape Collectible
+  ?state shape State
+  ?collectible:
+    state: ?state
 
 mode state given collectible yields state: one
 

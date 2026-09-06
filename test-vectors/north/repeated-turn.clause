@@ -13,38 +13,34 @@ turn-active
 no-agent-run
 
 phase:
-  ?example:
-    north: North
-    phase: NorthPhase
-    ?north:
-      phase: ?phase
+  ?north shape North
+  ?phase shape NorthPhase
+  ?north:
+    phase: ?phase
 
 mode phase given north yields phase: one
 
 active-delegated-child:
-  ?example:
-    north: North
-    active-delegated-child: AgentRunIdentity
-    ?north:
-      active delegated child: ?active-delegated-child
+  ?north shape North
+  ?active-delegated-child shape AgentRunIdentity
+  ?north:
+    active delegated child: ?active-delegated-child
 
 mode active-delegated-child given north yields active-delegated-child: one
 
 terminal-delegated-child:
-  ?example:
-    north: North
-    terminal-delegated-child: AgentRunIdentity
-    ?north:
-      terminal delegated child: ?terminal-delegated-child
+  ?north shape North
+  ?terminal-delegated-child shape AgentRunIdentity
+  ?north:
+    terminal delegated child: ?terminal-delegated-child
 
 mode terminal-delegated-child given north yields terminal-delegated-child: one
 
 turn-readiness:
-  ?example:
-    north: North
-    turn-readiness: TurnReadiness
-    ?north:
-      turn readiness: ?turn-readiness
+  ?north shape North
+  ?turn-readiness shape TurnReadiness
+  ?north:
+    turn readiness: ?turn-readiness
 
 mode turn-readiness given north yields turn-readiness: one
 

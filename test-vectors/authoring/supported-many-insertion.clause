@@ -2,20 +2,18 @@ Root
 Item
 
 active:
-  ?example:
-    root: Root
-    active: Item
-    ?root:
-      active: ?active
+  ?root shape Root
+  ?active shape Item
+  ?root:
+    active: ?active
 
 mode active given root yields active: one
 
 known:
-  ?example:
-    root: Root
-    known: Item
-    ?root:
-      known: ?known
+  ?root shape Root
+  ?known shape Item
+  ?root:
+    known: ?known
 
 mode known given root yields known: many
 

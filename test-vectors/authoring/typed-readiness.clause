@@ -4,35 +4,31 @@ Text
 Device
 
 readiness:
-  ?example:
-    enabled: Bool
-    charge: F64
-    message: Text
-    ?enabled enabled with charge ?charge reports ?message
+  ?enabled shape Bool
+  ?charge shape F64
+  ?message shape Text
+  ?enabled enabled with charge ?charge reports ?message
 
 mode readiness given enabled charge yields message: maybe
 enabled:
-  ?example:
-    device: Device
-    enabled: Bool
-    ?device:
-      enabled: ?enabled
+  ?device shape Device
+  ?enabled shape Bool
+  ?device:
+    enabled: ?enabled
 
 mode enabled given device yields enabled: one
 charge:
-  ?example:
-    device: Device
-    charge: F64
-    ?device:
-      charge: ?charge
+  ?device shape Device
+  ?charge shape F64
+  ?device:
+    charge: ?charge
 
 mode charge given device yields charge: one
 message:
-  ?example:
-    device: Device
-    message: Text
-    ?device:
-      message: ?message
+  ?device shape Device
+  ?message shape Text
+  ?device:
+    message: ?message
 
 mode message given device yields message: one
 

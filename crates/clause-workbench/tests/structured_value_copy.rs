@@ -116,7 +116,7 @@ fn whole_structure_copy_preserves_nominal_types() {
     let wrong_shape = SOURCE
         .replace(
             "position:\n",
-            "OtherPoint:\n  ?example:\n    x: F64\n    y: F64\n\nposition:\n",
+            "OtherPoint:\n  x: F64\n  y: F64\n\nposition:\n",
         )
         .replace(
             "    destination: Point",

@@ -69,7 +69,7 @@ fn membership_requires_a_declared_group_not_a_literal_or_record() {
     for invalid in [
         source.replace("lamp\n", "lamp\n  member of: Missing\n"),
         source.replace("lamp\n", "lamp\n  member of: 1.0\n"),
-        source.replacen("Device\n", "Device:\n  ?example:\n    serial: F64\n", 1),
+        source.replacen("Device\n", "Device:\n  serial: F64\n", 1),
     ] {
         assert!(ResidentSourceWorkbenchV1::open(invalid.as_bytes()).is_err());
     }

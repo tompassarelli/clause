@@ -3,10 +3,9 @@ Root
 Item
 
 echo:
-  ?example:
-    input: Text
-    output: Text
-    echo ?input as ?output
+  (shape: Text):
+    ?input ?output
+  echo ?input as ?output
 
 mode echo given input yields output: maybe
 
@@ -18,27 +17,24 @@ law echo-text
 derive echo-text
 
 label:
-  ?example:
-    item: Item
-    label: Text
-    ?item:
-      label: ?label
+  ?item shape Item
+  ?label shape Text
+  ?item:
+    label: ?label
 
 mode label given item yields label: one
 known:
-  ?example:
-    root: Root
-    known: Item
-    ?root:
-      known: ?known
+  ?root shape Root
+  ?known shape Item
+  ?root:
+    known: ?known
 
 mode known given root yields known: many
 output:
-  ?example:
-    root: Root
-    output: Text
-    ?root:
-      output: ?output
+  ?root shape Root
+  ?output shape Text
+  ?root:
+    output: ?output
 
 mode output given root yields output: one
 

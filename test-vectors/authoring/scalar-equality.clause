@@ -2,11 +2,10 @@ Bool
 Item
 
 selected:
-  ?example:
-    item: Item
-    selected: Bool
-    ?item:
-      selected: ?selected
+  ?item shape Item
+  ?selected shape Bool
+  ?item:
+    selected: ?selected
 
 mode selected given item yields selected: one
 

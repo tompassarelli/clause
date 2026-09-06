@@ -3,32 +3,29 @@ Target
 Space
 
 observer-position-v1:
-  ?example:
-    observer: Observer
-    space: Space
-    point: point2-v1
-    ?observer:
-      has observer-position ?point in: ?space
+  ?observer shape Observer
+  ?space shape Space
+  ?point shape point2-v1
+  ?observer:
+    has observer-position ?point in: ?space
 
 mode observer-position-v1 given observer space yields point: one
 
 target-position-v1:
-  ?example:
-    target: Target
-    space: Space
-    point: point2-v1
-    ?target:
-      has target-position ?point in: ?space
+  ?target shape Target
+  ?space shape Space
+  ?point shape point2-v1
+  ?target:
+    has target-position ?point in: ?space
 
 mode target-position-v1 given target space yields point: one
 
 proximity-radius-v1:
-  ?example:
-    observer: Observer
-    space: Space
-    radius: nonnegative-q16-16-v1
-    ?observer:
-      has proximity-radius ?radius in: ?space
+  ?observer shape Observer
+  ?space shape Space
+  ?radius shape nonnegative-q16-16-v1
+  ?observer:
+    has proximity-radius ?radius in: ?space
 
 mode proximity-radius-v1 given observer space yields radius: one
 

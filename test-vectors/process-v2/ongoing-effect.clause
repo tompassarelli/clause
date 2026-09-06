@@ -8,14 +8,13 @@ Result
 capability dispatch-capability
 
 dispatch:
-  ?example:
-    request: Request
-    action: Action
-    resource: Resource
-    payload: Payload
-    result: Result
-    ?request:
-      dispatches ?action to ?resource with ?payload yielding: ?result
+  ?request shape Request
+  ?action shape Action
+  ?resource shape Resource
+  ?payload shape Payload
+  ?result shape Result
+  ?request:
+    dispatches ?action to ?resource with ?payload yielding: ?result
 
 mode dispatch given request action resource payload yields result: many
   reactive while DispatchOpen

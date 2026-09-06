@@ -4,17 +4,15 @@ Text
 Item
 
 Reading:
-  ?example:
-    amount: F64
-    enabled: Bool
-    label: Text
+  amount: F64
+  enabled: Bool
+  label: Text
 
 reading:
-  ?example:
-    item: Item
-    reading: Reading
-    ?item:
-      reading: ?reading
+  ?item shape Item
+  ?reading shape Reading
+  ?item:
+    reading: ?reading
 
 mode reading given item yields reading: one
 

@@ -89,20 +89,18 @@ the ordinary clause syntax to relate them:
 
 ```clause
 limited:
-  ?example:
-    amount: F64
-    minimum: F64
-    maximum: F64
-    result: F64
-    ?amount:
-      limited between ?minimum and ?maximum as: ?result
+  (shape: F64):
+    ?amount ?minimum ?maximum ?result
+  ?amount:
+    limited between ?minimum and ?maximum as: ?result
 
 mode limited given amount minimum maximum yields result: maybe
 ```
 
-The example fixes the Reading independently of its executable direction.
-Laws and handlers use that same Reading. A structured value declares its
-fields under `?example:` without an additional phrase. The generated card's
+The shared edge explicitly constrains all four bindings to F64 while the
+Reading remains independent of its executable direction. Laws and handlers
+use that same Reading and can check the same conformance premises. A
+structured value declares its fields directly, without unused binders. The generated card's
 [checked journey](authoring-card.md#bindings-focus-and-structured-values)
 combines both forms with atomic updates and a checked live edit.
 

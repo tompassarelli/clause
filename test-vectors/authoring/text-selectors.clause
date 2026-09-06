@@ -3,20 +3,18 @@ Bool
 Item
 
 status:
-  ?example:
-    item: Item
-    status: Text
-    ?item:
-      status: ?status
+  ?item shape Item
+  ?status shape Text
+  ?item:
+    status: ?status
 
 mode status given item yields status: one
 
 selected:
-  ?example:
-    item: Item
-    selected: Bool
-    ?item:
-      selected: ?selected
+  ?item shape Item
+  ?selected shape Bool
+  ?item:
+    selected: ?selected
 
 mode selected given item yields selected: one
 

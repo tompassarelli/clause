@@ -4,56 +4,50 @@ GoalStatus
 Text
 
 known-goal:
-  ?example:
-    north: North
-    known-goal: Goal
-    ?north:
-      known goal: ?known-goal
+  ?north shape North
+  ?known-goal shape Goal
+  ?north:
+    known goal: ?known-goal
 
 mode known-goal given north yields known-goal: many
 
 goal-title:
-  ?example:
-    goal: Goal
-    goal-title: Text
-    ?goal:
-      title: ?goal-title
+  ?goal shape Goal
+  ?goal-title shape Text
+  ?goal:
+    title: ?goal-title
 
 mode goal-title given goal yields goal-title: maybe
 
 goal-objective:
-  ?example:
-    goal: Goal
-    goal-objective: Text
-    ?goal:
-      objective: ?goal-objective
+  ?goal shape Goal
+  ?goal-objective shape Text
+  ?goal:
+    objective: ?goal-objective
 
 mode goal-objective given goal yields goal-objective: maybe
 
 goal-status:
-  ?example:
-    goal: Goal
-    goal-status: GoalStatus
-    ?goal:
-      status: ?goal-status
+  ?goal shape Goal
+  ?goal-status shape GoalStatus
+  ?goal:
+    status: ?goal-status
 
 mode goal-status given goal yields goal-status: maybe
 
 prior-goal-objective:
-  ?example:
-    goal: Goal
-    prior-goal-objective: Text
-    ?goal:
-      prior objective: ?prior-goal-objective
+  ?goal shape Goal
+  ?prior-goal-objective shape Text
+  ?goal:
+    prior objective: ?prior-goal-objective
 
 mode prior-goal-objective given goal yields prior-goal-objective: many
 
 goal-catalog-state:
-  ?example:
-    north: North
-    goal-catalog-state: GoalStatus
-    ?north:
-      goal catalog state: ?goal-catalog-state
+  ?north shape North
+  ?goal-catalog-state shape GoalStatus
+  ?north:
+    goal catalog state: ?goal-catalog-state
 
 mode goal-catalog-state given north yields goal-catalog-state: one
 

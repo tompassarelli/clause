@@ -4,35 +4,31 @@ Item
 Report
 
 enabled:
-  ?example:
-    item: Item
-    enabled: Bool
-    ?item:
-      enabled: ?enabled
+  ?item shape Item
+  ?enabled shape Bool
+  ?item:
+    enabled: ?enabled
 
 mode enabled given item yields enabled: one
 amount:
-  ?example:
-    item: Item
-    amount: F64
-    ?item:
-      amount: ?amount
+  ?item shape Item
+  ?amount shape F64
+  ?item:
+    amount: ?amount
 
 mode amount given item yields amount: one
 total:
-  ?example:
-    report: Report
-    total: F64
-    ?report:
-      total: ?total
+  ?report shape Report
+  ?total shape F64
+  ?report:
+    total: ?total
 
 mode total given report yields total: one
 count:
-  ?example:
-    report: Report
-    count: F64
-    ?report:
-      count: ?count
+  ?report shape Report
+  ?count shape F64
+  ?report:
+    count: ?count
 
 mode count given report yields count: one
 

@@ -3,10 +3,9 @@ Item
 Report
 
 doubled:
-  ?example:
-    input: F64
-    output: F64
-    double ?input as ?output
+  (shape: F64):
+    ?input ?output
+  double ?input as ?output
 
 mode doubled given input yields output: maybe
 law double-value
@@ -15,19 +14,17 @@ law double-value
 derive double-value
 
 amount:
-  ?example:
-    item: Item
-    amount: F64
-    ?item:
-      amount: ?amount
+  ?item shape Item
+  ?amount shape F64
+  ?item:
+    amount: ?amount
 
 mode amount given item yields amount: one
 total:
-  ?example:
-    report: Report
-    total: F64
-    ?report:
-      total: ?total
+  ?report shape Report
+  ?total shape F64
+  ?report:
+    total: ?total
 
 mode total given report yields total: one
 

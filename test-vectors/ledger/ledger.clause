@@ -2,11 +2,10 @@ F64
 Account
 
 balance:
-  ?example:
-    account: Account
-    balance: F64
-    ?account:
-      balance: ?balance
+  ?account shape Account
+  ?balance shape F64
+  ?account:
+    balance: ?balance
 
 mode balance given account yields balance: one
 

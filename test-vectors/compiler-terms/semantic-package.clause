@@ -38,686 +38,588 @@ Cardinality
 Binding
 
 TripleRecord:
-  ?example:
-    slot-zero: Term
-    slot-one: Term
-    slot-two: Term
+  slot-zero: Term
+  slot-one: Term
+  slot-two: Term
 
 NamedRoleBinding:
-  ?example:
-    role-id: RoleId
-    binding: Binding
+  role-id: RoleId
+  binding: Binding
 
 PremiseOccurrence:
-  ?example:
-    occurrence-id: PremiseOccurrenceId
-    ordinal: Ordinal
-    schema-id: RelationSchemaId
+  occurrence-id: PremiseOccurrenceId
+  ordinal: Ordinal
+  schema-id: RelationSchemaId
 
 PremiseSlot:
-  ?example:
-    slot-id: PremiseSlotId
-    ordinal: Ordinal
-    role-id: RoleId
-    binding: Binding
+  slot-id: PremiseSlotId
+  ordinal: Ordinal
+  role-id: RoleId
+  binding: Binding
 
 triple-slot-zero:
-  ?example:
-    term: Triple
-    triple-slot-zero: Term
-    ?term:
-      has exact triple slot zero: ?triple-slot-zero
+  ?term shape Triple
+  ?triple-slot-zero shape Term
+  ?term:
+    has exact triple slot zero: ?triple-slot-zero
 
 triple-slot-one:
-  ?example:
-    term: Triple
-    triple-slot-one: Term
-    ?term:
-      has exact triple slot one: ?triple-slot-one
+  ?term shape Triple
+  ?triple-slot-one shape Term
+  ?term:
+    has exact triple slot one: ?triple-slot-one
 
 triple-slot-two:
-  ?example:
-    term: Triple
-    triple-slot-two: Term
-    ?term:
-      has exact triple slot two: ?triple-slot-two
+  ?term shape Triple
+  ?triple-slot-two shape Term
+  ?term:
+    has exact triple slot two: ?triple-slot-two
 
 schema-role:
-  ?example:
-    schema: RelationSchemaId
-    role: RoleId
-    ?schema:
-      has exact schema role: ?role
+  ?schema shape RelationSchemaId
+  ?role shape RoleId
+  ?schema:
+    has exact schema role: ?role
 
 role-ordinal:
-  ?example:
-    role: RoleId
-    ordinal: Ordinal
-    ?role:
-      has exact role ordinal: ?ordinal
+  ?role shape RoleId
+  ?ordinal shape Ordinal
+  ?role:
+    has exact role ordinal: ?ordinal
 
 role-domain:
-  ?example:
-    role: RoleId
-    domain: RoleDomain
-    ?role:
-      has exact role domain: ?domain
+  ?role shape RoleId
+  ?domain shape RoleDomain
+  ?role:
+    has exact role domain: ?domain
 
 role-cardinality:
-  ?example:
-    role: RoleId
-    cardinality: Cardinality
-    ?role:
-      has exact role cardinality: ?cardinality
+  ?role shape RoleId
+  ?cardinality shape Cardinality
+  ?role:
+    has exact role cardinality: ?cardinality
 
 operator-definition-schema:
-  ?example:
-    operator: OperatorRef
-    schema: RelationSchemaId
-    ?operator:
-      has exact relation schema definition: ?schema
+  ?operator shape OperatorRef
+  ?schema shape RelationSchemaId
+  ?operator:
+    has exact relation schema definition: ?schema
 
 operator-definition-law:
-  ?example:
-    operator: OperatorRef
-    law: LawId
-    ?operator:
-      has exact law definition: ?law
+  ?operator shape OperatorRef
+  ?law shape LawId
+  ?operator:
+    has exact law definition: ?law
 
 mode-operator:
-  ?example:
-    mode: ModeId
-    operator: OperatorRef
-    ?mode:
-      selects exact mode operator: ?operator
+  ?mode shape ModeId
+  ?operator shape OperatorRef
+  ?mode:
+    selects exact mode operator: ?operator
 
 mode-schema:
-  ?example:
-    mode: ModeId
-    schema: RelationSchemaId
-    ?mode:
-      selects exact mode schema: ?schema
+  ?mode shape ModeId
+  ?schema shape RelationSchemaId
+  ?mode:
+    selects exact mode schema: ?schema
 
 mode-known-role:
-  ?example:
-    mode: ModeId
-    role: RoleId
-    ?mode:
-      has exact known role: ?role
+  ?mode shape ModeId
+  ?role shape RoleId
+  ?mode:
+    has exact known role: ?role
 
 mode-produced-role:
-  ?example:
-    mode: ModeId
-    role: RoleId
-    ?mode:
-      has exact produced role: ?role
+  ?mode shape ModeId
+  ?role shape RoleId
+  ?mode:
+    has exact produced role: ?role
 
 mode-cardinality:
-  ?example:
-    mode: ModeId
-    cardinality: Cardinality
-    ?mode:
-      has exact result cardinality: ?cardinality
+  ?mode shape ModeId
+  ?cardinality shape Cardinality
+  ?mode:
+    has exact result cardinality: ?cardinality
 
 mode-purity:
-  ?example:
-    mode: ModeId
-    purity: Purity
-    ?mode:
-      has exact purity contract: ?purity
+  ?mode shape ModeId
+  ?purity shape Purity
+  ?mode:
+    has exact purity contract: ?purity
 
 mode-determinism:
-  ?example:
-    mode: ModeId
-    determinism: Determinism
-    ?mode:
-      has exact determinism contract: ?determinism
+  ?mode shape ModeId
+  ?determinism shape Determinism
+  ?mode:
+    has exact determinism contract: ?determinism
 
 mode-totality:
-  ?example:
-    mode: ModeId
-    totality: Totality
-    ?mode:
-      has exact totality contract: ?totality
+  ?mode shape ModeId
+  ?totality shape Totality
+  ?mode:
+    has exact totality contract: ?totality
 
 mode-ordering:
-  ?example:
-    mode: ModeId
-    ordering: Ordering
-    ?mode:
-      has exact result ordering: ?ordering
+  ?mode shape ModeId
+  ?ordering shape Ordering
+  ?mode:
+    has exact result ordering: ?ordering
 
 mode-continuation:
-  ?example:
-    mode: ModeId
-    continuation: ContinuationContract
-    ?mode:
-      has exact continuation contract: ?continuation
+  ?mode shape ModeId
+  ?continuation shape ContinuationContract
+  ?mode:
+    has exact continuation contract: ?continuation
 
 mode-required-authorization:
-  ?example:
-    mode: ModeId
-    authorization: AuthorizationType
-    ?mode:
-      requires exact mode authorization: ?authorization
+  ?mode shape ModeId
+  ?authorization shape AuthorizationType
+  ?mode:
+    requires exact mode authorization: ?authorization
 
 mode-executable-validity:
-  ?example:
-    mode: ModeId
-    validity: ExecutableValidity
-    ?mode:
-      requires exact executable validity: ?validity
+  ?mode shape ModeId
+  ?validity shape ExecutableValidity
+  ?mode:
+    requires exact executable validity: ?validity
 
 mode-authorization-set:
-  ?example:
-    mode: ModeId
-    authorization-set: AuthorizationSet
-    ?mode:
-      has exact mode authorization set: ?authorization-set
+  ?mode shape ModeId
+  ?authorization-set shape AuthorizationSet
+  ?mode:
+    has exact mode authorization set: ?authorization-set
 
 authorization-set-cardinality:
-  ?example:
-    authorization-set: AuthorizationSet
-    cardinality: Ordinal
-    ?authorization-set:
-      has exact authorization cardinality: ?cardinality
+  ?authorization-set shape AuthorizationSet
+  ?cardinality shape Ordinal
+  ?authorization-set:
+    has exact authorization cardinality: ?cardinality
 
 authorization-set-member:
-  ?example:
-    authorization-set: AuthorizationSet
-    authorization: AuthorizationType
-    ?authorization-set:
-      has exact authorization member: ?authorization
+  ?authorization-set shape AuthorizationSet
+  ?authorization shape AuthorizationType
+  ?authorization-set:
+    has exact authorization member: ?authorization
 
 formation-subject:
-  ?example:
-    formation: FormationJudgment
-    term: Term
-    ?formation:
-      forms exact term: ?term
+  ?formation shape FormationJudgment
+  ?term shape Term
+  ?formation:
+    forms exact term: ?term
 
 formation-interpretation:
-  ?example:
-    formation: FormationJudgment
-    interpretation: ApplicationForm
-    ?formation:
-      has exact interpretation: ?interpretation
+  ?formation shape FormationJudgment
+  ?interpretation shape ApplicationForm
+  ?formation:
+    has exact interpretation: ?interpretation
 
 formation-formed-type:
-  ?example:
-    formation: FormationJudgment
-    formed-type: FormedType
-    ?formation:
-      forms exact type: ?formed-type
+  ?formation shape FormationJudgment
+  ?formed-type shape FormedType
+  ?formation:
+    forms exact type: ?formed-type
 
 formation-schema-dependency:
-  ?example:
-    formation: FormationJudgment
-    schema: RelationSchemaId
-    ?formation:
-      has exact formation schema dependency: ?schema
+  ?formation shape FormationJudgment
+  ?schema shape RelationSchemaId
+  ?formation:
+    has exact formation schema dependency: ?schema
 
 formation-operator-dependency:
-  ?example:
-    formation: FormationJudgment
-    operator: OperatorRef
-    ?formation:
-      has exact formation operator dependency: ?operator
+  ?formation shape FormationJudgment
+  ?operator shape OperatorRef
+  ?formation:
+    has exact formation operator dependency: ?operator
 
 formation-mode-dependency:
-  ?example:
-    formation: FormationJudgment
-    mode: ModeId
-    ?formation:
-      has exact formation mode dependency: ?mode
+  ?formation shape FormationJudgment
+  ?mode shape ModeId
+  ?formation:
+    has exact formation mode dependency: ?mode
 
 formation-law-dependency:
-  ?example:
-    formation: FormationJudgment
-    law: LawId
-    ?formation:
-      has exact formation law dependency: ?law
+  ?formation shape FormationJudgment
+  ?law shape LawId
+  ?formation:
+    has exact formation law dependency: ?law
 
 formation-term-dependency:
-  ?example:
-    formation: FormationJudgment
-    term: Term
-    ?formation:
-      has exact formation term dependency: ?term
+  ?formation shape FormationJudgment
+  ?term shape Term
+  ?formation:
+    has exact formation term dependency: ?term
 
 formation-formation-dependency:
-  ?example:
-    formation: FormationJudgment
-    dependency: FormationJudgment
-    ?formation:
-      has exact nested formation dependency: ?dependency
+  (shape: FormationJudgment):
+    ?formation ?dependency
+  ?formation:
+    has exact nested formation dependency: ?dependency
 
 formation-form-dependency:
-  ?example:
-    formation: FormationJudgment
-    form: ApplicationForm
-    ?formation:
-      has exact formation form dependency: ?form
+  ?formation shape FormationJudgment
+  ?form shape ApplicationForm
+  ?formation:
+    has exact formation form dependency: ?form
 
 formation-application-dependency:
-  ?example:
-    formation: FormationJudgment
-    application: ApplicationId
-    ?formation:
-      has exact formation application dependency: ?application
+  ?formation shape FormationJudgment
+  ?application shape ApplicationId
+  ?formation:
+    has exact formation application dependency: ?application
 
 form-schema:
-  ?example:
-    form: ApplicationForm
-    schema: RelationSchemaId
-    ?form:
-      selects exact relation schema: ?schema
+  ?form shape ApplicationForm
+  ?schema shape RelationSchemaId
+  ?form:
+    selects exact relation schema: ?schema
 
 form-term:
-  ?example:
-    form: ApplicationForm
-    term: Term
-    ?form:
-      represents exact form term: ?term
+  ?form shape ApplicationForm
+  ?term shape Term
+  ?form:
+    represents exact form term: ?term
 
 form-operator:
-  ?example:
-    form: ApplicationForm
-    operator: OperatorRef
-    ?form:
-      selects exact operator: ?operator
+  ?form shape ApplicationForm
+  ?operator shape OperatorRef
+  ?form:
+    selects exact operator: ?operator
 
 form-eligible-mode:
-  ?example:
-    form: ApplicationForm
-    mode: ModeId
-    ?form:
-      has exact eligible mode: ?mode
+  ?form shape ApplicationForm
+  ?mode shape ModeId
+  ?form:
+    has exact eligible mode: ?mode
 
 form-role-binding:
-  ?example:
-    form: ApplicationForm
-    binding: NamedRoleBinding
-    ?form:
-      has exact named role binding: ?binding
+  ?form shape ApplicationForm
+  ?binding shape NamedRoleBinding
+  ?form:
+    has exact named role binding: ?binding
 
 binding-role:
-  ?example:
-    binding: NamedRoleBinding
-    role: RoleId
-    ?binding:
-      selects exact bound role: ?role
+  ?binding shape NamedRoleBinding
+  ?role shape RoleId
+  ?binding:
+    selects exact bound role: ?role
 
 binding-variable:
-  ?example:
-    binding: NamedRoleBinding
-    variable: VariableId
-    ?binding:
-      binds exact role variable: ?variable
+  ?binding shape NamedRoleBinding
+  ?variable shape VariableId
+  ?binding:
+    binds exact role variable: ?variable
 
 binding-produced-variable:
-  ?example:
-    binding: NamedRoleBinding
-    variable: VariableId
-    ?binding:
-      binds exact produced variable: ?variable
+  ?binding shape NamedRoleBinding
+  ?variable shape VariableId
+  ?binding:
+    binds exact produced variable: ?variable
 
 binding-constant:
-  ?example:
-    binding: NamedRoleBinding
-    constant: Term
-    ?binding:
-      binds exact role constant: ?constant
+  ?binding shape NamedRoleBinding
+  ?constant shape Term
+  ?binding:
+    binds exact role constant: ?constant
 
 form-context-requirement:
-  ?example:
-    form: ApplicationForm
-    requirement: ContextRequirement
-    ?form:
-      requires exact context: ?requirement
+  ?form shape ApplicationForm
+  ?requirement shape ContextRequirement
+  ?form:
+    requires exact context: ?requirement
 
 form-schema-dependency:
-  ?example:
-    form: ApplicationForm
-    schema: RelationSchemaId
-    ?form:
-      has exact form schema dependency: ?schema
+  ?form shape ApplicationForm
+  ?schema shape RelationSchemaId
+  ?form:
+    has exact form schema dependency: ?schema
 
 form-operator-dependency:
-  ?example:
-    form: ApplicationForm
-    operator: OperatorRef
-    ?form:
-      has exact form operator dependency: ?operator
+  ?form shape ApplicationForm
+  ?operator shape OperatorRef
+  ?form:
+    has exact form operator dependency: ?operator
 
 form-mode-dependency:
-  ?example:
-    form: ApplicationForm
-    mode: ModeId
-    ?form:
-      has exact form mode dependency: ?mode
+  ?form shape ApplicationForm
+  ?mode shape ModeId
+  ?form:
+    has exact form mode dependency: ?mode
 
 form-law-dependency:
-  ?example:
-    form: ApplicationForm
-    law: LawId
-    ?form:
-      has exact form law dependency: ?law
+  ?form shape ApplicationForm
+  ?law shape LawId
+  ?form:
+    has exact form law dependency: ?law
 
 form-term-dependency:
-  ?example:
-    form: ApplicationForm
-    term: Term
-    ?form:
-      has exact form term dependency: ?term
+  ?form shape ApplicationForm
+  ?term shape Term
+  ?form:
+    has exact form term dependency: ?term
 
 form-formation-dependency:
-  ?example:
-    form: ApplicationForm
-    formation: FormationJudgment
-    ?form:
-      has exact form formation dependency: ?formation
+  ?form shape ApplicationForm
+  ?formation shape FormationJudgment
+  ?form:
+    has exact form formation dependency: ?formation
 
 form-form-dependency:
-  ?example:
-    form: ApplicationForm
-    dependency: ApplicationForm
-    ?form:
-      has exact nested form dependency: ?dependency
+  (shape: ApplicationForm):
+    ?form ?dependency
+  ?form:
+    has exact nested form dependency: ?dependency
 
 form-application-dependency:
-  ?example:
-    form: ApplicationForm
-    application: ApplicationId
-    ?form:
-      has exact form application dependency: ?application
+  ?form shape ApplicationForm
+  ?application shape ApplicationId
+  ?form:
+    has exact form application dependency: ?application
 
 form-point-component-projection:
-  ?example:
-    form: ApplicationForm
-    projection: PointComponentProjection
-    ?form:
-      has exact point component projection: ?projection
+  ?form shape ApplicationForm
+  ?projection shape PointComponentProjection
+  ?form:
+    has exact point component projection: ?projection
 
 point-projection-ordinal:
-  ?example:
-    projection: PointComponentProjection
-    ordinal: Ordinal
-    ?projection:
-      has exact point projection ordinal: ?ordinal
+  ?projection shape PointComponentProjection
+  ?ordinal shape Ordinal
+  ?projection:
+    has exact point projection ordinal: ?ordinal
 
 point-projection-source:
-  ?example:
-    projection: PointComponentProjection
-    variable: VariableId
-    ?projection:
-      projects exact point variable: ?variable
+  ?projection shape PointComponentProjection
+  ?variable shape VariableId
+  ?projection:
+    projects exact point variable: ?variable
 
 point-projection-operator:
-  ?example:
-    projection: PointComponentProjection
-    operator: OperatorRef
-    ?projection:
-      applies exact point projection operator: ?operator
+  ?projection shape PointComponentProjection
+  ?operator shape OperatorRef
+  ?projection:
+    applies exact point projection operator: ?operator
 
 point-projection-mode:
-  ?example:
-    projection: PointComponentProjection
-    mode: ModeId
-    ?projection:
-      selects exact point projection mode: ?mode
+  ?projection shape PointComponentProjection
+  ?mode shape ModeId
+  ?projection:
+    selects exact point projection mode: ?mode
 
 point-projection-produced-variable:
-  ?example:
-    projection: PointComponentProjection
-    variable: VariableId
-    ?projection:
-      produces exact scalar variable: ?variable
+  ?projection shape PointComponentProjection
+  ?variable shape VariableId
+  ?projection:
+    produces exact scalar variable: ?variable
 
 point-projection-application:
-  ?example:
-    projection: PointComponentProjection
-    application: ApplicationId
-    ?projection:
-      selects exact projection application: ?application
+  ?projection shape PointComponentProjection
+  ?application shape ApplicationId
+  ?projection:
+    selects exact projection application: ?application
 
 application-form:
-  ?example:
-    application: ApplicationId
-    form: ApplicationForm
-    ?application:
-      instantiates exact application form: ?form
+  ?application shape ApplicationId
+  ?form shape ApplicationForm
+  ?application:
+    instantiates exact application form: ?form
 
 operator-definition-root:
-  ?example:
-    operator: OperatorRef
-    application: ApplicationId
-    ?operator:
-      has exact generic application graph root: ?application
+  ?operator shape OperatorRef
+  ?application shape ApplicationId
+  ?operator:
+    has exact generic application graph root: ?application
 
 operator-definition-application:
-  ?example:
-    operator: OperatorRef
-    application: ApplicationId
-    ?operator:
-      has exact generic graph application: ?application
+  ?operator shape OperatorRef
+  ?application shape ApplicationId
+  ?operator:
+    has exact generic graph application: ?application
 
 external-relation-schema-identity:
-  ?example:
-    schema: RelationSchemaId
-    identifier: ExternalIdentifier
-    ?schema:
-      resolves exact external relation schema: ?identifier
+  ?schema shape RelationSchemaId
+  ?identifier shape ExternalIdentifier
+  ?schema:
+    resolves exact external relation schema: ?identifier
 
 external-operator-identity:
-  ?example:
-    operator: OperatorRef
-    identifier: ExternalIdentifier
-    ?operator:
-      resolves exact external operator: ?identifier
+  ?operator shape OperatorRef
+  ?identifier shape ExternalIdentifier
+  ?operator:
+    resolves exact external operator: ?identifier
 
 external-mode-identity:
-  ?example:
-    mode: ModeId
-    identifier: ExternalIdentifier
-    ?mode:
-      resolves exact external mode: ?identifier
+  ?mode shape ModeId
+  ?identifier shape ExternalIdentifier
+  ?mode:
+    resolves exact external mode: ?identifier
 
 external-role-identity:
-  ?example:
-    role: RoleId
-    identifier: ExternalIdentifier
-    ?role:
-      resolves exact external role: ?identifier
+  ?role shape RoleId
+  ?identifier shape ExternalIdentifier
+  ?role:
+    resolves exact external role: ?identifier
 
 operator-numeric-encoding:
-  ?example:
-    operator: OperatorRef
-    encoding: NumericEncoding
-    ?operator:
-      requires exact numeric encoding: ?encoding
+  ?operator shape OperatorRef
+  ?encoding shape NumericEncoding
+  ?operator:
+    requires exact numeric encoding: ?encoding
 
 operator-numeric-domain:
-  ?example:
-    operator: OperatorRef
-    domain: NumericDomain
-    ?operator:
-      requires exact intermediate domain: ?domain
+  ?operator shape OperatorRef
+  ?domain shape NumericDomain
+  ?operator:
+    requires exact intermediate domain: ?domain
 
 operator-numeric-constraint:
-  ?example:
-    operator: OperatorRef
-    constraint: NumericConstraint
-    ?operator:
-      requires exact numeric constraint: ?constraint
+  ?operator shape OperatorRef
+  ?constraint shape NumericConstraint
+  ?operator:
+    requires exact numeric constraint: ?constraint
 
 law-premise-occurrence:
-  ?example:
-    law: LawId
-    occurrence: PremiseOccurrenceId
-    ?law:
-      has exact premise occurrence: ?occurrence
+  ?law shape LawId
+  ?occurrence shape PremiseOccurrenceId
+  ?law:
+    has exact premise occurrence: ?occurrence
 
 law-mode:
-  ?example:
-    law: LawId
-    mode: ModeId
-    ?law:
-      has exact derivation mode: ?mode
+  ?law shape LawId
+  ?mode shape ModeId
+  ?law:
+    has exact derivation mode: ?mode
 
 law-operator:
-  ?example:
-    law: LawId
-    operator: OperatorRef
-    ?law:
-      selects exact law operator: ?operator
+  ?law shape LawId
+  ?operator shape OperatorRef
+  ?law:
+    selects exact law operator: ?operator
 
 law-conclusion-schema:
-  ?example:
-    law: LawId
-    schema: RelationSchemaId
-    ?law:
-      selects exact conclusion schema: ?schema
+  ?law shape LawId
+  ?schema shape RelationSchemaId
+  ?law:
+    selects exact conclusion schema: ?schema
 
 law-conclusion-projection:
-  ?example:
-    law: LawId
-    projection: ConclusionProjection
-    ?law:
-      selects exact conclusion projection: ?projection
+  ?law shape LawId
+  ?projection shape ConclusionProjection
+  ?law:
+    selects exact conclusion projection: ?projection
 
 law-context-requirement:
-  ?example:
-    law: LawId
-    requirement: ContextRequirement
-    ?law:
-      requires exact context: ?requirement
+  ?law shape LawId
+  ?requirement shape ContextRequirement
+  ?law:
+    requires exact context: ?requirement
 
 premise-ordinal:
-  ?example:
-    occurrence: PremiseOccurrenceId
-    ordinal: Ordinal
-    ?occurrence:
-      has exact premise ordinal: ?ordinal
+  ?occurrence shape PremiseOccurrenceId
+  ?ordinal shape Ordinal
+  ?occurrence:
+    has exact premise ordinal: ?ordinal
 
 premise-schema:
-  ?example:
-    occurrence: PremiseOccurrenceId
-    schema: RelationSchemaId
-    ?occurrence:
-      selects exact premise schema: ?schema
+  ?occurrence shape PremiseOccurrenceId
+  ?schema shape RelationSchemaId
+  ?occurrence:
+    selects exact premise schema: ?schema
 
 premise-eligible-mode:
-  ?example:
-    occurrence: PremiseOccurrenceId
-    mode: ModeId
-    ?occurrence:
-      has exact premise mode: ?mode
+  ?occurrence shape PremiseOccurrenceId
+  ?mode shape ModeId
+  ?occurrence:
+    has exact premise mode: ?mode
 
 premise-slot:
-  ?example:
-    occurrence: PremiseOccurrenceId
-    slot: PremiseSlotId
-    ?occurrence:
-      has exact premise slot: ?slot
+  ?occurrence shape PremiseOccurrenceId
+  ?slot shape PremiseSlotId
+  ?occurrence:
+    has exact premise slot: ?slot
 
 slot-ordinal:
-  ?example:
-    slot: PremiseSlotId
-    ordinal: Ordinal
-    ?slot:
-      has exact slot ordinal: ?ordinal
+  ?slot shape PremiseSlotId
+  ?ordinal shape Ordinal
+  ?slot:
+    has exact slot ordinal: ?ordinal
 
 slot-role:
-  ?example:
-    slot: PremiseSlotId
-    role: RoleId
-    ?slot:
-      instantiates exact schema role: ?role
+  ?slot shape PremiseSlotId
+  ?role shape RoleId
+  ?slot:
+    instantiates exact schema role: ?role
 
 slot-variable:
-  ?example:
-    slot: PremiseSlotId
-    variable: VariableId
-    ?slot:
-      binds exact variable: ?variable
+  ?slot shape PremiseSlotId
+  ?variable shape VariableId
+  ?slot:
+    binds exact variable: ?variable
 
 slot-constant:
-  ?example:
-    slot: PremiseSlotId
-    constant: Term
-    ?slot:
-      binds exact constant: ?constant
+  ?slot shape PremiseSlotId
+  ?constant shape Term
+  ?slot:
+    binds exact constant: ?constant
 
 derivation-authorization:
-  ?example:
-    law: LawId
-    authorization: JudgmentLocalId
-    ?law:
-      requires exact derivation authorization: ?authorization
+  ?law shape LawId
+  ?authorization shape JudgmentLocalId
+  ?law:
+    requires exact derivation authorization: ?authorization
 
 conclusion-projection-field:
-  ?example:
-    projection: ConclusionProjection
-    field: ProjectionField
-    ?projection:
-      has exact projection field: ?field
+  ?projection shape ConclusionProjection
+  ?field shape ProjectionField
+  ?projection:
+    has exact projection field: ?field
 
 projection-field-ordinal:
-  ?example:
-    field: ProjectionField
-    ordinal: Ordinal
-    ?field:
-      has exact projection ordinal: ?ordinal
+  ?field shape ProjectionField
+  ?ordinal shape Ordinal
+  ?field:
+    has exact projection ordinal: ?ordinal
 
 projection-field-role:
-  ?example:
-    field: ProjectionField
-    role: RoleId
-    ?field:
-      selects exact projected role: ?role
+  ?field shape ProjectionField
+  ?role shape RoleId
+  ?field:
+    selects exact projected role: ?role
 
 projection-field-variable:
-  ?example:
-    field: ProjectionField
-    variable: VariableId
-    ?field:
-      selects exact projected variable: ?variable
+  ?field shape ProjectionField
+  ?variable shape VariableId
+  ?field:
+    selects exact projected variable: ?variable
 
 judgment-kind:
-  ?example:
-    judgment: JudgmentLocalId
-    kind: JudgmentKind
-    ?judgment:
-      has exact judgment kind: ?kind
+  ?judgment shape JudgmentLocalId
+  ?kind shape JudgmentKind
+  ?judgment:
+    has exact judgment kind: ?kind
 
 judgment-authorization-type:
-  ?example:
-    judgment: JudgmentLocalId
-    authorization: AuthorizationType
-    ?judgment:
-      has exact authorization type: ?authorization
+  ?judgment shape JudgmentLocalId
+  ?authorization shape AuthorizationType
+  ?judgment:
+    has exact authorization type: ?authorization
 
 judgment-law-subject:
-  ?example:
-    judgment: JudgmentLocalId
-    law: LawId
-    ?judgment:
-      authorizes exact law subject: ?law
+  ?judgment shape JudgmentLocalId
+  ?law shape LawId
+  ?judgment:
+    authorizes exact law subject: ?law
 
 judgment-application-subject:
-  ?example:
-    judgment: JudgmentLocalId
-    application: ApplicationId
-    ?judgment:
-      authorizes exact application subject: ?application
+  ?judgment shape JudgmentLocalId
+  ?application shape ApplicationId
+  ?judgment:
+    authorizes exact application subject: ?application
 
 judgment-snapshot-scope:
-  ?example:
-    judgment: JudgmentLocalId
-    scope: ProgramSnapshotScope
-    ?judgment:
-      has exact containing snapshot scope: ?scope
+  ?judgment shape JudgmentLocalId
+  ?scope shape ProgramSnapshotScope
+  ?judgment:
+    has exact containing snapshot scope: ?scope
 
 term-radius-proximity-v1
   has exact triple slot zero atom-observer

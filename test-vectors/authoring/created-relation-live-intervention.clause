@@ -2,35 +2,31 @@ Actor
 BurnEffect
 
 vitality:
-  ?example:
-    actor: Actor
-    vitality: F64
-    ?actor:
-      vitality: ?vitality
+  ?actor shape Actor
+  ?vitality shape F64
+  ?actor:
+    vitality: ?vitality
 
 mode vitality given actor yields vitality: one
 selected:
-  ?example:
-    actor: Actor
-    selected: Bool
-    ?actor:
-      selected: ?selected
+  ?actor shape Actor
+  ?selected shape Bool
+  ?actor:
+    selected: ?selected
 
 mode selected given actor yields selected: one
 burn-target:
-  ?example:
-    effect: BurnEffect
-    burn-target: Actor
-    ?effect:
-      burn target: ?burn-target
+  ?effect shape BurnEffect
+  ?burn-target shape Actor
+  ?effect:
+    burn target: ?burn-target
 
 mode burn-target given effect yields burn-target: one
 effect-remaining:
-  ?example:
-    effect: BurnEffect
-    effect-remaining: F64
-    ?effect:
-      effect remaining: ?effect-remaining
+  ?effect shape BurnEffect
+  ?effect-remaining shape F64
+  ?effect:
+    effect remaining: ?effect-remaining
 
 mode effect-remaining given effect yields effect-remaining: one
 

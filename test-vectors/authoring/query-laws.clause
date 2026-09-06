@@ -3,10 +3,9 @@ Item
 Report
 
 magnitude:
-  ?example:
-    input: F64
-    output: F64
-    magnitude of ?input as ?output
+  (shape: F64):
+    ?input ?output
+  magnitude of ?input as ?output
 
 mode magnitude given input yields output: maybe
 law negative
@@ -23,19 +22,17 @@ derive negative
 derive positive
 
 amount:
-  ?example:
-    item: Item
-    amount: F64
-    ?item:
-      amount: ?amount
+  ?item shape Item
+  ?amount shape F64
+  ?item:
+    amount: ?amount
 
 mode amount given item yields amount: one
 total:
-  ?example:
-    report: Report
-    total: F64
-    ?report:
-      total: ?total
+  ?report shape Report
+  ?total shape F64
+  ?report:
+    total: ?total
 
 mode total given report yields total: one
 

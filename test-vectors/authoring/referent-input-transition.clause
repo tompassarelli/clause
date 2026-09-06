@@ -4,29 +4,26 @@ Item
 ItemClass
 
 item-class:
-  ?example:
-    item: Item
-    item-class: ItemClass
-    ?item:
-      item class: ?item-class
+  ?item shape Item
+  ?item-class shape ItemClass
+  ?item:
+    item class: ?item-class
 
 mode item-class given item yields item-class: one
 
 selected:
-  ?example:
-    item: Item
-    selected: Bool
-    ?item:
-      selected: ?selected
+  ?item shape Item
+  ?selected shape Bool
+  ?item:
+    selected: ?selected
 
 mode selected given item yields selected: one
 
 progress:
-  ?example:
-    item: Item
-    progress: F64
-    ?item:
-      progress: ?progress
+  ?item shape Item
+  ?progress shape F64
+  ?item:
+    progress: ?progress
 
 mode progress given item yields progress: one
 

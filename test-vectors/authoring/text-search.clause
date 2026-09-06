@@ -3,19 +3,17 @@ Bool
 Document
 
 text:
-  ?example:
-    document: Document
-    text: Text
-    ?document:
-      text: ?text
+  ?document shape Document
+  ?text shape Text
+  ?document:
+    text: ?text
 
 mode text given document yields text: one
 matches:
-  ?example:
-    document: Document
-    matches: Bool
-    ?document:
-      matches: ?matches
+  ?document shape Document
+  ?matches shape Bool
+  ?document:
+    matches: ?matches
 
 mode matches given document yields matches: one
 

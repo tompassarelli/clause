@@ -2,26 +2,23 @@ F64
 Loot
 
 Vec3:
-  ?example:
-    x: F64
-    y: F64
-    z: F64
+  x: F64
+  y: F64
+  z: F64
 
 loot-position:
-  ?example:
-    loot: Loot
-    loot-position: Vec3
-    ?loot:
-      loot position: ?loot-position
+  ?loot shape Loot
+  ?loot-position shape Vec3
+  ?loot:
+    loot position: ?loot-position
 
 mode loot-position given loot yields loot-position: one
 
 loot-origin-position:
-  ?example:
-    loot: Loot
-    loot-origin-position: Vec3
-    ?loot:
-      loot origin position: ?loot-origin-position
+  ?loot shape Loot
+  ?loot-origin-position shape Vec3
+  ?loot:
+    loot origin position: ?loot-origin-position
 
 mode loot-origin-position given loot yields loot-origin-position: one
 

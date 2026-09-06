@@ -6,11 +6,10 @@ failed
 resetting
 
 objective-state:
-  ?example:
-    objective: Objective
-    objective-state: ObjectiveState
-    ?objective:
-      objective state: ?objective-state
+  ?objective shape Objective
+  ?objective-state shape ObjectiveState
+  ?objective:
+    objective state: ?objective-state
 
 mode objective-state given objective yields objective-state: one
 

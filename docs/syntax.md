@@ -94,14 +94,13 @@ enum Game
   Soccer
 
 Vec2:
-  ?example:
-    x: F32
-    y: F32
+  x: F32
+  y: F32
 ```
 
 A bare designation introduces or resolves a Referent. An `enum` child emits
-one independent membership fact. Constraints under `?example:` give the named
-fields of a structured value; each field has one declared domain.
+one independent membership fact. A named structured contract gives its fields
+directly; each field has one declared domain and needs no unused variable.
 
 A Shape is a structural participation contract, not physical layout or nominal
 membership. The resident checker currently enforces required field/role,
@@ -166,6 +165,21 @@ binding. Flat and focused forms have the same relational meaning, and both may
 occur in `if`, `then`, `when`, `withdraw`, `include`, and `accumulate`.
 A focused variable head must have children.
 
+An explicitly delimited edge can instead focus its subject position:
+
+```clause
+(charge: 9.0):
+  first second
+```
+
+The parenthesized edge is read by the selected declared grammar. The final
+colon selects shared-edge focus before reading its children. Each child token
+is one named or variable subject, with its own source origin. Quoted
+designations remain one token. Equal repeated subjects retain their source
+occurrences but not a second value or identity. This is not a comma product.
+An undelimited `charge: 9.0` remains denotation; adding children rejects rather
+than turning it into shared-edge focus.
+
 ## Declared readings and modes
 
 Relations that need non-field phrase structure declare one exact Reading and
@@ -173,20 +187,23 @@ any executable directions:
 
 ```clause
 connects:
-  ?example:
-    door: Door
-    origin: Space
-    destination: Space
-    ?door:
-      connects ?origin to: ?destination
+  ?door shape Door
+  (shape: Space):
+    ?origin ?destination
+  ?door:
+    connects ?origin to: ?destination
 
 mode connects given door origin yields destination: many
 ```
 
-Each named field under `?example:` constrains one binding. The example uses
-those bindings with the same `?name` and focus syntax as laws and handlers;
-other words are literal phrase tokens. Each binding occurs exactly once in
-the Reading. A focused example selects the subject role explicitly. A `mode`
+Ordinary `shape` clauses constrain the bindings in the Reading. Shared-edge
+focus can state one domain for several explicitly named bindings, without a
+default type or a separate declaration registry. These same conformance
+premises check already-bound values in laws and handlers; they do not produce
+values or fabricate world membership facts. Contradictory constraints reject.
+Other words in the Reading are literal phrase tokens. Each binding occurs
+exactly once in the Reading. Its focused clause selects the subject role
+explicitly. A `mode`
 names known and produced roles and the produced cardinality. The checked
 semantic form separately retains RelationSchema, Reading, Operator, and Mode
 identities.

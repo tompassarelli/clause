@@ -3,23 +3,21 @@ Bool
 Item
 
 Point:
-  ?example:
-    x: F64
-    y: F64
+  x: F64
+  y: F64
 
 limited:
-  ?example:
-    amount: F64
-    minimum: F64
-    maximum: F64
-    result: F64
-    ?amount:
-      limited between ?minimum and ?maximum as: ?result
+  (shape: F64):
+    ?amount ?minimum ?maximum ?result
+  ?amount:
+    limited between ?minimum and ?maximum as: ?result
 
 mode limited given amount minimum maximum yields result: maybe
 
 law below
   if
+    ?minimum:
+      shape: F64
     ?minimum <= ?maximum
     ?amount < ?minimum
   then
@@ -68,6 +66,8 @@ on settle ?item
       position: ?position
       destination: ?destination
       charge: ?charge
+    (shape: F64):
+      ?charge ?limited
     (?charge + 3.0) limited between 0.0 and 10.0 as ?limited
   withdraw
     ?item:

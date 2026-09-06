@@ -3,35 +3,31 @@ Account
 Goal
 
 balance:
-  ?example:
-    account: Account
-    balance: F64
-    ?account:
-      balance: ?balance
+  ?account shape Account
+  ?balance shape F64
+  ?account:
+    balance: ?balance
 
 mode balance given account yields balance: one
 known-goal:
-  ?example:
-    account: Account
-    known-goal: Goal
-    ?account:
-      known goal: ?known-goal
+  ?account shape Account
+  ?known-goal shape Goal
+  ?account:
+    known goal: ?known-goal
 
 mode known-goal given account yields known-goal: many
 contribution:
-  ?example:
-    goal: Goal
-    contribution: F64
-    ?goal:
-      contribution: ?contribution
+  ?goal shape Goal
+  ?contribution shape F64
+  ?goal:
+    contribution: ?contribution
 
 mode contribution given goal yields contribution: one
 remaining:
-  ?example:
-    goal: Goal
-    remaining: F64
-    ?goal:
-      remaining: ?remaining
+  ?goal shape Goal
+  ?remaining shape F64
+  ?goal:
+    remaining: ?remaining
 
 mode remaining given goal yields remaining: one
 
