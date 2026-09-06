@@ -367,6 +367,14 @@ rule. This is not a compiler build or release identifier. Every hash-derived
 identity has one domain-separated canonical preimage; digest reuse for
 different bytes rejects rather than implying equality.
 
+`ClauseSemanticsId` is a document commitment, not a semantic-compatibility
+theorem. Equal identifiers establish equal canonical manifest bytes and, after
+checking the manifest's content commitments, equal bytes for exactly the listed
+documents. Different identifiers or document bundles establish document
+difference only: they neither prove nor disprove semantic compatibility.
+Compatibility between distinct bundles requires a separately stated relation
+and evidence about their meanings.
+
 The static-reuse, lifetime, general extension, complete carrier, and optimized
 refinement rules are requirements, not current implementation claims. Their
 current boundaries are stated in the [roadmap](roadmap.md).
