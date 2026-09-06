@@ -144,7 +144,11 @@ expect(await evaluate<string>("document.querySelector('[data-source-edit-status]
   .toContain("rejected");
 
 const editSamples: Record<string, unknown>[] = [];
-for (const expression of ["?prior + 2.0", "?prior + 1.0", "?prior + 2.0"]) {
+const initialExpression = await evaluate<string>("document.querySelector('#schedule-rule-expression')?.value ?? ''");
+const expressions = initialExpression === "?prior + 2.0"
+  ? ["?prior + 1.0", "?prior + 2.0", "?prior + 1.0", "?prior + 2.0"]
+  : ["?prior + 2.0", "?prior + 1.0", "?prior + 2.0"];
+for (const expression of expressions) {
   count = await eventCount();
   await evaluate<void>(`(() => {
     const input = document.querySelector('#schedule-rule-expression');
