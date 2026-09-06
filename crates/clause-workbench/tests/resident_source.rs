@@ -52,7 +52,7 @@ fn wide_source_projection_fixture() -> String {
             source,
             concat!(
                 "\nmeter-with-a-source-owned-identity-that-makes-the-canonical-projection-wide-enough-for-real-programs-{}\n",
-                "  shape: Meter\n",
+                "  member of: Meter\n",
                 "meter-with-a-source-owned-identity-that-makes-the-canonical-projection-wide-enough-for-real-programs-{} reading Vec3 {{ x: {}.0, y: 0.0, z: 0.0 }}\n",
                 "meter-with-a-source-owned-identity-that-makes-the-canonical-projection-wide-enough-for-real-programs-{} charge 0.0\n",
             ),
