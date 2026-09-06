@@ -1,0 +1,53 @@
+F64
+Counter
+
+Pair:
+  first: F64
+  second: F64
+
+reading:
+  ?counter shape Counter
+  ?reading shape Pair
+  ?counter:
+    reading: ?reading
+
+mode reading given counter yields reading: one
+
+counter
+  reading:
+    first: 0.0
+    second: 0.0
+
+on set ?counter
+  when
+    ?counter
+      reading:
+        first: ?first
+        second: ?second
+  withdraw
+    ?counter
+      reading:
+        first: ?first
+        second: ?second
+  include
+    ?counter
+      reading:
+        first: 1.0
+        second: 1.0
+
+on peer ?counter
+  when
+    ?counter
+      reading:
+        first: ?first
+        second: ?second
+  withdraw
+    ?counter
+      reading:
+        first: ?first
+        second: ?second
+  include
+    ?counter
+      reading:
+        first: 1.0
+        second: 1.0

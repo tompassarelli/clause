@@ -985,6 +985,38 @@ on reset ?player
 }
 
 #[test]
+fn structured_field_edit_replays_declared_address_in_inline_and_focused_source() {
+    let focused = include_str!("../../../test-vectors/authoring/structured-field-edit.clause");
+    let inline = focused.replace(
+        "    ?counter\n      reading:\n        first: 1.0\n        second: 1.0",
+        "    ?counter reading Pair { first: 1.0, second: 1.0 }",
+    );
+    for source in [focused, inline.as_str()] {
+        let cst = read_canonical_source_v1(source.as_bytes()).unwrap();
+        let plan = plan_independent_canonical_source_allocations_v1(
+            &cst, ProgramChangeOccurrenceId::from_bytes(raw_id(60)),
+        ).unwrap();
+        let offered = canonical_scalar_effects_v1(&cst, &plan).unwrap();
+        assert_eq!(offered.len(), 4);
+        assert!(offered.iter().all(|field| field.expression == b"1.0"));
+        let edit = replace_canonical_scalar_effect_v1(
+            &cst, &plan, &offered[0], b"if(true, 7.0, 8.0)",
+            ProgramChangeOccurrenceId::from_bytes(raw_id(61)),
+        ).unwrap();
+        let continuing = canonical_scalar_effects_v1(edit.source(), edit.plan()).unwrap();
+        assert_eq!(continuing.len(), 4);
+        for (index, old) in offered.iter().enumerate() {
+            let new = continuing.iter().find(|field| field.effect == edit.formation(old.effect).unwrap()
+                && field.field_path == old.field_path.iter().map(|id| edit.formation(*id).unwrap()).collect::<Vec<_>>()).unwrap();
+            assert_eq!(new.expression, if index == 0 { b"if(true, 7.0, 8.0)".as_slice() } else { b"1.0" });
+        }
+        let printed = print_canonical_source_v1(edit.source()).unwrap();
+        let reread = read_canonical_source_v1(&printed).unwrap();
+        assert_eq!(print_canonical_source_v1(&reread).unwrap(), printed);
+    }
+}
+
+#[test]
 fn transitive_referent_join_rejects_wrong_type_missing_cardinality_and_ambiguity() {
     let wrong_type = TRANSITIVE_REFERENT_WORLD.replacen(
         "  ?policy shape Policy",

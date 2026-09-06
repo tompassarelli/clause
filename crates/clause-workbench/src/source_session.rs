@@ -359,7 +359,8 @@ impl ResidentSourceWorkbenchV1 {
         let witness = clause_runtime::ExecutableSourceEditV1 {
             old_source: self.exact_source.clone(), old_root, new_root, handler: selected.handler,
             declared_frontend: self.declared_frontend.exact_source().to_vec(),
-            effect: selected.effect, expression: replacement.to_vec(), old_cpp1: self.generation.cpp1.clone(), new_cpp1: vec![],
+            effect: selected.effect, field_path: selected.field_path.clone(),
+            expression: replacement.to_vec(), old_cpp1: self.generation.cpp1.clone(), new_cpp1: vec![],
         };
         self.install_source_with_edit(edit.source().exact_source(), Some(witness))?;
         while self.boundary.reclaim_retired() {}

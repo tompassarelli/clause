@@ -1218,6 +1218,7 @@ struct TextAssertionCst {
 struct HandlerIncludeCst {
     origin: CanonicalSourceOriginV1,
     local: Vec<u8>,
+    structured: Option<CanonicalFocusedEdgeV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -8560,10 +8561,12 @@ fn parse_jump_handler(
             HandlerIncludeCst {
                 origin: include[0].1,
                 local: include[0].0.as_bytes().to_vec(),
+                structured: None,
             },
             HandlerIncludeCst {
                 origin: include[1].1,
                 local: include[1].0.as_bytes().to_vec(),
+                structured: None,
             },
         ],
     }))
@@ -8797,6 +8800,7 @@ fn parse_scalar_handler(
         include: HandlerIncludeCst {
             origin: include_origin,
             local: include.as_bytes().to_vec(),
+            structured: None,
         },
     }))
 }
@@ -9137,11 +9141,13 @@ fn parse_general_handler(
         .map(|include| HandlerIncludeCst {
             origin: include.origin,
             local: include.text.as_bytes().to_vec(),
+            structured: include.structured.clone(),
         })
         .collect::<Vec<_>>();
     includes.extend(accumulate.iter().map(|line| HandlerIncludeCst {
         origin: line.origin,
         local: format!("accumulate {}", line.text).into_bytes(),
+        structured: line.structured.clone(),
     }));
     if assignments.is_empty()
         && insertions.is_empty()
@@ -10379,6 +10385,7 @@ fn parse_tick_handler(
             .map(|(local, origin)| HandlerIncludeCst {
                 origin,
                 local: local.as_bytes().to_vec(),
+                structured: None,
             })
             .collect(),
     }))

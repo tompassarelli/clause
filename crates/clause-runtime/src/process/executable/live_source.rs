@@ -22,6 +22,8 @@ pub struct ExecutableSourceEditV1 {
     pub new_root: ProgramChangeOccurrenceId,
     pub handler: FormationLocalId,
     pub effect: FormationLocalId,
+    /// Declared field coordinates within this effect; empty for its scalar value.
+    pub field_path: Vec<FormationLocalId>,
     pub expression: Vec<u8>,
     pub old_cpp1: Vec<u8>,
     pub new_cpp1: Vec<u8>,
@@ -356,6 +358,14 @@ pub fn encode_executable_source_edit_v1(
     bytes.extend_from_slice(edit.new_root.as_bytes());
     bytes.extend_from_slice(&edit.handler.get().to_le_bytes());
     bytes.extend_from_slice(&edit.effect.get().to_le_bytes());
+    bytes.extend_from_slice(
+        &u32::try_from(edit.field_path.len())
+            .map_err(|_| ExecutableErrorV1::ResourceLimit)?
+            .to_le_bytes(),
+    );
+    for field in &edit.field_path {
+        bytes.extend_from_slice(&field.get().to_le_bytes());
+    }
     for blob in [
         &edit.old_source,
         &edit.declared_frontend,
@@ -390,6 +400,13 @@ pub fn decode_executable_source_edit_v1(
     let new_root = ProgramChangeOccurrenceId::from_bytes(d.identity()?);
     let handler = FormationLocalId::new(d.u32()?);
     let effect = FormationLocalId::new(d.u32()?);
+    let field_count = d.u32()? as usize;
+    if field_count > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 / size_of::<u32>() {
+        return Err(ExecutableErrorV1::ResourceLimit);
+    }
+    let field_path = (0..field_count)
+        .map(|_| d.u32().map(FormationLocalId::new))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut blob = || {
         let len = d.u32()? as usize;
         Ok::<_, ExecutableErrorV1>(d.take(len)?.to_vec())
@@ -399,6 +416,7 @@ pub fn decode_executable_source_edit_v1(
         new_root,
         handler,
         effect,
+        field_path,
         old_source: blob()?,
         declared_frontend: blob()?,
         expression: blob()?,
@@ -430,7 +448,11 @@ pub fn check_executable_source_edit_v1(
     let offered = canonical_scalar_effects_v1(&old_cst, &old_allocations).map_err(rejected)?;
     let selected = offered
         .iter()
-        .find(|effect| effect.handler == witness.handler && effect.effect == witness.effect)
+        .find(|effect| {
+            effect.handler == witness.handler
+                && effect.effect == witness.effect
+                && effect.field_path == witness.field_path
+        })
         .ok_or(ExecutableErrorV1::MalformedProgram)?;
     if selected.expression == witness.expression {
         return Err(ExecutableErrorV1::MalformedProgram);
@@ -858,7 +880,7 @@ mod tests {
     use super::*;
 
     const CET1_FIXED_BYTES: usize =
-        4 + 2 * IDENTITY_BYTES + 2 * size_of::<u32>() + 5 * size_of::<u32>();
+        4 + 2 * IDENTITY_BYTES + 3 * size_of::<u32>() + 5 * size_of::<u32>();
 
     fn source_edit_with_old_source(old_source: Vec<u8>) -> ExecutableSourceEditV1 {
         ExecutableSourceEditV1 {
@@ -868,6 +890,7 @@ mod tests {
             new_root: ProgramChangeOccurrenceId::from_bytes([2; IDENTITY_BYTES]),
             handler: FormationLocalId::new(1),
             effect: FormationLocalId::new(2),
+            field_path: vec![],
             expression: Vec::new(),
             old_cpp1: Vec::new(),
             new_cpp1: Vec::new(),

@@ -35,13 +35,18 @@ The wire format is unchanged, including the encoding of existing checkpoints.
 ## Explicit edit
 
 `ResidentSourceWorkbenchV1::scalar_effects()` offers exact artifact-scoped
-handler/effect identities and display origins for scalar effect expressions.
+handler/effect identities and display origins for scalar effect expressions,
+including leaves inside structured products. A leaf's `field_path` contains
+the allocated declarations of its enclosing fields; a whole scalar effect has
+an empty path. The effect occurrence plus this path distinguishes equal leaves.
 `edit_scalar_effect(captured_handle, selected, expression)` replaces only that
 selected expression subtree. It cannot add/remove declarations, facets, state
 bindings, or handlers. It replays the operation, allocates a new source snapshot,
 checks both snapshots, and relates each retained old address to its checked new
 address. Equal names, source spans, initial values and arbitrary text similarity
-are not continuity evidence. Structured-product field editing is not yet offered.
+are not continuity evidence. A field edit explicitly continues its containing
+effect occurrence and the unaffected field addresses. It does not change an
+initial-world assertion or execute the edited effect.
 
 Exact no-op expressions preserve the handle, handler table and pending candidate.
 Rejected edits do likewise. A changed edit requires no hidden candidate: settle
@@ -62,7 +67,7 @@ are mapped. Unstructured `hot_reload` remains a fresh import.
 The new generation's CWR1 is a compiler artifact, **not** the native compiler
 process's live browser world. `last_source_edit()` returns a CET1 witness with
 the exact old source/root, selected frontend declarations, new root, selected
-identities, replacement expression, and old/new CPP1. Witness checking uses
+identities and field path, replacement expression, and old/new CPP1. Witness checking uses
 that same declared grammar. No host configuration is included. Its aggregate
 envelope is 16 MiB; source, frontend, expression, and CPP1 constituents retain
 their own format-specific bounds.
@@ -82,7 +87,7 @@ Retain the currently displayed frame until the next normal Admission. Do not use
 
 Keep a resident native compiler workbench for the exact served source generation.
 Offer its `scalar_effects()` catalog to the editor; each entry already supplies
-artifact, allocated handler/effect, handler/expression origins and exact old
+artifact, allocated handler/effect and field path, handler/expression origins and exact old
 expression bytes. The UI displays those fields, captures the server generation,
 and returns the offered node identity plus new expression bytes. Resolve the
 selection against that generation's catalog, never by a host text search. The

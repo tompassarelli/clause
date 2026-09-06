@@ -300,14 +300,15 @@ pub(super) fn replacement(
         aggregate_result: None,
         required_sources: vec![],
     };
+    let next = insertion(include, subject)?;
     match (&withdraw.structured, &include.structured) {
-        (Some(old), Some(_)) => {
-            let current = components(old)?;
-            let next = insertion(include, subject)?;
+        _ if targets.iter().all(|target| target.field.is_some())
+            && next.iter().all(|assignment| assignment.target.field.is_some()) => {
+            let current = insertion(withdraw, subject)?;
             if current.len() != next.len() {
                 return None;
             }
-            for ((target, (_, old_value)), new) in targets.into_iter().zip(current).zip(next) {
+            for ((target, old), new) in targets.into_iter().zip(current).zip(next) {
                 if target.subject != new.target.subject
                     || target.relation != new.target.relation
                     || target.shape != new.target.shape
@@ -315,7 +316,7 @@ pub(super) fn replacement(
                 {
                     return None;
                 }
-                if parse_scalar_expression(old_value, "")? != new.value {
+                if old.value != new.value {
                     result.assignments.push(GeneralAssignmentCst {
                         target,
                         value: new.value,
@@ -374,7 +375,7 @@ pub(super) fn replacement(
                 .collect();
             result.aggregate_binding = Some(old.parameter);
         }
-        (None, None) => unreachable!(),
+        _ => return None,
     }
     Some(result)
 }

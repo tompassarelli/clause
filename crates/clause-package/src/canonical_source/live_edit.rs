@@ -1,13 +1,16 @@
 //! Explicit source operations, not a text-diff identity heuristic.
 use super::*;
 
-/// A snapshot-scoped editable scalar effect. Origins locate source for display
-/// and replacement; the artifact and allocated identities select the node.
+/// A snapshot-scoped scalar expression in a handler effect. Origins locate
+/// source for display and replay; allocated identities select the occurrence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalScalarEffectV1 {
     pub artifact: CanonicalSourceArtifactIdV1,
     pub handler: FormationLocalId,
     pub effect: FormationLocalId,
+    /// Empty for a scalar effect; otherwise the declared ShapeField identities
+    /// from the enclosing product to this leaf. Equal values are not addresses.
+    pub field_path: Vec<FormationLocalId>,
     pub handler_origin: CanonicalSourceOriginV1,
     pub expression_origin: CanonicalSourceOriginV1,
     pub expression: Vec<u8>,
@@ -119,6 +122,24 @@ pub fn canonical_scalar_effects_v1(
             &head_slot(CanonicalSourceProductionV1::Handler),
         )?;
         for include in includes {
+            let effect = formation_id(
+                plan,
+                producer,
+                &child_slot(CanonicalSourceProductionV1::HandlerInclude, &include.local),
+            )?;
+            let selected = CanonicalScalarEffectV1 {
+                artifact: cst.artifact,
+                handler,
+                effect,
+                field_path: vec![],
+                handler_origin: origin,
+                expression_origin: include.origin,
+                expression: vec![],
+            };
+            if let Some(edge) = &include.structured {
+                structured_effects(cst, plan, &edge.object, &selected, &mut effects)?;
+                continue;
+            }
             let exact = std::str::from_utf8(
                 cst.source_slice(include.origin)
                     .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?,
@@ -127,9 +148,23 @@ pub fn canonical_scalar_effects_v1(
             let line = std::str::from_utf8(&include.local)
                 .map_err(|_| CanonicalSourceErrorV1::RecordedPlanMismatch)?;
             let line = line.strip_prefix("accumulate ").unwrap_or(line);
-            // Structured products need their own field operation; accepting a
-            // whole row here would let callers replace a state binding.
-            if split_shape_subject(line).is_some() {
+            if let Some((_, shape, fields)) = split_shape_subject(exact.trim()) {
+                for (name, expression) in parse_shape_fields(fields)
+                    .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?
+                {
+                    let mut field = selected.clone();
+                    field
+                        .field_path
+                        .push(declared_field(plan, shape.as_bytes(), name.as_bytes())?);
+                    // Both slices belong to this exact parsed clause. Their
+                    // offset is projection data, never occurrence selection.
+                    let offset = expression.as_ptr().addr() - exact.as_ptr().addr();
+                    field.expression_origin.start += offset as u64;
+                    field.expression_origin.end =
+                        field.expression_origin.start + expression.len() as u64;
+                    field.expression = expression.as_bytes().to_vec();
+                    effects.push(field);
+                }
                 continue;
             }
             let Some((subject, relation, _)) = split_general_scalar_insertion(line) else {
@@ -147,11 +182,8 @@ pub fn canonical_scalar_effects_v1(
             effects.push(CanonicalScalarEffectV1 {
                 artifact: cst.artifact,
                 handler,
-                effect: formation_id(
-                    plan,
-                    producer,
-                    &child_slot(CanonicalSourceProductionV1::HandlerInclude, &include.local),
-                )?,
+                effect,
+                field_path: vec![],
                 handler_origin: origin,
                 expression_origin: CanonicalSourceOriginV1 {
                     artifact: cst.artifact,
@@ -163,6 +195,58 @@ pub fn canonical_scalar_effects_v1(
         }
     }
     Ok(effects)
+}
+
+fn declared_field(
+    plan: &CanonicalSourceAllocationPlanV1,
+    shape: &[u8],
+    field: &[u8],
+) -> Result<FormationLocalId, CanonicalSourceErrorV1> {
+    formation_id(
+        plan,
+        &semantic_producer(CanonicalSourceProductionV1::Shape, shape),
+        &child_slot(CanonicalSourceProductionV1::ShapeField, field),
+    )
+}
+
+fn structured_effects(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    object: &CanonicalFocusedObjectV1,
+    parent: &CanonicalScalarEffectV1,
+    effects: &mut Vec<CanonicalScalarEffectV1>,
+) -> Result<(), CanonicalSourceErrorV1> {
+    let CanonicalFocusedObjectV1::Fields { shape, fields } = object else {
+        return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+    };
+    for field in fields {
+        let mut selected = parent.clone();
+        selected
+            .field_path
+            .push(declared_field(plan, shape, &field.name)?);
+        match &field.value {
+            CanonicalFocusedObjectV1::Fields { .. } => {
+                structured_effects(cst, plan, &field.value, &selected, effects)?;
+            }
+            CanonicalFocusedObjectV1::Source(expression) => {
+                let exact = cst
+                    .source_slice(field.origin)
+                    .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
+                let Some(prefix) = exact.trim_ascii_end().strip_suffix(expression.as_slice())
+                else {
+                    continue;
+                };
+                selected.expression_origin = CanonicalSourceOriginV1 {
+                    artifact: cst.artifact,
+                    start: field.origin.start + prefix.len() as u64,
+                    end: field.origin.start + (prefix.len() + expression.len()) as u64,
+                };
+                selected.expression = expression.clone();
+                effects.push(selected);
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn replace_canonical_scalar_effect_v1(
@@ -203,14 +287,37 @@ pub fn replace_canonical_scalar_effect_v1(
         return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
     }
     let mut retained = BTreeMap::new();
-    for request in old_requests {
+    for request in &old_requests {
         let old = old_plan
             .identity(&request.producer, &request.slot, request.domain)
             .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
         if old == CanonicalAllocatedIdentityV1::Formation(selected.effect) {
+            if !selected.field_path.is_empty() {
+                // The single leaf replacement explicitly continues its parent
+                // occurrence. All other requests must survive unchanged. This
+                // is operation replay, not matching an imported tree by text.
+                let continuing = new_requests
+                    .iter()
+                    .filter(|candidate| *candidate == request || !old_requests.contains(candidate))
+                    .collect::<Vec<_>>();
+                let [new] = continuing.as_slice() else {
+                    return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+                };
+                if new.producer != request.producer
+                    || new.domain != request.domain
+                    || new.slot.production != CanonicalSourceProductionV1::HandlerInclude
+                {
+                    return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+                }
+                retained.insert(
+                    old,
+                    plan.identity(&new.producer, &new.slot, new.domain)
+                        .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?,
+                );
+            }
             continue;
         }
-        if !new_requests.contains(&request) {
+        if !new_requests.contains(request) {
             return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
         }
         let new = plan
