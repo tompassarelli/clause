@@ -5768,9 +5768,11 @@ fn checked_referent_input_bindings(
             .iter()
             .filter(|handler| handler.designation == binding.handler_designation)
             .collect::<Vec<_>>();
-        let [target] = targets.as_slice() else {
+        if targets.is_empty() || targets.iter().any(|target|
+            target.trigger != CanonicalHandlerTriggerV1::External || target.argument_count != 1)
+        {
             return Err(invalid());
-        };
+        }
         let sources = cst
             .items
             .iter()
@@ -5783,23 +5785,22 @@ fn checked_referent_input_bindings(
                 _ => None,
             })
             .collect::<Vec<_>>();
-        let [source] = sources.as_slice() else {
-            return Err(invalid());
-        };
-        if target.trigger != CanonicalHandlerTriggerV1::External
-            || source.arguments.len() != 1
-            || target.argument_count != 1
-        {
+        if sources.len() != targets.len() {
             return Err(invalid());
         }
-        let argument = &source.arguments[0].designation;
+        if matches!(binding.domain.as_slice(), b"F64" | b"Bool" | b"Text") {
+            return Err(invalid());
+        }
         // Foreign inputs consume the same checked domain inference as rule
         // execution, including literal selectors and correlated query inputs.
-        let domains = relational::check_domains(cst, plan, source)?;
-        if domains.get(argument) != Some(&binding.domain)
-            || matches!(binding.domain.as_slice(), b"F64" | b"Bool" | b"Text")
-        {
-            return Err(invalid());
+        for source in sources {
+            let [argument] = source.arguments.as_slice() else {
+                return Err(invalid());
+            };
+            let domains = relational::check_domains(cst, plan, source)?;
+            if domains.get(&argument.designation) != Some(&binding.domain) {
+                return Err(invalid());
+            }
         }
         result.push(CanonicalReferentInputBindingV1 {
             channel: binding.channel.clone(),
@@ -10120,18 +10121,14 @@ fn append_scalar_semantic_bytes(bytes: &mut Vec<u8>, value: &CanonicalScalarValu
 fn handler_semantic_producer(block: &[SourceLine<'_>]) -> Vec<u8> {
     let mut producer = Vec::new();
     frame_bytes(&mut producer, block[0].text.as_bytes());
-    let mut in_when = false;
     for line in block
         .iter()
         .skip(1)
         .filter(|line| !line.text.trim().is_empty())
     {
         let trimmed = line.text.trim();
-        if line.indent == 2 {
-            in_when = trimmed == "when";
-        } else if line.indent == 4 && in_when {
-            frame_bytes(&mut producer, trimmed.as_bytes());
-        }
+        producer.extend_from_slice(&(line.indent as u64).to_be_bytes());
+        frame_bytes(&mut producer, trimmed.as_bytes());
     }
     producer
 }
@@ -10139,18 +10136,14 @@ fn handler_semantic_producer(block: &[SourceLine<'_>]) -> Vec<u8> {
 fn handler_semantic_producer_from_logical(block: &[LogicalSourceLine]) -> Vec<u8> {
     let mut producer = Vec::new();
     frame_bytes(&mut producer, block[0].text.as_bytes());
-    let mut in_when = false;
     for line in block
         .iter()
         .skip(1)
         .filter(|line| !line.text.trim().is_empty())
     {
         let trimmed = line.text.trim();
-        if line.indent == 2 {
-            in_when = trimmed == "when";
-        } else if line.indent == 4 && in_when {
-            frame_bytes(&mut producer, trimmed.as_bytes());
-        }
+        producer.extend_from_slice(&(line.indent as u64).to_be_bytes());
+        frame_bytes(&mut producer, trimmed.as_bytes());
     }
     producer
 }

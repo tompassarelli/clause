@@ -479,7 +479,7 @@ test["test"]("projected Term decoding admits transport-bounded depth beyond 64",
     test["expect"](projected).toBe("ok");
 });
 test["test"]("projected Term decoding retains the CSE1 byte bound", () => {
-    test["expect"](() => wasm["decode-projected-term-frame"](new Array(64 * 1024 + 1).fill(0))).toThrow("projected Term bytes are outside the CSE1 bound");
+    test["expect"](() => wasm["decode-projected-term-frame"](new Array(1024 * 1024 + 1).fill(0))).toThrow("projected Term bytes are outside the CSE1 bound");
 });
 function projectedBoolean(value, ...path) {
     const result = projectedField(value, ...path);
@@ -529,11 +529,12 @@ test["test"]("one persistent session sequences physical input candidate issuance
     test["expect"](concatenate(requests.length)).toBe("3");
     const open_request = requests[0];
     const open_length = open_request.length;
-    const allocation_tag = open_length - 17;
+    const allocation_tag = open_length - 18;
     test["expect"](json_string(open_request.slice(0, 4))).toBe("[67,87,83,49]");
     test["expect"](json_string(open_request.slice(13, 18))).toBe("[1,0,0,0,8]");
     test["expect"](concatenate(open_request[allocation_tag])).toBe("0");
-    test["expect"](json_string(open_request.slice(allocation_tag + 1, allocation_tag + 9))).toBe("[0,16,0,0,0,0,0,0]");
+    test["expect"](json_string(open_request.slice(allocation_tag + 1, allocation_tag + 9))).toBe("[255,255,255,255,255,255,31,0]");
+    test["expect"](json_string(open_request.slice(allocation_tag + 9))).toBe("[0,0,16,0,0,0,16,0,1]");
     test["expect"](json_string([requests[1][20], requests[2][20]])).toBe("[3,4]");
     test["expect"](json_string(started.frame)).toBe("[]");
     const admitted = admitCandidate(port, started.session, candidate.candidate);
@@ -547,7 +548,7 @@ test["test"]("one persistent session sequences physical input candidate issuance
     if (after_dispose._tag !== "CandidateFailed") {
         throw new Error("disposed session unexpectedly produced a candidate");
     }
-    test["expect"](concatenate(after_dispose.reason)).toBe("Wasm session is disposed");
+    test["expect"](concatenate(after_dispose.reason).split("\n")[0]).toBe("Error: Wasm session is disposed");
 });
 test["test"]("persistent session open and command requests retain distinct byte envelopes", () => {
     const one_mib = 1024 * 1024;
@@ -865,7 +866,7 @@ test["test"]("real Wasm workbench hot-reloads Clause-only collect behavior with 
     if (retired_result._tag !== "CandidateFailed") {
         throw new Error("retired session unexpectedly produced a candidate");
     }
-    test["expect"](concatenate(retired_result.reason)).toBe("Wasm session is disposed");
+    test["expect"](concatenate(retired_result.reason).split("\n")[0]).toBe("Error: Wasm session is disposed");
     test["expect"](concatenate(Object.is(controller.snapshot().revision, changed_revision))).toBe("true");
     controller.observeInput(key_envelope("KeyD", "down"));
     scheduled_tick();

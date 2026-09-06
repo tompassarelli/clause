@@ -1315,30 +1315,32 @@ fn bind_source_referent_input_events(
                 .iter()
                 .filter(|(_, handler)| handler.designation == source.handler_designation)
                 .collect::<Vec<_>>();
-            let [(handler, meaning)] = targets.as_slice() else {
+            if targets.is_empty() {
                 return Err(ResidentSourceWorkbenchErrorV1(
-                    "referent input target is missing or ambiguous".into(),
+                    "referent input target is missing".into(),
                 ));
-            };
-            if meaning.trigger != CanonicalHandlerTriggerV1::External || meaning.argument_count != 1
+            }
+            if targets.iter().any(|(_, meaning)|
+                meaning.trigger != CanonicalHandlerTriggerV1::External || meaning.argument_count != 1)
             {
                 return Err(ResidentSourceWorkbenchErrorV1(
                     "referent input requires a checked one-argument handler".into(),
                 ));
             }
-            let lowered = bindings
-                .iter()
-                .find(|binding| binding.handler == **handler)
-                .ok_or_else(|| {
-                    ResidentSourceWorkbenchErrorV1("referent input target was not lowered".into())
-                })?;
+            let entries = targets.iter().map(|(handler, _)|
+                bindings.iter().find(|binding| binding.handler == **handler).map(|binding| binding.entry)
+                    .ok_or_else(|| ResidentSourceWorkbenchErrorV1("referent input target was not lowered".into())))
+                .collect::<Result<BTreeSet<_>, _>>()?;
+            if entries.len() != 1 {
+                return Err(ResidentSourceWorkbenchErrorV1("referent input rules did not lower to one event".into()));
+            }
             Ok(ExecutableInputBindingV1 {
                 role,
                 source: ExecutableInputSourceV1::Referent {
                     channel: source.channel.clone(),
                 },
                 occurrence: ExecutableOccurrenceV1 {
-                    entry: lowered.entry,
+                    entry: *entries.first().expect("exactly one event entry"),
                     arguments: vec![ExecutableValueV1::Referent(
                         clause_runtime::ExecutableReferentV1::declared(source.domain.get(), 0),
                     )],

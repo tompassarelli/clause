@@ -763,6 +763,94 @@ fn referent_input_binding_checks_source_domain_and_renames() {
         "physical input exists independently of timers"
     );
 }
+
+fn referent_input_snapshot(workbench: &mut ResidentSourceWorkbenchV1, revision: u64) -> Term {
+    workbench.tick_to_candidate(clause_runtime::WasmSessionTickV1 {
+        configuration_revision: revision,
+        fixed_tick_milliseconds: 100,
+    }).unwrap();
+    let admitted = workbench.admit().unwrap();
+    decode_canonical_term_bytes(&admitted.projection.exact_term_bytes).unwrap()
+}
+
+fn referent_input_pick(workbench: &mut ResidentSourceWorkbenchV1, snapshot: &Term,
+    channel: &[u8], name: &[u8], sequence: u64) {
+    let referent = clause_runtime::projected_referent_value_v1(projected_object_field(
+        projected_object_field(snapshot, name), b"$referent",
+    )).unwrap().unwrap();
+    workbench.apply_physical_input(workbench.generation().handle,
+        clause_runtime::WasmSessionPhysicalInputV1 {
+            input_sequence: sequence,
+            source: ExecutableInputSourceV1::Referent { channel: channel.to_vec() },
+            value: Some(ExecutableValueV1::Referent(referent)),
+        }).unwrap();
+}
+
+#[test]
+fn repeated_referent_input_clauses_share_one_atomic_event() {
+    let source = include_str!("../../../test-vectors/authoring/repeated-referent-input.clause");
+    let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let plan = decode_executable_physical_plan_v1(&workbench.generation().cpp1).unwrap();
+    assert_eq!(plan.input.unwrap().events.len(), 1);
+    let initial = referent_input_snapshot(&mut workbench, 1);
+    referent_input_pick(&mut workbench, &initial, b"Pick", b"first", 1);
+    let after = referent_input_snapshot(&mut workbench, 2);
+    assert_eq!(projected_number(projected_object_field(
+        projected_object_field(&after, b"first"), b"charge")), 1.0);
+
+    // Both clauses must observe the prior selection, not another clause's write.
+    let source = source.replace("selected: first", "selected: second")
+        .replace("bind referent-input", "second\n  charge: 5.0\n\nbind referent-input")
+        .replace("    ?target charge ?charge\n  withdraw", "    ?target charge ?charge\n    ?prior = second\n  withdraw");
+    let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let initial = referent_input_snapshot(&mut workbench, 1);
+    referent_input_pick(&mut workbench, &initial, b"Pick", b"first", 1);
+    let after = referent_input_snapshot(&mut workbench, 2);
+    assert_eq!(projected_number(projected_object_field(
+        projected_object_field(&after, b"first"), b"charge")), 1.0);
+    let selected = clause_runtime::projected_referent_value_v1(projected_object_field(
+        projected_object_field(&after, b"controller"), b"selected")).unwrap().unwrap();
+    let first = clause_runtime::projected_referent_value_v1(projected_object_field(
+        projected_object_field(&after, b"first"), b"$referent")).unwrap().unwrap();
+    assert_eq!(selected, first);
+}
+
+#[test]
+fn repeated_referent_input_full_workshop_opens_and_dispatches() {
+    let source = include_bytes!("../../../test-vectors/greywrought/workshop-expedition.clause");
+    let mut workbench = ResidentSourceWorkbenchV1::open(source).unwrap();
+    let initial = referent_input_snapshot(&mut workbench, 1);
+    referent_input_pick(&mut workbench, &initial, b"PickComponent", b"armor", 1);
+    let selected = referent_input_snapshot(&mut workbench, 2);
+    referent_input_pick(&mut workbench, &selected, b"FitComponent", b"torso", 2);
+    let fitted = referent_input_snapshot(&mut workbench, 3);
+    assert_eq!(projected_text(projected_object_field(
+        projected_object_field(&fitted, b"workshop"), b"fit-report")),
+        "Equipment fitted to the selected body part.");
+    let attachment = clause_runtime::projected_referent_value_v1(projected_object_field(
+        projected_object_field(&fitted, b"armor"), b"attached-to")).unwrap().unwrap();
+    let torso = clause_runtime::projected_referent_value_v1(projected_object_field(
+        projected_object_field(&fitted, b"torso"), b"$referent")).unwrap().unwrap();
+    assert_eq!(attachment, torso);
+    referent_input_pick(&mut workbench, &fitted, b"FitComponent", b"back", 3);
+    let refused = referent_input_snapshot(&mut workbench, 4);
+    assert_eq!(projected_text(projected_object_field(
+        projected_object_field(&refused, b"workshop"), b"fit-report")),
+        "That equipment does not fit this body part.");
+    assert_eq!(clause_runtime::projected_referent_value_v1(projected_object_field(
+        projected_object_field(&refused, b"armor"), b"attached-to")).unwrap().unwrap(), torso);
+    referent_input_pick(&mut workbench, &refused, b"PickComponent", b"lance", 4);
+    let selected = referent_input_snapshot(&mut workbench, 5);
+    referent_input_pick(&mut workbench, &selected, b"FitComponent", b"left-arm", 5);
+    let replaced = referent_input_snapshot(&mut workbench, 6);
+    assert_eq!(projected_text(projected_object_field(
+        projected_object_field(&replaced, b"workshop"), b"fit-report")),
+        "Equipment fitted to the selected body part.");
+    let left_arm = clause_runtime::projected_referent_value_v1(projected_object_field(
+        projected_object_field(&replaced, b"left-arm"), b"$referent")).unwrap().unwrap();
+    assert_eq!(clause_runtime::projected_referent_value_v1(projected_object_field(
+        projected_object_field(&replaced, b"lance"), b"attached-to")).unwrap().unwrap(), left_arm);
+}
 const DASH_WORLD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/world-dash-jump.clause"

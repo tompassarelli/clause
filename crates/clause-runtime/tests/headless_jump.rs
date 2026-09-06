@@ -2237,7 +2237,7 @@ fn automatic_contact_tick_keeps_collection_hidden_until_admission_and_inactive_a
         2,
         "the inactive movement/contact entries retain no no-op Steps; only the checker and final candidate Step remain"
     );
-    assert_eq!(away_step.occurrence.entry, 5);
+    assert_eq!(away_step.occurrence.entry, arena_entry(&source, b"collect"));
     assert!(!away_step.rule_applied);
     let away_candidate = away_session
         .candidate()
@@ -3935,7 +3935,7 @@ fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
             .program
             .rules
             .iter()
-            .find(|rule| rule.entry == arena_entry(&source, b"collect"))
+            .find(|rule| rule.entry == arena_entry(&changed_source, b"collect"))
             .expect("changed unified gameplay carries the collect transition")
             .assignments[0]
             .1,
@@ -3948,7 +3948,7 @@ fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
         .program
         .rules
         .iter()
-        .find(|rule| rule.entry == arena_entry(&source, b"jump"))
+        .find(|rule| rule.entry == arena_entry(&dash_source, b"jump"))
         .expect("dash-jump gameplay carries the source-owned jump transition");
     assert_eq!(dash_rule.assignments[0].1, ExecutableExpressionV1::Slot(arena_slot(&source, b"jump-arena", b"jump-speed", None) as u16));
     assert_eq!(dash_rule.assignments[1].1, ExecutableExpressionV1::Slot(arena_slot(&source, b"jump-arena", b"jump-speed", None) as u16));
