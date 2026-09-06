@@ -90,6 +90,7 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
             | E::RelationRemoveRow(a, b)
             | E::Concatenate(a, b)
             | E::StartsWith(a, b)
+            | E::ContainsText(a, b)
             | E::Add(a, b)
             | E::Subtract(a, b)
             | E::Multiply(a, b)
@@ -304,6 +305,10 @@ pub(super) fn match_rule(
                 return Err(ExecutableErrorV1::TypeMismatch);
             };
             let mut next = BTreeMap::new();
+            let mut by_value = None::<BTreeMap<
+                &ExecutableValueV1,
+                Vec<(&ExecutableReferentV1, &ExecutableValueV1)>,
+            >>;
             for incoming in active {
                 let start_visits = *visits;
                 let mut found = false;
@@ -335,7 +340,7 @@ pub(super) fn match_rule(
                         )?)
                     }
                 };
-                let rows: Box<
+                let mut rows: Box<
                     dyn Iterator<Item = (&ExecutableReferentV1, &BTreeSet<ExecutableValueV1>)> + '_,
                 > = if !unbound && bound_subject.is_none() {
                     Box::new(std::iter::empty())
@@ -345,8 +350,48 @@ pub(super) fn match_rule(
                 } else {
                     Box::new(table.rows.iter())
                 };
-                for (subject, values) in rows {
-                    for value in values {
+                // A bound value is an exact lookup in the same pre-state.
+                // Keep partial expressions inside unification so an empty
+                // subject match never evaluates an otherwise unused value.
+                let value_bound = matches!(value_pattern.as_ref(),
+                    ExecutableExpressionV1::Constant(_) | ExecutableExpressionV1::Argument(_))
+                    || bound_pattern(value_pattern, &incoming.bindings) == Some(true);
+                let first_row = rows.next();
+                let bound_value = if value_bound && first_row.is_some() {
+                    let evaluation = EvaluationContextV1 {
+                        bindings: Some(&incoming.bindings),
+                        ..context
+                    };
+                    if let ExecutableExpressionV1::ReferentFacet { value, domain, members } = value_pattern.as_ref() {
+                        facet_value(evaluate(value, configuration, arguments, evaluation)?, *domain, members)
+                    } else {
+                        Some(evaluate(value_pattern, configuration, arguments, evaluation)?)
+                    }
+                } else { None };
+                let candidates: Box<dyn Iterator<Item = (&ExecutableReferentV1, &ExecutableValueV1)> + '_> =
+                    if value_bound && bound_value.is_none() {
+                        Box::new(std::iter::empty())
+                    } else if let Some(value) = bound_value.as_ref() {
+                        if unbound {
+                            if by_value.is_none() {
+                                let mut index = BTreeMap::<_, Vec<_>>::new();
+                                for (subject, values) in &table.rows {
+                                    for value in values {
+                                        *visits = visits.checked_add(1).ok_or(ExecutableErrorV1::ResourceLimit)?;
+                                        if *visits > MAX_JOIN_VISITS { return Err(ExecutableErrorV1::ResourceLimit); }
+                                        index.entry(value).or_default().push((subject, value));
+                                    }
+                                }
+                                by_value = Some(index);
+                            }
+                            Box::new(by_value.as_ref().unwrap().get(value).into_iter().flatten().copied())
+                        } else {
+                            Box::new(first_row.into_iter().filter_map(|(subject, values)| values.get(value).map(|value| (subject, value))))
+                        }
+                    } else {
+                        Box::new(first_row.into_iter().chain(rows).flat_map(|(subject, values)| values.iter().map(move |value| (subject, value))))
+                    };
+                for (subject, value) in candidates {
                         *visits = visits
                             .checked_add(1)
                             .ok_or(ExecutableErrorV1::ResourceLimit)?;
@@ -384,7 +429,6 @@ pub(super) fn match_rule(
                         if next.len() > MAX_MATCHES {
                             return Err(ExecutableErrorV1::ResourceLimit);
                         }
-                    }
                 }
                 if !found {
                     let mut incoming = incoming;

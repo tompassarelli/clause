@@ -52,6 +52,8 @@ const cse1_projected_term_max_properties = cse1_max_bytes;
 
 const cse1_projected_term_json_max_source_units = 4 * cse1_max_bytes + 1;
 
+const session_open_max_bytes = 4 * 1024 * 1024;
+
 const session_command_max_bytes = 1024 * 1024;
 
 const session_command_limit = Number.MAX_SAFE_INTEGER;
@@ -1153,7 +1155,10 @@ function dispatch_session_request(
   request: unknown,
   operation: "open" | "command",
 ): ExactBytes {
-  if (exact_byte_array_p(request, session_command_max_bytes) || binary_text_p(request, session_command_max_bytes)) {
+  const maximum = operation === "open"
+    ? session_open_max_bytes
+    : session_command_max_bytes;
+  if (exact_byte_array_p(request, maximum) || binary_text_p(request, maximum)) {
     const api = session_module_functions(module);
     const typed_request = typed_bytes(request);
     const status = process_status(
@@ -2987,6 +2992,10 @@ export function interveneSession(module: unknown, incomingSession: unknown, quer
 export { checked_referent as checkedProjectedReferent };
 export interface InterventionCoordinate { readonly slot: number; readonly subject?: ProjectedReferent }
 export interface FiniteScalarChange extends InterventionCoordinate { readonly value: boolean | number }
+export type FiniteScalarDesired = boolean | (InterventionCoordinate & (
+  | { readonly greaterThan: number }
+  | { readonly equals: boolean | number }
+));
 
 export interface ExplainedRelationRow {
   readonly slot: number;
@@ -3013,6 +3022,17 @@ export function explanationRelationRows(explanation: ProjectedValue): readonly E
   });
 }
 
+/** Read one runtime diagnostic index entry from its fixed 64-value pages. */
+export function projectedDiagnosticIndexValue(index: ProjectedValue, position: number): ProjectedValue | undefined {
+  if (!Number.isInteger(position) || position < 0) throw new Error("invalid diagnostic index position");
+  const object = (value: ProjectedValue): ProjectedObject => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("invalid diagnostic index");
+    return value as ProjectedObject;
+  };
+  const page = object(index)[String(Math.floor(position / 64))];
+  return page === undefined ? undefined : object(page)[String(position % 64)];
+}
+
 export function projectedRelationRowValue(table: ProjectedValue, subject: ProjectedReferent): ProjectedValue | undefined {
   if (typeof table !== "object" || table === null || Array.isArray(table)) throw new Error("invalid predicted table");
   const value = table as ProjectedObject;
@@ -3033,7 +3053,7 @@ export function projectedRelationRowValue(table: ProjectedValue, subject: Projec
  * CPP1 tags encode the shared normalized predicate; no local evaluation. */
 export function finiteScalarInterventionQuery(
   event: string, allowed: readonly FiniteScalarChange[], maximumEvaluations: number,
-  desired: (InterventionCoordinate & { readonly greaterThan: number }) | boolean,
+  desired: FiniteScalarDesired,
 ): ExactBytes {
   if (!/^[0-9a-f]{64}$/.test(event) || allowed.length > 20 || !Number.isInteger(maximumEvaluations)
     || maximumEvaluations < 0 || maximumEvaluations > 4096) throw new Error("finite intervention envelope is invalid");
@@ -3069,11 +3089,11 @@ export function finiteScalarInterventionQuery(
   }
   if (typeof desired === "boolean") { bytes.push(0); scalar(desired); }
   else {
-    bytes.push(8);
+    bytes.push("greaterThan" in desired ? 8 : 10);
     if (desired.subject !== undefined) bytes.push(18);
     bytes.push(1); slot(desired.slot);
     if (desired.subject !== undefined) { bytes.push(0, 5); referent(desired.subject); }
-    bytes.push(0); scalar(desired.greaterThan);
+    bytes.push(0); scalar("greaterThan" in desired ? desired.greaterThan : desired.equals);
   }
   return Object.freeze(bytes);
 }

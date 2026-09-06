@@ -150,4 +150,4 @@ on extend ?task ?chosen
       duration: ?prior
   include
     ?task:
-      duration: ?prior + 1.0
+      duration: ?prior + 2.0

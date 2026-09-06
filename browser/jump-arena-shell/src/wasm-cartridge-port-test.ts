@@ -192,11 +192,14 @@ function allocation_epoch_bang(): number[] {
   return bytes;
 }
 
-function minimal_cwr1_bang(): number[] {
+function minimal_cwr1_bang(
+  physical_plan: readonly number[] = [8],
+  occurrences: readonly (readonly number[])[] = [[1], [2]],
+): number[] {
   const bytes = [67, 87, 82, 49];
   append_blob_bang(bytes, [1]);
   append_u32_bang(bytes, 1);
-  append_blob_bang(bytes, [8]);
+  append_blob_bang(bytes, physical_plan);
   append_blob_bang(bytes, allocation_epoch_bang());
   [1, 2, 3, 4, 5, 6, 7, 8, 9].forEach((tag) => {
     identity(tag).forEach((byte) => {
@@ -213,9 +216,8 @@ function minimal_cwr1_bang(): number[] {
   });
   append_blob_bang(bytes, [11]);
   append_u64_bang(bytes, 100);
-  bytes.push(2, 0);
-  append_blob_bang(bytes, [1]);
-  append_blob_bang(bytes, [2]);
+  bytes.push(occurrences.length % 256, Math.trunc(occurrences.length / 256));
+  occurrences.forEach((occurrence) => append_blob_bang(bytes, occurrence));
   bytes.push(0, 0);
   return bytes;
 }
@@ -812,6 +814,32 @@ test["test"](
     test["expect"](concatenate(after_dispose.reason)).toBe(
       "Wasm session is disposed",
     );
+  },
+);
+
+test["test"](
+  "persistent session open and command requests retain distinct byte envelopes",
+  () => {
+    const one_mib = 1024 * 1024;
+    const requests: number[][] = [];
+    const module = module_for_bang([opened_event_bang()], requests);
+    const port = wasm["create-wasm-cartridge-port"](module, policy());
+    const request = wasm["->ExactProcessRequest"](
+      minimal_cwr1_bang(
+        new Array<number>(one_mib).fill(8),
+        [new Array<number>(one_mib).fill(1)],
+      ),
+    );
+    const accepted = acceptPackage(port, request);
+    const started = startSession(port, accepted.acceptedPackage);
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0].length).toBeGreaterThan(one_mib);
+    expect(requests[0].length).toBeLessThanOrEqual(4 * one_mib);
+    expect(() =>
+      wasm["advance-session-occurrence!"](module, started.session, 0),
+    ).toThrow("persistent session request must carry bounded exact bytes");
+    expect(requests).toHaveLength(1);
   },
 );
 

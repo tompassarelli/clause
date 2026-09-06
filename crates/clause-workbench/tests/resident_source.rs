@@ -1,14 +1,15 @@
-use std::time::Instant;
+use std::{fmt::Write as _, time::Instant};
 
 use clause_package::{
-    ApplicationId, ProgramRevisionPreimage, Term, check_process_package,
-    decode_canonical_term_bytes, decode_process_package,
+    ApplicationId, ProgramRevisionPreimage, Term, canonical_term_bytes, check_process_package,
+    decode_canonical_term_bytes, decode_process_package, read_canonical_source_v1,
 };
 use clause_runtime::{
     ExecutableInputSourceV1, ExecutableKeyPhaseV1, ExecutableValueKindV1, ExecutableValueV1,
-    ForkedProcessBranchV1, decode_executable_occurrence_v1, decode_executable_physical_plan_v1,
-    decode_wasm_process_request_v1, encode_executable_physical_plan_v1,
-    open_fresh_persistent_process_session_v1, projected_relation_table_v1,
+    ForkedProcessBranchV1, WASM_PROCESS_REQUEST_LIMIT_V1, decode_executable_occurrence_v1,
+    decode_executable_physical_plan_v1, decode_wasm_process_request_v1,
+    encode_executable_physical_plan_v1, open_fresh_persistent_process_session_v1,
+    projected_relation_table_v1,
 };
 use clause_workbench::ResidentSourceWorkbenchV1;
 
@@ -26,6 +27,125 @@ const CROSS_SUBJECT_TARGET: &[u8] =
     include_bytes!("../../../test-vectors/authoring/cross-subject-referent-target.clause");
 const ACCOUNT_CONTRIBUTIONS: &[u8] =
     include_bytes!("../../../test-vectors/authoring/selected-account-contributions.clause");
+
+fn wide_source_projection_fixture() -> String {
+    let mut source = String::from(concat!(
+        "F64\n",
+        "Meter\n",
+        "\n",
+        "shape Vec3\n",
+        "  x: F64\n",
+        "  y: F64\n",
+        "  z: F64\n",
+        "\n",
+        "relation reading-with-a-source-owned-designation-that-makes-the-canonical-projection-wide-enough-for-real-programs\n",
+        "  reads {meter: Meter} reading {value: Vec3}\n",
+        "  subject meter\n",
+        "  mode given meter yields value: one\n",
+        "relation charge-with-a-source-owned-designation-that-makes-the-canonical-projection-wide-enough-for-real-programs\n",
+        "  reads {meter: Meter} charge {value: F64}\n",
+        "  subject meter\n",
+        "  mode given meter yields value: one\n",
+    ));
+    for index in 0..90 {
+        write!(
+            source,
+            concat!(
+                "\nmeter-with-a-source-owned-identity-that-makes-the-canonical-projection-wide-enough-for-real-programs-{}\n",
+                "  member of: Meter\n",
+                "meter-with-a-source-owned-identity-that-makes-the-canonical-projection-wide-enough-for-real-programs-{} reading Vec3 {{ x: {}.0, y: 0.0, z: 0.0 }}\n",
+                "meter-with-a-source-owned-identity-that-makes-the-canonical-projection-wide-enough-for-real-programs-{} charge 0.0\n",
+            ),
+            index,
+            index,
+            index,
+            index,
+        )
+        .unwrap();
+    }
+    source.push_str(concat!(
+        "\n",
+        "on measure ?meter\n",
+        "  when\n",
+        "    ?meter charge ?value\n",
+        "  withdraw\n",
+        "    ?meter charge ?value\n",
+        "  include\n",
+        "    ?meter charge ?value + 1.0\n",
+    ));
+    source
+}
+
+fn source_artifact_hex(source: &[u8]) -> String {
+    read_canonical_source_v1(source)
+        .unwrap()
+        .artifact()
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn physical_plan_source_artifact(cpp1: &[u8]) -> String {
+    let plan = decode_executable_physical_plan_v1(cpp1).unwrap();
+    projected_text(projected_object_field(
+        plan.source_metadata.as_ref().unwrap(),
+        b"artifact",
+    ))
+    .to_owned()
+}
+
+#[test]
+fn wide_source_projection_roundtrips_and_retains_checked_edit_identity() {
+    let source = wide_source_projection_fixture();
+    let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes())
+        .expect("a checked source whose projection exceeds the narrow encoding opens");
+    let initial = workbench.generation().clone();
+    let plan = decode_executable_physical_plan_v1(&initial.cpp1).unwrap();
+    let template =
+        canonical_term_bytes(&plan.program.projection.as_ref().unwrap().template).unwrap();
+    assert!(template.len() > usize::from(u16::MAX), "{}", template.len());
+    assert!(initial.cpp1.len() < WASM_PROCESS_REQUEST_LIMIT_V1);
+    assert!(initial.cwr1.len() < WASM_PROCESS_REQUEST_LIMIT_V1);
+    assert_eq!(
+        encode_executable_physical_plan_v1(&plan).unwrap(),
+        initial.cpp1
+    );
+    assert_eq!(
+        physical_plan_source_artifact(&initial.cpp1),
+        source_artifact_hex(source.as_bytes())
+    );
+    let request = decode_wasm_process_request_v1(&initial.cwr1).unwrap();
+    assert_eq!(request.physical_plan_bytes, initial.cpp1);
+
+    let effect = workbench
+        .scalar_effects()
+        .unwrap()
+        .into_iter()
+        .find(|effect| effect.expression == b"?value + 1.0")
+        .unwrap();
+    let edited = workbench
+        .edit_scalar_effect(initial.handle, &effect, b"?value + 2.0")
+        .expect("the checked large-source edit transfers the live generation");
+    assert_eq!(edited.handle.generation, initial.handle.generation + 1);
+    assert_ne!(edited.source_package, initial.source_package);
+    assert_ne!(
+        physical_plan_source_artifact(&edited.cpp1),
+        physical_plan_source_artifact(&initial.cpp1)
+    );
+    assert_eq!(
+        physical_plan_source_artifact(&edited.cpp1),
+        source_artifact_hex(workbench.exact_source())
+    );
+    assert!(workbench.source_continuity().is_ok());
+    assert!(workbench.last_source_edit().is_some());
+    assert!(workbench.rejects_stale_handle(initial.handle).unwrap());
+    let edited_plan = decode_executable_physical_plan_v1(&edited.cpp1).unwrap();
+    assert_eq!(
+        encode_executable_physical_plan_v1(&edited_plan).unwrap(),
+        edited.cpp1
+    );
+}
 
 #[test]
 fn cross_subject_input_replaces_typed_declared_target() {

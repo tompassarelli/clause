@@ -193,6 +193,40 @@ fn exhausted_finite_join_is_an_error_not_absence() {
 }
 
 #[test]
+fn withdrawing_a_collection_joins_known_members_by_value() {
+    let source = format!(
+        "{}\non clear ?account\n  when\n    ?goal contribution ?amount\n    ?goal remaining ?remaining\n    ?account known goal ?goal\n  withdraw\n    ?account known goal ?goal\n    ?goal contribution ?amount\n    ?goal remaining ?remaining\n",
+        std::str::from_utf8(SOURCE).unwrap()
+    );
+    let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let create = w.handler_occurrence(b"create-goal", &[n(7.0), n(3.0)]).unwrap();
+    w.run_occurrences_to_candidate(&vec![create; 256]).unwrap();
+    let before = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+    assert_eq!(known(&before).len(), 256);
+    let after = run(&mut w, b"clear", &[]);
+    assert!(known(&after).is_empty());
+    assert!(table(&after, b"contribution").rows().is_empty());
+    assert!(table(&after, b"remaining").rows().is_empty());
+    assert_eq!(balance(&after), balance(&before));
+}
+
+#[test]
+fn continuous_admissions_retain_created_identity_beyond_one_command_window() {
+    let mut w = ResidentSourceWorkbenchV1::open_continuous(SOURCE).unwrap();
+    let frame = run(&mut w, b"create-goal", &[n(7.0), n(2000.0)]);
+    let identity = known(&frame);
+    let handle = w.generation().handle;
+    for _ in 0..1100 {
+        run(&mut w, b"tick", &[n(1.0)]);
+    }
+    let frame = run(&mut w, b"expire", &[]);
+    assert_eq!(w.generation().handle, handle);
+    assert_eq!(known(&frame), identity);
+    assert_eq!(balance(&frame), 7800.0);
+    assert_eq!(table(&frame, b"remaining").rows()[&identity[0]].first().unwrap().as_number(), Some(900.0));
+}
+
+#[test]
 fn real_encounter_accepts_independent_runtime_created_burns() {
     let source = [
         include_bytes!("../../../test-vectors/authoring/live-encounter.clause").as_slice(),

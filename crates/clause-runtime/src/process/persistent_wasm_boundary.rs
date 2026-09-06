@@ -102,6 +102,7 @@ pub struct WasmSessionEffectReceiptV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WasmSessionOperationV1 {
+    RenewCommandWindow,
     Input(Vec<u8>),
     Candidate(Vec<u8>),
     PhysicalInput(WasmSessionPhysicalInputV1),
@@ -143,6 +144,7 @@ pub enum WasmSessionRejectionV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WasmSessionEventKindV1 {
+    CommandWindowRenewed,
     Opened {
         package: ProcessPackageId,
         session: RuntimeSessionId,
@@ -268,6 +270,8 @@ pub struct WasmSessionEventV1 {
 struct LiveSessionV1 {
     session: PersistentProcessSessionV1,
     sequence: u64,
+    command_window_start: u64,
+    at_admitted_frontier: bool,
     limits: WasmSessionLimitsV1,
     last_input_sequence: u64,
     last_configuration_revision: u64,
@@ -529,6 +533,8 @@ impl WasmPersistentSessionBoundaryV1 {
         let replacement = LiveSessionV1 {
             session,
             sequence: 0,
+            command_window_start: 0,
+            at_admitted_frontier: false,
             limits: request.limits,
             last_input_sequence: 0,
             last_configuration_revision: 0,
@@ -579,7 +585,13 @@ impl WasmPersistentSessionBoundaryV1 {
         if command.expected_sequence != live.sequence {
             return self.fail(WasmProcessStatusV1::SequenceRejected);
         }
-        if live.sequence == live.limits.max_commands {
+        let renewal = matches!(command.operation, WasmSessionOperationV1::RenewCommandWindow);
+        if renewal && (!live.at_admitted_frontier
+            || live.limits.trace_retention != WasmSessionTraceRetentionV1::CurrentAdmission)
+        {
+            return self.fail(WasmProcessStatusV1::ProcessRejected);
+        }
+        if live.sequence - live.command_window_start == live.limits.max_commands && !renewal {
             return self.fail(WasmProcessStatusV1::SessionLimitReached);
         }
         if usize::try_from(live.limits.event_bytes).unwrap_or(usize::MAX)
@@ -610,7 +622,11 @@ impl WasmPersistentSessionBoundaryV1 {
             }
             _ => None,
         };
-        let kind = execute_operation(&mut live.session, operation, live.limits.trace_retention);
+        let kind = if renewal {
+            WasmSessionEventKindV1::CommandWindowRenewed
+        } else {
+            execute_operation(&mut live.session, operation, live.limits.trace_retention)
+        };
         if !matches!(
             kind,
             WasmSessionEventKindV1::Rejected(_) | WasmSessionEventKindV1::CandidateRejected { .. }
@@ -626,6 +642,8 @@ impl WasmPersistentSessionBoundaryV1 {
             .checked_add(1)
             .ok_or(WasmProcessStatusV1::SessionLimitReached)?;
         live.sequence = accepted_sequence;
+        live.at_admitted_frontier = matches!(kind, WasmSessionEventKindV1::AdmissionAccepted { .. });
+        if renewal { live.command_window_start = accepted_sequence; }
         self.status = WasmProcessStatusV1::Ready;
         let event = WasmSessionEventV1 {
             handle: command.handle,
@@ -732,6 +750,7 @@ fn execute_operation(
     trace_retention: WasmSessionTraceRetentionV1,
 ) -> WasmSessionEventKindV1 {
     match operation {
+        WasmSessionOperationV1::RenewCommandWindow => unreachable!("renewal is checked by the session boundary"),
         WasmSessionOperationV1::Input(bytes) => match session.apply_opaque_input(&bytes) {
             Ok(step) => WasmSessionEventKindV1::InputAccepted {
                 step: step.id,
@@ -1069,6 +1088,7 @@ const fn open_event_size() -> usize {
 
 fn command_event_size(operation: &WasmSessionOperationV1) -> usize {
     match operation {
+        WasmSessionOperationV1::RenewCommandWindow => EVENT_HEADER_BYTES,
         WasmSessionOperationV1::Dispose => EVENT_HEADER_BYTES,
         WasmSessionOperationV1::Input(_)
         | WasmSessionOperationV1::Candidate(_)
@@ -1227,6 +1247,7 @@ pub fn encode_wasm_session_command_v1(
     bytes.extend_from_slice(&command.handle.generation.to_le_bytes());
     bytes.extend_from_slice(&command.expected_sequence.to_le_bytes());
     match &command.operation {
+        WasmSessionOperationV1::RenewCommandWindow => bytes.push(15),
         WasmSessionOperationV1::Input(input) => {
             bytes.push(1);
             put_blob(&mut bytes, input)?;
@@ -1402,6 +1423,7 @@ pub fn decode_wasm_session_command_v1(
                 _ => return Err(WasmProcessStatusV1::MalformedRequest),
             },
         },
+        15 => WasmSessionOperationV1::RenewCommandWindow,
         _ => return Err(WasmProcessStatusV1::MalformedRequest),
     };
     if !d.is_complete() {
@@ -1421,6 +1443,7 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
     bytes.extend_from_slice(&event.handle.generation.to_le_bytes());
     bytes.extend_from_slice(&event.accepted_sequence.to_le_bytes());
     match &event.kind {
+        WasmSessionEventKindV1::CommandWindowRenewed => bytes.push(16),
         WasmSessionEventKindV1::Opened {
             package,
             session,
@@ -1861,6 +1884,7 @@ pub fn decode_wasm_session_event_v1(
         15 => WasmSessionEventKindV1::CandidateRejected {
             diagnostic: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
         },
+        16 => WasmSessionEventKindV1::CommandWindowRenewed,
         _ => return Err(WasmProcessStatusV1::MalformedRequest),
     };
     if !d.is_complete() {
@@ -1942,6 +1966,16 @@ fn get_effect_scope(decoder: &mut Decoder<'_>) -> Result<EffectScopeV1, WasmProc
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_window_renewal_event_roundtrips() {
+        let event = WasmSessionEventV1 {
+            handle: WasmSessionHandleV1 { slot: 0, generation: 7 },
+            accepted_sequence: 4097,
+            kind: WasmSessionEventKindV1::CommandWindowRenewed,
+        };
+        assert_eq!(decode_wasm_session_event_v1(&encode_wasm_session_event_v1(&event)).unwrap(), event);
+    }
 
     #[test]
     fn candidate_rejection_event_preserves_its_diagnostic() {

@@ -16,6 +16,7 @@
     "test:live-semantics": "bun test ./src/live-semantics-test.ts",
     "test:created-collections": "bun test ./src/created-collections-test.ts",
     "test:scheduling-ui": "bun test ./src/scheduling-view-test.ts",
+    "test:scheduling-browser": "bun run ./src/scheduling-browser-journey.ts",
     "serve:scheduling": "bun run ./src/scheduling-server.ts",
     "test:gameplay-hot-reload": "bun test ./generated/jump-arena-shell/wasm-cartridge-port-test.js --test-name-pattern 'real Wasm (workbench )?hot-reloads Clause'",
     "check:gameplay-hot-reload": "bun run build:gameplay && bun run test:gameplay-hot-reload"

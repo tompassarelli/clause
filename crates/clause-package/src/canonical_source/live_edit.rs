@@ -101,7 +101,7 @@ pub fn canonical_scalar_effects_v1(
     let mut effects = Vec::new();
     for item in &cst.items {
         let (producer, origin, includes) = match &item.kind {
-            CstKind::GeneralHandler(handler) => (
+            CstKind::GeneralHandler(handler) if !handler.derivation => (
                 &handler.producer,
                 handler.origin,
                 handler.includes.as_slice(),

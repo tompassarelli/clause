@@ -42,6 +42,13 @@ fn completed(frame: &Term) -> usize {
 fn scheduling_controls_use_checked_dependencies_and_preserve_identity() {
     assert!(!SOURCE.contains("member of"));
     let mut w = ResidentSourceWorkbenchV1::open(SOURCE.as_bytes()).unwrap();
+    assert!(
+        w.scalar_effects()
+            .unwrap()
+            .iter()
+            .any(|effect| effect.expression == b"?prior + 2.0"),
+        "recursive scheduling laws must not hide the editable extension expression",
+    );
     let initial = run(&mut w, None);
     assert_eq!(rows(&initial, b"duration").rows().len(), 5);
     assert_eq!(rows(&initial, b"blocker").rows().values().map(|v| v.len()).sum::<usize>(), 8);
@@ -57,7 +64,7 @@ fn scheduling_controls_use_checked_dependencies_and_preserve_identity() {
     assert_eq!(completed(&run(&mut w, Some((b"complete", prototype.clone())))), 1);
     let extended = run(&mut w, Some((b"extend", prototype.clone())));
     assert_eq!(referent(&extended, b"prototype"), prototype);
-    assert!(rows(&extended, b"duration").rows().values().flatten().any(|v| v.as_number() == Some(5.0)));
+    assert!(rows(&extended, b"duration").rows().values().flatten().any(|v| v.as_number() == Some(6.0)));
     run(&mut w, Some((b"resolve", referent(&initial, b"components"))));
     for name in [b"prototype".as_slice(), b"validation", b"documentation", b"launch"] {
         run(&mut w, Some((b"complete", referent(&initial, name))));

@@ -1,0 +1,28 @@
+Text
+Bool
+Document
+
+relation text
+  reads {document: Document} text {value: Text}
+  subject document
+  mode given document yields value: one
+relation matches
+  reads {document: Document} matches {value: Bool}
+  subject document
+  mode given document yields value: one
+
+document
+  member of: Document
+document text ""
+document matches false
+
+on search ?document ?text ?query
+  when
+    ?document text ?prior
+    ?document matches ?matched
+  withdraw
+    ?document text ?prior
+    ?document matches ?matched
+  include
+    ?document text lowercase(?text)
+    ?document matches contains-text(lowercase(?text), lowercase(?query))
