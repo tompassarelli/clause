@@ -206,3 +206,20 @@ fn long_text_world_preserves_exact_bytes_and_identities_after_reopen() {
     assert_eq!(reopened.project_current_world().unwrap(), after);
     assert_eq!(reopened.checkpoint_admitted().unwrap(), next);
 }
+
+#[test]
+fn admitted_world_projection_reopens_above_diagnostic_size() {
+    let value = "旅 🚀\n".repeat(51_200);
+    let mut w = ResidentSourceWorkbenchV1::open_continuous(SOURCE).unwrap();
+    run(&mut w, b"create-goal", &[text(&value), text(&value)]);
+    let before = run(&mut w, b"create-goal", &[text(&value), text(&value)]);
+    let projection = clause_package::canonical_term_bytes(&before).unwrap();
+    assert!(projection.len() > 1024 * 1024);
+    let checkpoint = w.checkpoint_admitted().unwrap();
+    let generation = w.generation().clone();
+    drop(w);
+    let reopened = ResidentSourceWorkbenchV1::reopen(SOURCE, &checkpoint).unwrap();
+    assert_eq!(reopened.generation(), &generation);
+    assert_eq!(reopened.project_current_world().unwrap(), before);
+    assert_eq!(reopened.checkpoint_admitted().unwrap(), checkpoint);
+}
