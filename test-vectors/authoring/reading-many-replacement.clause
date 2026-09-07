@@ -1,0 +1,27 @@
+Module
+Text
+
+included-by:
+  ?module shape Module
+  ?tag shape Text
+  ?module:
+    is included by tag: ?tag
+
+mode included-by given module yields tag: many
+
+label
+  domain: Module
+  range: Text
+  cardinality: one
+
+btop
+  label: "btop"
+  is included by tag: "cli-tools"
+
+on retag ?module ?old ?new
+  when
+    ?module is included by tag ?old
+  withdraw
+    ?module is included by tag ?old
+  include
+    ?module is included by tag ?new

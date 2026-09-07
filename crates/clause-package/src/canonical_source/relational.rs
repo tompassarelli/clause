@@ -496,9 +496,14 @@ pub(super) fn checked_handler_with_domains(
                     constant_expression(CanonicalScalarValueV1::Boolean(false)),
                 ));
             }
+            if mode == 0 && cardinality == SourceCardinality::Many {
+                let previous = variables.get(&target.parameter).cloned().ok_or_else(error)?;
+                let previous = facet(cst, plan, previous, domain, source.origin)?;
+                effects.entry(state.clone()).or_default().push(R::Remove(subject.clone(), previous));
+            }
             let effect = match mode {
                 2 => R::Accumulate(subject, value),
-                1 if cardinality == SourceCardinality::Many || source.derivation => R::Insert(subject, value),
+                _ if cardinality == SourceCardinality::Many || source.derivation => R::Insert(subject, value),
                 _ => R::Put(subject, value),
             };
             effects.entry(state).or_default().push(effect);
