@@ -37,7 +37,7 @@ fn text(value: &str) -> V {
 fn run(w: &mut ResidentSourceWorkbenchV1, name: &[u8], arguments: &[V]) -> Term {
     let occurrence = w.handler_occurrence(name, arguments).unwrap();
     w.run_occurrences_to_candidate(&[occurrence]).unwrap();
-    decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap()
+    decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap()
 }
 
 #[test]

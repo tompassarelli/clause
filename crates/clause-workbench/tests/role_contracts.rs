@@ -19,7 +19,7 @@ fn ordinary_contract_and_value_facts_drive_typed_execution() {
     for expected in [1.0, 0.0] {
         let occurrence = w.handler_occurrence(b"consume", &[]).unwrap();
         w.run_occurrences_to_candidate(&[occurrence]).unwrap();
-        let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+        let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap();
         let table = projected_relation_table_v1(field(field(&frame, b"relations"), b"charge")).unwrap().unwrap();
         assert_eq!(table.rows().len(), 1);
         assert_eq!(table.rows().values().flatten().next().unwrap().as_number(), Some(expected));

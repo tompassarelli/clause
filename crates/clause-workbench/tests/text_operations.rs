@@ -12,7 +12,7 @@ fn text_selectors_match_exact_values_on_declared_and_created_rows() {
         workbench.run_occurrences_to_candidate(&[occurrence]).unwrap();
         let projection = workbench.admit().unwrap().projection;
         if handler == b"select" {
-            let term = decode_canonical_term_bytes(&projection.exact_term_bytes).unwrap();
+            let term = decode_canonical_term_bytes(&projection.exact_term_bytes()).unwrap();
             let selected = projected_relation_table_v1(field(field(&term, b"relations"), b"selected")).unwrap().unwrap();
             let values = selected.rows().values().flatten().collect::<Vec<_>>();
             assert_eq!(values.len(), 3);
@@ -35,7 +35,7 @@ fn text_search_composes_unicode_case_mapping_with_exact_membership() {
             ExecutableValueV1::text(text).unwrap(), ExecutableValueV1::text(query).unwrap(),
         ]).unwrap();
         workbench.run_occurrences_to_candidate(&[occurrence]).unwrap();
-        let term = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes).unwrap();
+        let term = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes()).unwrap();
         let document = field(&term, b"document");
         assert_eq!(projected_text_value_v1(field(document, b"text")).unwrap(), Some(text.to_lowercase().as_str()));
         assert_eq!(field(document, b"matches").as_atom().unwrap().canonical_payload(), &[u8::from(expected)]);
@@ -68,7 +68,7 @@ fn text_operations_tokenize_unicode_without_losing_payload_whitespace() {
     ] {
         let occurrence = workbench.handler_occurrence(b"tokenize", &[ExecutableValueV1::text(input).unwrap()]).unwrap();
         workbench.run_occurrences_to_candidate(&[occurrence]).unwrap();
-        let frame = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes).unwrap();
+        let frame = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes()).unwrap();
         let document = field(&frame, b"document-main");
         assert_eq!(projected_text_value_v1(field(document, b"cleaned")).unwrap(), Some(clean));
         assert_eq!(projected_text_value_v1(field(document, b"first-word")).unwrap(), Some(first));
@@ -95,7 +95,7 @@ fn typed_law_domains_survive_relational_specialization() {
     let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
     let occurrence = workbench.handler_occurrence(b"record", &[ExecutableValueV1::text("世界").unwrap()]).unwrap();
     workbench.run_occurrences_to_candidate(&[occurrence]).unwrap();
-    let frame = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes).unwrap();
+    let frame = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes()).unwrap();
     assert_eq!(projected_text_value_v1(field(field(&frame, b"root"), b"output")).unwrap(), Some("世界"));
     let invalid = source.replace("?item label ?value", "?item label (?value + 1.0)");
     assert!(ResidentSourceWorkbenchV1::open(invalid.as_bytes()).is_err());

@@ -23,7 +23,7 @@ fn initial_many_values_share_storage_and_retain_distinct_members() {
         let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
         let occurrence = workbench.handler_occurrence(b"inspect", &[]).unwrap();
         workbench.run_occurrences_to_candidate(&[occurrence]).unwrap();
-        let frame = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes).unwrap();
+        let frame = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes()).unwrap();
         let count = field(field(&frame, b"root"), b"count").as_atom().unwrap().canonical_payload();
         assert_eq!(f64::from_bits(u64::from_le_bytes(count.try_into().unwrap())), 2.0);
     }
@@ -42,7 +42,7 @@ fn static_catalog_projects_all_rows_without_a_reader_handler() {
     let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
     let occurrence = workbench.handler_occurrence(b"tick", &[]).unwrap();
     workbench.run_occurrences_to_candidate(&[occurrence]).unwrap();
-    let frame = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes).unwrap();
+    let frame = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes()).unwrap();
     let relations = field(&frame, b"relations");
     let known = clause_runtime::projected_relation_table_v1(field(relations, b"known")).unwrap().unwrap();
     let members = known.rows().values().flatten().collect::<Vec<_>>();

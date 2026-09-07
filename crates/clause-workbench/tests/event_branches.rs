@@ -15,7 +15,7 @@ fn field<'a>(term: &'a Term, key: &[u8]) -> &'a Term {
 fn run(w: &mut ResidentSourceWorkbenchV1) -> Term {
     let occurrence = w.handler_occurrence(b"use", &[]).unwrap();
     w.run_occurrences_to_candidate(&[occurrence]).unwrap();
-    decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap()
+    decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap()
 }
 
 fn number(frame: &Term, relation: &[u8]) -> f64 {
@@ -109,7 +109,7 @@ fn argument_event_dispatches_all_rules_with_the_same_input() {
     for expected in [0.5, 1.0, 1.5] {
         let occurrence = workbench.handler_occurrence(b"use", &[clause_runtime::ExecutableValueV1::number(0.5).unwrap()]).unwrap();
         workbench.run_occurrences_to_candidate(&[occurrence]).unwrap();
-        let frame = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes).unwrap();
+        let frame = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes()).unwrap();
         assert_eq!(number(&frame, b"attempts"), expected);
         assert_eq!(number(&frame, b"charge"), (1.0 - expected).max(0.0));
     }

@@ -3741,7 +3741,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
             assert_eq!(admitted_session, session);
             assert_eq!(state_revision_count, 2);
             let projection = projection.expect("package projection is transported only now");
-            let term = decode_canonical_term_bytes(&projection.exact_term_bytes)
+            let term = decode_canonical_term_bytes(&projection.exact_term_bytes())
                 .expect("projected Term remains exact and canonical");
             assert_arena_projection(&term, 2.5, 5.0);
             successor
@@ -4057,7 +4057,7 @@ fn shipped_cwr1_has_external_physical_plan_and_successive_issued_admission() {
             other => panic!("unexpected fixture Admission event: {other:?}"),
         };
         assert_ne!(successor, base);
-        let term = decode_canonical_term_bytes(&projection.exact_term_bytes)
+        let term = decode_canonical_term_bytes(&projection.exact_term_bytes())
             .expect("fixture projection remains canonical");
         assert_arena_projection(&term, 1.25 * (ordinal as f64 + 1.0), 5.0);
     }

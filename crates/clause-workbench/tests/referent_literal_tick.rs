@@ -19,7 +19,7 @@ fn tick(source: &str) -> Term {
     let occurrences = workbench.fixed_tick_occurrences(0.016).unwrap();
     workbench.run_occurrences_to_candidate(&occurrences).unwrap();
     decode_canonical_term_bytes(
-        &workbench.admit().unwrap().projection.exact_term_bytes,
+        &workbench.admit().unwrap().projection.exact_term_bytes(),
     ).unwrap()
 }
 

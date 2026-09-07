@@ -2779,6 +2779,13 @@ pub fn canonical_term_bytes(term: &Term) -> Result<Vec<u8>, CanonicalEncodeError
     encode_wire(term)
 }
 
+/// Check the same canonical representation and byte ceiling without copying payloads.
+pub fn canonical_term_byte_len(term: &Term) -> Result<usize, CanonicalEncodeError> {
+    let mut encoder = Encoder::counting();
+    term.encode(&mut encoder)?;
+    encoder.finish_size()
+}
+
 /// Decode one exact canonical scoped Term with no surrounding package.
 ///
 /// This is the inverse of [`canonical_term_bytes`]. The resulting Term is
@@ -3144,6 +3151,13 @@ mod ingress_size_tests {
         let hex = include_str!("../../../test-vectors/process-v2/positive/process-v2-core.hex").split_whitespace().collect::<String>();
         let bytes = (0..hex.len()).step_by(2).map(|offset| u8::from_str_radix(&hex[offset..offset + 2], 16).unwrap()).collect::<Vec<_>>();
         let package = decode_process_package(&bytes).unwrap();
+        for view in &package.candidate().initial_state_views {
+            assert_eq!(canonical_term_byte_len(&view.payload).unwrap(), canonical_term_bytes(&view.payload).unwrap().len());
+        }
+        let mut large = Term::atom(package.candidate().initial_state_views[0].payload.scope(),
+            b"size-check".to_vec(), vec![0; crate::MAX_ATOM_FIELD_BYTES], EqualityContract::ExactOctetsV1).unwrap();
+        for _ in 0..3 { large = Term::triple([large.clone(), large.clone(), large]).unwrap(); }
+        assert!(matches!(canonical_term_byte_len(&large), Err(CanonicalEncodeError::EncodedBytesTooLong { .. })));
         let records = &package.candidate().records;
         let mut encoded = Encoder::new();
         encoded.u32(records.len() as u32);

@@ -65,12 +65,12 @@ impl ResidentSourceWorkbenchV1 {
             let observation = clause_package::ObservationId::from_bytes(
                 observation.try_into().map_err(|_| invalid())?,
             );
-            let exact_term_bytes = workbench
+            let term = workbench
                 .boundary
-                .current_accepted_projection_bytes(workbench.generation.handle)?;
+                .current_accepted_projection_term(workbench.generation.handle)?;
             workbench.last_projection = Some(WasmSessionProjectionV1 {
                 observation,
-                exact_term_bytes,
+                term,
             });
         }
         Ok(workbench)

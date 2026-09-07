@@ -70,7 +70,7 @@ fn tick(w: &mut ResidentSourceWorkbenchV1, revision: u64) -> Term {
         fixed_tick_milliseconds: 16,
     })
     .unwrap();
-    decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap()
+    decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap()
 }
 
 #[test]

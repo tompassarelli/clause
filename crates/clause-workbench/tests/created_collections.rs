@@ -28,7 +28,7 @@ fn table(term: &Term, name: &[u8]) -> ExecutableRelationTableV1 {
 fn run(w: &mut ResidentSourceWorkbenchV1, name: &[u8], arguments: &[V]) -> Term {
     let occurrence = w.handler_occurrence(name, arguments).unwrap();
     w.run_occurrences_to_candidate(&[occurrence]).unwrap();
-    decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap()
+    decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap()
 }
 fn n(value: f64) -> V {
     V::number(value).unwrap()
@@ -201,7 +201,7 @@ fn withdrawing_a_collection_joins_known_members_by_value() {
     let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
     let create = w.handler_occurrence(b"create-goal", &[n(7.0), n(3.0)]).unwrap();
     w.run_occurrences_to_candidate(&vec![create; 256]).unwrap();
-    let before = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+    let before = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap();
     assert_eq!(known(&before).len(), 256);
     let after = run(&mut w, b"clear", &[]);
     assert!(known(&after).is_empty());
@@ -289,7 +289,7 @@ fn real_encounter_accepts_independent_runtime_created_burns() {
             fixed_tick_milliseconds: 1000,
         })
         .unwrap();
-        decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap()
+        decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap()
     };
     let after = tick(&mut w, 1);
     assert_eq!(value(field(field(&after, b"cinder-1"), b"vitality")), 86.0);
@@ -401,7 +401,7 @@ fn fractional_burn_lifetimes_and_live_edit_preserve_created_identity() {
     })
     .unwrap();
     let after =
-        decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+        decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap();
     assert_eq!(
         table(&after, b"burn-target")
             .rows()
@@ -462,7 +462,7 @@ fn fractional_burn_lifetimes_and_live_edit_preserve_created_identity() {
     })
     .unwrap();
     let after =
-        decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+        decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap();
     assert_eq!(number(field(field(&after, b"cinder-1"), b"vitality")), 72.0);
     assert_eq!(table(&after, b"burn-target").rows().len(), 1);
 }
@@ -486,7 +486,7 @@ fn collection_encounter_retains_real_battle_movement_targeting_and_selection_gua
     })
     .unwrap();
     let frame =
-        decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+        decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap();
     let number = |term: &Term| {
         f64::from_bits(u64::from_le_bytes(
             term.as_atom()
@@ -527,6 +527,6 @@ fn collection_encounter_retains_real_battle_movement_targeting_and_selection_gua
     })
     .unwrap();
     let after =
-        decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+        decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap();
     assert_eq!(number(field(field(&after, b"cinder-2"), b"vitality")), 86.0);
 }
