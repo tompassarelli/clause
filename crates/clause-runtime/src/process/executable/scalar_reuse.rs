@@ -5,6 +5,7 @@ pub(super) struct ScalarPlan {
     pub expression: Box<ExecutableExpressionV1>,
     nodes: Vec<(Node, bool, bool)>,
     root: usize,
+    instructions: Vec<Instruction>,
 }
 
 enum Node {
@@ -13,6 +14,80 @@ enum Node {
     Add(usize, usize), Subtract(usize, usize), Multiply(usize, usize), Divide(usize, usize),
     GreaterThan(usize, usize), LessThanOrEqual(usize, usize), Equal(usize, usize), And(usize, usize),
     Not(usize), SquareRoot(usize), Conditional(usize, usize, usize), Clamp(usize, usize, usize),
+}
+
+enum Instruction {
+    Cached { node: usize, end: usize },
+    Evaluate(usize),
+    Number(usize),
+    Boolean(usize),
+    Nonzero(usize),
+    BranchFalse { condition: usize, target: usize },
+    Jump(usize),
+    Copy { from: usize, to: usize },
+}
+
+fn emit_scalar_instructions(index: usize, nodes: &[(Node, bool, bool)], code: &mut Vec<Instruction>) {
+    fn number(index: usize, nodes: &[(Node, bool, bool)], code: &mut Vec<Instruction>) {
+        emit_scalar_instructions(index, nodes, code);
+        if !matches!(nodes[index].0, Node::Number(_) | Node::Add(..) | Node::Subtract(..)
+            | Node::Multiply(..) | Node::Divide(..) | Node::SquareRoot(_) | Node::Clamp(..)) {
+            code.push(Instruction::Number(index));
+        }
+    }
+    fn boolean(index: usize, nodes: &[(Node, bool, bool)], code: &mut Vec<Instruction>) {
+        emit_scalar_instructions(index, nodes, code);
+        if !matches!(nodes[index].0, Node::Boolean(_) | Node::GreaterThan(..)
+            | Node::LessThanOrEqual(..) | Node::Equal(..) | Node::And(..) | Node::Not(_)) {
+            code.push(Instruction::Boolean(index));
+        }
+    }
+    let cached = nodes[index].1.then(|| {
+        let position = code.len();
+        code.push(Instruction::Cached { node: index, end: 0 });
+        position
+    });
+    match nodes[index].0 {
+        Node::Add(a, b) | Node::Subtract(a, b) | Node::Multiply(a, b)
+        | Node::GreaterThan(a, b) | Node::LessThanOrEqual(a, b) => {
+            number(a, nodes, code); number(b, nodes, code);
+            code.push(Instruction::Evaluate(index));
+        }
+        Node::Divide(a, b) => {
+            number(b, nodes, code); code.push(Instruction::Nonzero(b));
+            number(a, nodes, code); code.push(Instruction::Evaluate(index));
+        }
+        Node::Equal(a, b) => {
+            emit_scalar_instructions(a, nodes, code); emit_scalar_instructions(b, nodes, code);
+            code.push(Instruction::Evaluate(index));
+        }
+        Node::Not(a) => { boolean(a, nodes, code); code.push(Instruction::Evaluate(index)); }
+        Node::SquareRoot(a) => { number(a, nodes, code); code.push(Instruction::Evaluate(index)); }
+        Node::Clamp(a, b, c) => {
+            number(a, nodes, code); number(b, nodes, code); number(c, nodes, code);
+            code.push(Instruction::Evaluate(index));
+        }
+        Node::Conditional(a, b, c) => {
+            emit_scalar_instructions(a, nodes, code);
+            let branch = code.len(); code.push(Instruction::BranchFalse { condition: a, target: 0 });
+            emit_scalar_instructions(b, nodes, code); code.push(Instruction::Copy { from: b, to: index });
+            let jump = code.len(); code.push(Instruction::Jump(0));
+            code[branch] = Instruction::BranchFalse { condition: a, target: code.len() };
+            emit_scalar_instructions(c, nodes, code); code.push(Instruction::Copy { from: c, to: index });
+            code[jump] = Instruction::Jump(code.len());
+        }
+        Node::And(a, b) => {
+            emit_scalar_instructions(a, nodes, code);
+            let branch = code.len(); code.push(Instruction::BranchFalse { condition: a, target: 0 });
+            boolean(b, nodes, code); code.push(Instruction::Copy { from: b, to: index });
+            let jump = code.len(); code.push(Instruction::Jump(0));
+            code[branch] = Instruction::BranchFalse { condition: a, target: code.len() };
+            code.push(Instruction::Copy { from: a, to: index });
+            code[jump] = Instruction::Jump(code.len());
+        }
+        _ => code.push(Instruction::Evaluate(index)),
+    }
+    if let Some(position) = cached { code[position] = Instruction::Cached { node: index, end: code.len() }; }
 }
 
 impl ScalarPlan {
@@ -61,7 +136,26 @@ impl ScalarPlan {
             Ok(index)
         }
         let root = collect(expression, &mut nodes, &mut interned)?;
-        Ok(Self { expression: Box::new(expression.clone()), nodes, root })
+        let mut uses = vec![0_usize; nodes.len()];
+        for (node, _, _) in &nodes {
+            match *node {
+                Node::Add(a, b) | Node::Subtract(a, b) | Node::Multiply(a, b) | Node::Divide(a, b)
+                | Node::GreaterThan(a, b) | Node::LessThanOrEqual(a, b) | Node::Equal(a, b) | Node::And(a, b) => {
+                    uses[a] += 1; uses[b] += 1;
+                }
+                Node::Not(a) | Node::SquareRoot(a) => uses[a] += 1,
+                Node::Conditional(a, b, c) | Node::Clamp(a, b, c) => {
+                    uses[a] += 1; uses[b] += 1; uses[c] += 1;
+                }
+                _ => {}
+            }
+        }
+        for (index, (_, reusable, input_only)) in nodes.iter_mut().enumerate() {
+            *reusable &= *input_only || uses[index] > 1;
+        }
+        let mut instructions = Vec::new();
+        emit_scalar_instructions(root, &nodes, &mut instructions);
+        Ok(Self { expression: Box::new(expression.clone()), nodes, root, instructions })
     }
 
     pub fn memo(&self) -> ScalarMemo<'_> {
@@ -152,14 +246,44 @@ impl ScalarMemo<'_> {
         let mut row_values = self.row_values.borrow_mut();
         for index in row_values.drain(..) { values[index] = None; }
         let evaluation = ScalarEvaluation { configuration, arguments, context: EvaluationContextV1 { scalar_memo: None, ..context } };
-        Ok(self.expand(self.node(self.plan.root, &evaluation, &mut values, &mut row_values)?))
+        let mut pc = 0;
+        while pc < self.plan.instructions.len() {
+            let stored = match self.plan.instructions[pc] {
+                Instruction::Cached { node, end } => {
+                    if values[node].is_some() { pc = end; continue; }
+                    None
+                }
+                Instruction::Evaluate(node) => Some((node, self.value(node, &evaluation, &values)?)),
+                Instruction::Copy { from, to } => Some((to, values[from].ok_or(ExecutableErrorV1::MalformedProgram)?)),
+                Instruction::Number(node) => { values[node].ok_or(ExecutableErrorV1::MalformedProgram)?.as_number()?; None }
+                Instruction::Boolean(node) => { values[node].ok_or(ExecutableErrorV1::MalformedProgram)?.as_boolean()?; None }
+                Instruction::Nonzero(node) => {
+                    if values[node].ok_or(ExecutableErrorV1::MalformedProgram)?.as_number()? == 0.0 {
+                        return Err(ExecutableErrorV1::NumericDomain);
+                    }
+                    None
+                }
+                Instruction::BranchFalse { condition, target } => {
+                    if !values[condition].ok_or(ExecutableErrorV1::MalformedProgram)?.as_boolean()? {
+                        pc = target; continue;
+                    }
+                    None
+                }
+                Instruction::Jump(target) => { pc = target; continue; }
+            };
+            if let Some((node, value)) = stored {
+                values[node] = Some(value);
+                if self.plan.nodes[node].1 && !self.plan.nodes[node].2 { row_values.push(node); }
+            }
+            pc += 1;
+        }
+        Ok(self.expand(values[self.plan.root].ok_or(ExecutableErrorV1::MalformedProgram)?))
     }
 
-    fn node(&self, index: usize, evaluation: &ScalarEvaluation,
-        values: &mut [Option<ScalarValue>], row_values: &mut Vec<usize>)
+    fn value(&self, index: usize, evaluation: &ScalarEvaluation,
+        values: &[Option<ScalarValue>])
         -> Result<ScalarValue, ExecutableErrorV1> {
-        if let Some(value) = values[index] { return Ok(value); }
-        macro_rules! eval { ($index:expr) => { self.node($index, evaluation, values, row_values) }; }
+        macro_rules! eval { ($index:expr) => { values[$index].ok_or(ExecutableErrorV1::MalformedProgram) }; }
         macro_rules! numeric { ($index:expr) => { eval!($index)?.as_number() }; }
         macro_rules! boolean_value { ($index:expr) => { eval!($index)?.as_boolean() }; }
         let value = match self.plan.nodes[index].0 {
@@ -199,10 +323,6 @@ impl ScalarMemo<'_> {
                 ScalarValue::number(value.clamp(lower, upper))?
             },
         };
-        if self.plan.nodes[index].1 {
-            values[index] = Some(value);
-            if !self.plan.nodes[index].2 { row_values.push(index); }
-        }
         Ok(value)
     }
 }
@@ -211,6 +331,31 @@ impl ScalarMemo<'_> {
 mod tests {
     use super::*;
     use ExecutableExpressionV1 as E;
+
+    #[test]
+    fn scalar_instructions_preserve_operand_errors_and_lazy_branches() {
+        let n = |value| E::Constant(ExecutableValueV1::number(value).unwrap());
+        let boolean = E::Constant(ExecutableValueV1::Boolean(false));
+        let expressions = [
+            E::Add(Box::new(boolean.clone()), Box::new(E::Argument(9))),
+            E::Divide(Box::new(E::Argument(9)), Box::new(boolean.clone())),
+            E::Divide(Box::new(E::Argument(9)), Box::new(n(0.0))),
+            E::Clamp(Box::new(boolean.clone()), Box::new(E::Argument(9)), Box::new(n(3.0))),
+            E::Conditional(Box::new(boolean.clone()), Box::new(E::Slot(9)), Box::new(n(3.0))),
+            E::And(Box::new(boolean.clone()), Box::new(E::Slot(9))),
+            E::And(Box::new(E::Constant(ExecutableValueV1::Boolean(true))), Box::new(n(3.0))),
+            E::SquareRoot(Box::new(n(-1.0))),
+            E::Clamp(Box::new(n(2.0)), Box::new(n(3.0)), Box::new(n(1.0))),
+        ];
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
+            reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
+        for expression in expressions {
+            let plan = ScalarPlan::new(&expression).unwrap();
+            let memo = plan.memo();
+            assert_eq!(evaluate(&plan.expression, &[], &[], EvaluationContextV1 { scalar_memo: Some(&memo), ..context }),
+                evaluate(&expression, &[], &[], context));
+        }
+    }
 
     #[test]
     fn retained_plans_use_fresh_values_across_preparations() {
