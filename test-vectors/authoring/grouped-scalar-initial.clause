@@ -1,0 +1,22 @@
+Text
+Unit
+
+order-report:
+  ?unit shape Unit
+  ?value shape Text
+  ?unit:
+    order report: ?value
+
+mode order-report given unit yields value: one
+
+artificer-1
+  member of: Unit
+  order report: "ready"
+
+on inspect ?unit
+  when
+    ?unit order report ?prior
+  withdraw
+    ?unit order report ?prior
+  include
+    ?unit order report ?prior

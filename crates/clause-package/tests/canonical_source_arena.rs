@@ -93,6 +93,29 @@ fn scalar_handler_lowers_one_deterministic_rule_per_referent() {
 }
 
 #[test]
+fn grouped_scalar_initials_share_flat_state_lowering() {
+    let fixture = include_str!("../../../test-vectors/authoring/grouped-scalar-initial.clause");
+    for (domain, literal) in [("Text", "\"ready\""), ("F64", "2.0"), ("Bool", "true"), ("Status", "ready")] {
+        let source = fixture.replace("Text", domain).replace("\"ready\"", literal);
+        let flat = source.replace(
+            &format!("  order report: {literal}"),
+            &format!("artificer-1 order report {literal}"),
+        );
+        let grouped = compile_source(&source, 49).expect("focused scalar state lowers");
+        let flat = compile_source(&flat, 49).expect("flat scalar state lowers");
+        assert_eq!(grouped.state_cells, flat.state_cells);
+        assert_eq!(grouped.executable_handlers, flat.executable_handlers);
+        assert!(grouped.unsupported.is_empty());
+        assert_eq!(grouped.state_cells.len(), 1);
+        let application = grouped.applications.iter()
+            .find(|application| application.role == b"order report")
+            .expect("focused source application remains inspectable");
+        assert!(std::str::from_utf8(&source.as_bytes()[application.origin.start as usize..application.origin.end as usize])
+            .unwrap().contains("order report:"));
+    }
+}
+
+#[test]
 fn structured_handler_copies_one_typed_value_per_referent_atomically() {
     let compiled = compile_source(STRUCTURED_RELATION_REPLACEMENT, 51)
         .expect("one structured handler specializes every joined referent row");

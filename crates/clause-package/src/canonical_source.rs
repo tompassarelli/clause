@@ -1596,7 +1596,7 @@ pub fn read_canonical_source_with_declared_frontend_v1(
             _ => None,
         })
         .collect();
-    Ok(CanonicalSourceCstV1 {
+    let mut cst = CanonicalSourceCstV1 {
         artifact,
         exact_source: exact_source.into(),
         items,
@@ -1606,7 +1606,41 @@ pub fn read_canonical_source_with_declared_frontend_v1(
         subject_focuses,
         declared_frontend: frontend.clone(),
         conformance: std::sync::OnceLock::new(),
-    })
+    };
+    normalize_focused_state_assertions(&mut cst);
+    Ok(cst)
+}
+
+fn normalize_focused_state_assertions(cst: &mut CanonicalSourceCstV1) {
+    let state_relations = cst.items.iter().filter_map(|item| match &item.kind {
+        CstKind::Relation(relation) if declared_state_relation(cst, &relation.surface) =>
+            Some(relation.surface.clone()),
+        _ => None,
+    }).collect::<BTreeSet<_>>();
+    for item in &mut cst.items {
+        let CstKind::Application(application) = &item.kind else { continue };
+        if !state_relations.contains(&application.role) { continue; }
+        // Focus changes layout, not state meaning or the assertion's origin.
+        // Retain the surface application projection separately in cst.applications.
+        let origin = item.origin;
+        let subject = application.subject.clone();
+        let relation = application.role.clone();
+        item.kind = match &application.object {
+            CanonicalScalarValueV1::Number(value) => CstKind::NumberAssertion(NumberAssertionCst {
+                origin, subject, relation, value: *value,
+            }),
+            CanonicalScalarValueV1::Boolean(value) => CstKind::BooleanAssertion(BooleanAssertionCst {
+                origin, subject, relation, value: *value,
+            }),
+            CanonicalScalarValueV1::Text(value) => CstKind::TextAssertion(TextAssertionCst {
+                origin, subject, relation, value: value.clone(),
+            }),
+            CanonicalScalarValueV1::Symbol(value) => CstKind::SymbolAssertion(SymbolAssertionCst {
+                origin, subject, relation, value: value.clone(),
+            }),
+            _ => unreachable!("source applications contain literal scalar values"),
+        };
+    }
 }
 
 pub fn print_canonical_source_v1(
@@ -5984,7 +6018,7 @@ pub fn elaborate_canonical_source_package_v1(
     let mut operators = Vec::new();
     let mut emissions = Vec::new();
     let mut denotations = Vec::new();
-    let mut applications = Vec::new();
+    let applications = cst.applications.clone();
     let mut unsupported = Vec::new();
     let mut named_formations = BTreeMap::new();
     let mut named_capabilities = BTreeMap::new();
@@ -6110,12 +6144,6 @@ pub fn elaborate_canonical_source_package_v1(
                     },
                 )?;
                 emissions.push(application_emission);
-                applications.push(CanonicalSourceApplicationV1 {
-                    subject: application.subject.clone(),
-                    role: application.role.clone(),
-                    object: application.object.clone(),
-                    origin: item.origin,
-                });
             }
             CstKind::Capability { designation } => {
                 let producer =
