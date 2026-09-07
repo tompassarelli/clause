@@ -660,14 +660,17 @@ fn match_rule_from(
             active = next.into_values().collect();
         } else {
             let plan = if !capture && let Some(queries) = context.sum_queries {
+                let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanLookup);
                 let mut queries = queries.borrow_mut();
                 let existing = queries.scalar_plans.iter().find(|plan| plan.expression.as_ref() == predicate).cloned();
                 Some(if let Some(existing) = existing { existing } else {
+                    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanBuild);
                     let plan = Arc::new(scalar_reuse::ScalarPlan::new(predicate)?);
                     queries.scalar_plans.push(plan.clone());
                     plan
                 })
             } else { None };
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
             let mut next = Vec::new();
             for mut matched in active {
                 let memo = plan.as_ref().map(|plan| plan.memo());
