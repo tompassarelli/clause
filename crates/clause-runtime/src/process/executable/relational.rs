@@ -239,35 +239,20 @@ pub(super) fn sum_with_shape(
     let memo = plan.as_ref().map(|plan| plan.memo());
     let mut visits = 0;
     let mut total = 0.0;
-    let matches = match_sum(predicates, configuration, &inputs,
-        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits)?;
-    if let Some((plan, memo)) = plan.as_ref().zip(memo.as_ref())
-        .filter(|(plan, _)| context.reads.is_none() && plan.batch_width > 1) {
-        let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
-        for chunk in matches.chunks(plan.batch_width) {
-            let bindings = chunk.iter().filter(|(_, accepted)| *accepted)
-                .map(|(matched, _)| matched.bindings.as_ref()).collect::<Vec<_>>();
-            if bindings.is_empty() { continue; }
-            for contribution in memo.evaluate_batch(configuration, &inputs, &bindings) {
-                total += contribution?.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
-                if !total.is_finite() { return Err(ExecutableErrorV1::NumericDomain); }
+    for (matched, accepted) in match_sum(predicates, configuration, &inputs,
+        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits)? {
+        if let Some(reads) = query_context.reads {
+            for predicate in &matched.predicates {
+                reads.borrow_mut().extend(predicate.reads.iter().cloned());
             }
         }
-    } else {
-        for (matched, accepted) in matches {
-            if let Some(reads) = query_context.reads {
-                for predicate in &matched.predicates {
-                    reads.borrow_mut().extend(predicate.reads.iter().cloned());
-                }
-            }
-            if accepted {
-                let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
-                let contribution = evaluate(plan.as_ref().map_or(value, |plan| plan.expression.as_ref()), configuration, &inputs,
-                    EvaluationContextV1 { bindings: Some(&matched.bindings), scalar_memo: memo.as_ref(), ..query_context })?;
-                total += contribution.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
-                if !total.is_finite() {
-                    return Err(ExecutableErrorV1::NumericDomain);
-                }
+        if accepted {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
+            let contribution = evaluate(plan.as_ref().map_or(value, |plan| plan.expression.as_ref()), configuration, &inputs,
+                EvaluationContextV1 { bindings: Some(&matched.bindings), scalar_memo: memo.as_ref(), ..query_context })?;
+            total += contribution.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
+            if !total.is_finite() {
+                return Err(ExecutableErrorV1::NumericDomain);
             }
         }
     }
