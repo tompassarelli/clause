@@ -6591,7 +6591,7 @@ struct EvaluationContextV1<'a> {
     step_ordinal: u64,
     reads: Option<&'a std::cell::RefCell<Vec<ExecutableReadV1>>>,
     bindings: Option<&'a BTreeMap<u16, ExecutableValueV1>>,
-    relational_occurrence: Option<&'a [u8; IDENTITY_BYTES]>,
+    relational_occurrence: Option<&'a relational::LazyOccurrenceIdentity<'a>>,
 }
 
 fn evaluate(
@@ -6662,9 +6662,10 @@ fn evaluate(
                 runtime_domain_hash(
                     "clause/runtime-referent/v1",
                     &[
-                        context
-                            .relational_occurrence
-                            .unwrap_or(&context.allocation_root),
+                        &match context.relational_occurrence {
+                            Some(identity) => identity.get()?,
+                            None => context.allocation_root,
+                        },
                         &context.step_ordinal.to_be_bytes(),
                         &domain.to_be_bytes(),
                         &binder.to_be_bytes(),
@@ -7800,7 +7801,7 @@ impl StepEvaluator<'_> {
         let mut contributions = BTreeMap::<u16, Vec<f64>>::new();
         let mut row_effects = relational::RowEffects::default();
         for (rule_index, rule, bindings, trace_index) in &selected {
-            let identity = relational::occurrence_identity(evaluation, *rule_index, bindings)?;
+            let identity = relational::LazyOccurrenceIdentity::new(evaluation, *rule_index, bindings);
             let evaluation = EvaluationContextV1 {
                 bindings: Some(bindings),
                 relational_occurrence: (!bindings.is_empty()).then_some(&identity),
