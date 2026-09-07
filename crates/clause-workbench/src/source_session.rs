@@ -101,6 +101,7 @@ pub struct ResidentSourceWorkbenchV1 {
     last_projection: Option<WasmSessionProjectionV1>,
     next_change: u64,
     exact_source: Vec<u8>,
+    source_snapshot: Option<(CanonicalSourceCstV1, clause_package::CanonicalSourceAllocationPlanV1)>,
     default_occurrences: Vec<Vec<u8>>,
     handlers: BTreeMap<Vec<u8>, Vec<ExecutableCanonicalHandlerBindingV1>>,
     last_source_edit: Option<Vec<u8>>,
@@ -195,6 +196,7 @@ impl ResidentSourceWorkbenchV1 {
             last_projection: None,
             next_change: 0,
             exact_source: Vec::new(),
+            source_snapshot: None,
             default_occurrences: Vec::new(),
             handlers: BTreeMap::new(),
             last_source_edit: None,
@@ -326,10 +328,7 @@ impl ResidentSourceWorkbenchV1 {
     }
 
     pub fn scalar_effects(&self) -> Result<Vec<clause_package::CanonicalScalarEffectV1>, ResidentSourceWorkbenchErrorV1> {
-        let cst = self.read_source(&self.exact_source)
-            .map_err(|error| debug_error("source read", error))?;
-        let plan = plan_independent_canonical_source_allocations_v1(&cst, ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change)))
-            .map_err(|error| debug_error("source allocations", error))?;
+        let (cst, plan) = self.source_snapshot.as_ref().expect("an installed workbench retains its source snapshot");
         clause_package::canonical_scalar_effects_v1(&cst, &plan).map_err(|error| debug_error("editable effects", error))
     }
 
@@ -353,9 +352,7 @@ impl ResidentSourceWorkbenchV1 {
         let old_root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change));
         let new_root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change.checked_add(1)
             .ok_or_else(|| ResidentSourceWorkbenchErrorV1("source sequence exhausted".into()))?));
-        let cst = self.read_source(&self.exact_source)
-            .map_err(|error| debug_error("source read", error))?;
-        let plan = plan_independent_canonical_source_allocations_v1(&cst, old_root).map_err(|error| debug_error("source allocation", error))?;
+        let (cst, plan) = self.source_snapshot.as_ref().expect("an installed workbench retains its source snapshot");
         let edit = clause_package::replace_canonical_scalar_effect_v1(&cst, &plan, selected, replacement, new_root)
             .map_err(|error| debug_error("structured edit", error))?;
         let witness = clause_runtime::ExecutableSourceEditV1 {
@@ -375,12 +372,7 @@ impl ResidentSourceWorkbenchV1 {
         &self,
     ) -> Result<Vec<clause_package::CanonicalEditableSourceItemV1>, ResidentSourceWorkbenchErrorV1>
     {
-        let cst = self
-            .read_source(&self.exact_source)
-            .map_err(|error| debug_error("source read", error))?;
-        let root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change));
-        let plan = plan_independent_canonical_source_allocations_v1(&cst, root)
-            .map_err(|error| debug_error("source allocations", error))?;
+        let (cst, plan) = self.source_snapshot.as_ref().expect("an installed workbench retains its source snapshot");
         clause_package::canonical_editable_source_items_v1(&cst, &plan)
             .map_err(|error| debug_error("editable source items", error))
     }
@@ -420,11 +412,7 @@ impl ResidentSourceWorkbenchV1 {
                 ResidentSourceWorkbenchErrorV1("source sequence exhausted".into())
             })?,
         ));
-        let cst = self
-            .read_source(&self.exact_source)
-            .map_err(|error| debug_error("source read", error))?;
-        let plan = plan_independent_canonical_source_allocations_v1(&cst, old_root)
-            .map_err(|error| debug_error("source allocation", error))?;
+        let (cst, plan) = self.source_snapshot.as_ref().expect("an installed workbench retains its source snapshot");
         let edit =
             clause_package::replace_canonical_source_items_v1(&cst, &plan, replacements, new_root)
                 .map_err(|error| debug_error("structured edit", error))?;
@@ -1011,6 +999,7 @@ impl ResidentSourceWorkbenchV1 {
         self.default_occurrences = default_occurrences;
         self.next_change = next_change;
         self.exact_source = exact_source.to_vec();
+        self.source_snapshot = Some((cst, allocation_plan));
         self.generation = ResidentSourceGenerationV1 {
             handle: opened.handle,
             source_package: compiled.checked_package.id(),
