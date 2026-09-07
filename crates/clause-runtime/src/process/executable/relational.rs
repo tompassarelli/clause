@@ -186,8 +186,11 @@ pub(super) fn sum(
     let inputs = inputs.iter().map(|input| evaluate(input, configuration, arguments, context))
         .collect::<Result<Vec<_>, _>>()?;
     if let Some(queries) = context.sum_queries {
+        // Inputs usually differ between adjacent actor evaluations. Check the
+        // compact value vector first so those misses avoid walking the
+        // (often large) structural predicate tree.
         if let Some(previous) = queries.borrow().entries.iter().find(|previous|
-            previous.predicates == predicates && previous.contribution == *value && previous.inputs == inputs
+            previous.inputs == inputs && previous.contribution == *value && previous.predicates == predicates
                 && previous.captured_reads == context.reads.is_some()) {
             if let Some(reads) = context.reads {
                 reads.borrow_mut().extend(previous.reads.iter().cloned());
