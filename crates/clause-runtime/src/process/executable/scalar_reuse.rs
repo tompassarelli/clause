@@ -3,14 +3,14 @@ use super::*;
 
 pub(super) struct ScalarPlan {
     pub expression: Box<ExecutableExpressionV1>,
-    nodes: Vec<(Node, bool, bool)>,
+    nodes: Arc<Vec<(Node, bool, bool)>>,
     root: usize,
     instructions: Vec<Instruction>,
 }
 
 enum Node {
     Value(Box<ExecutableExpressionV1>),
-    Sum { expression: Box<ExecutableExpressionV1>, shape: Arc<[u8]> },
+    Sum { expression: Box<ExecutableExpressionV1>, shape: Arc<[u8]>, group: Option<Arc<relational::SumGroup>> },
     Number(u64), Boolean(bool), Slot(u16), Argument(u16), Binding(u16),
     Add(usize, usize), Subtract(usize, usize), Multiply(usize, usize), Divide(usize, usize),
     GreaterThan(usize, usize), LessThanOrEqual(usize, usize), Equal(usize, usize), And(usize, usize),
@@ -91,8 +91,24 @@ fn emit_scalar_instructions(index: usize, nodes: &[(Node, bool, bool)], code: &m
     if let Some(position) = cached { code[position] = Instruction::Cached { node: index, end: code.len() }; }
 }
 
+fn pure_expression(expression: &ExecutableExpressionV1) -> bool {
+    use ExecutableExpressionV1 as E;
+    match expression {
+        E::Constant(_) | E::Slot(_) | E::Argument(_) | E::Binding(_) => true,
+        E::Not(a) | E::SquareRoot(a) => pure_expression(a),
+        E::Add(a, b) | E::Subtract(a, b) | E::Multiply(a, b) | E::Divide(a, b)
+        | E::GreaterThan(a, b) | E::LessThanOrEqual(a, b) | E::Equal(a, b) | E::And(a, b) => pure_expression(a) && pure_expression(b),
+        E::Conditional(a, b, c) | E::Clamp(a, b, c) => pure_expression(a) && pure_expression(b) && pure_expression(c),
+        _ => false,
+    }
+}
+
 impl ScalarPlan {
     pub fn new(expression: &ExecutableExpressionV1) -> Result<Self, ExecutableErrorV1> {
+        Self::shared(std::slice::from_ref(expression))?.pop().ok_or(ExecutableErrorV1::MalformedProgram)
+    }
+
+    pub fn shared(expressions: &[ExecutableExpressionV1]) -> Result<Vec<Self>, ExecutableErrorV1> {
         let mut nodes = Vec::new();
         let mut interned = BTreeMap::<Vec<u8>, usize>::new();
         fn collect(expression: &ExecutableExpressionV1, nodes: &mut Vec<(Node, bool, bool)>,
@@ -134,7 +150,7 @@ impl ScalarPlan {
                     encode_expression(&mut shape, &E::Sum {
                         inputs: Vec::new(), predicates: predicates.clone(), value: value.clone(),
                     })?;
-                    Node::Sum { expression: Box::new(expression.clone()), shape: shape.into() }
+                    Node::Sum { expression: Box::new(expression.clone()), shape: shape.into(), group: None }
                 },
                 _ => { reusable = false; input_only = false; Node::Value(Box::new(expression.clone())) },
             };
@@ -143,8 +159,10 @@ impl ScalarPlan {
             if reusable { interned.insert(key, index); }
             Ok(index)
         }
-        let root = collect(expression, &mut nodes, &mut interned)?;
+        let roots = expressions.iter().map(|expression| collect(expression, &mut nodes, &mut interned))
+            .collect::<Result<Vec<_>, _>>()?;
         let mut uses = vec![0_usize; nodes.len()];
+        for root in &roots { uses[*root] += 1; }
         for (node, _, _) in &nodes {
             match *node {
                 Node::Add(a, b) | Node::Subtract(a, b) | Node::Multiply(a, b) | Node::Divide(a, b)
@@ -161,9 +179,42 @@ impl ScalarPlan {
         for (index, (_, reusable, input_only)) in nodes.iter_mut().enumerate() {
             *reusable &= *input_only || uses[index] > 1;
         }
-        let mut instructions = Vec::new();
-        emit_scalar_instructions(root, &nodes, &mut instructions);
-        Ok(Self { expression: Box::new(expression.clone()), nodes, root, instructions })
+        let mut groups: Vec<Vec<usize>> = Vec::new();
+        for (index, (node, _, _)) in nodes.iter().enumerate() {
+            let Node::Sum { expression, .. } = node else { continue };
+            let ExecutableExpressionV1::Sum { inputs, predicates, value } = expression.as_ref() else { unreachable!() };
+            if !pure_expression(value) { continue; }
+            if let Some(group) = groups.iter_mut().find(|group| {
+                let Node::Sum { expression, .. } = &nodes[group[0]].0 else { unreachable!() };
+                matches!(expression.as_ref(), ExecutableExpressionV1::Sum { inputs: other_inputs, predicates: other_predicates, .. }
+                    if inputs == other_inputs && predicates == other_predicates)
+            }) { group.push(index); } else { groups.push(vec![index]); }
+        }
+        for mut indices in groups.into_iter().filter(|group| group.len() > 1) {
+            indices.sort_by(|left, right| {
+                let Node::Sum { shape: left, .. } = &nodes[*left].0 else { unreachable!() };
+                let Node::Sum { shape: right, .. } = &nodes[*right].0 else { unreachable!() };
+                left.cmp(right)
+            });
+            let mut shapes = Vec::new();
+            let mut contributions = Vec::new();
+            for index in &indices {
+                let Node::Sum { expression, shape, .. } = &nodes[*index].0 else { unreachable!() };
+                let ExecutableExpressionV1::Sum { value, .. } = expression.as_ref() else { unreachable!() };
+                shapes.push(shape.clone()); contributions.push(value.as_ref().clone());
+            }
+            let group = Arc::new(relational::SumGroup { shapes, contributions });
+            for index in indices {
+                let Node::Sum { group: destination, .. } = &mut nodes[index].0 else { unreachable!() };
+                *destination = Some(group.clone());
+            }
+        }
+        let nodes = Arc::new(nodes);
+        Ok(expressions.iter().zip(roots).map(|(expression, root)| {
+            let mut instructions = Vec::new();
+            emit_scalar_instructions(root, &nodes, &mut instructions);
+            Self { expression: Box::new(expression.clone()), nodes: nodes.clone(), root, instructions }
+        }).collect())
     }
 
     pub fn memo(&self) -> ScalarMemo<'_> {
@@ -250,13 +301,24 @@ impl ScalarMemo<'_> {
         configuration: &[ExecutableSlotV1], arguments: &[ExecutableValueV1], context: EvaluationContextV1)
         -> Result<ExecutableValueV1, ExecutableErrorV1> {
         debug_assert!(std::ptr::eq(expression, self.plan.expression.as_ref()));
+        self.begin_row();
+        self.evaluate_shared(self.plan, configuration, arguments, context)
+    }
+
+    pub fn begin_row(&self) {
+        let mut values = self.values.borrow_mut();
+        for index in self.row_values.borrow_mut().drain(..) { values[index] = None; }
+    }
+
+    pub fn evaluate_shared(&self, plan: &ScalarPlan, configuration: &[ExecutableSlotV1],
+        arguments: &[ExecutableValueV1], context: EvaluationContextV1) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+        debug_assert!(Arc::ptr_eq(&plan.nodes, &self.plan.nodes));
         let mut values = self.values.borrow_mut();
         let mut row_values = self.row_values.borrow_mut();
-        for index in row_values.drain(..) { values[index] = None; }
         let evaluation = ScalarEvaluation { configuration, arguments, context: EvaluationContextV1 { scalar_memo: None, ..context } };
         let mut pc = 0;
-        while pc < self.plan.instructions.len() {
-            let stored = match self.plan.instructions[pc] {
+        while pc < plan.instructions.len() {
+            let stored = match plan.instructions[pc] {
                 Instruction::Cached { node, end } => {
                     if values[node].is_some() { pc = end; continue; }
                     None
@@ -285,7 +347,7 @@ impl ScalarMemo<'_> {
             }
             pc += 1;
         }
-        Ok(self.expand(values[self.plan.root].ok_or(ExecutableErrorV1::MalformedProgram)?))
+        Ok(self.expand(values[plan.root].ok_or(ExecutableErrorV1::MalformedProgram)?))
     }
 
     fn value(&self, index: usize, evaluation: &ScalarEvaluation,
@@ -296,13 +358,13 @@ impl ScalarMemo<'_> {
         macro_rules! boolean_value { ($index:expr) => { eval!($index)?.as_boolean() }; }
         let value = match self.plan.nodes[index].0 {
             Node::Value(ref expression) => self.retain(&evaluate_uncached(expression, evaluation.configuration, evaluation.arguments, evaluation.context)?),
-            Node::Sum { ref expression, ref shape } => {
+            Node::Sum { ref expression, ref shape, ref group } => {
                 let ExecutableExpressionV1::Sum { inputs, predicates, value } = expression.as_ref() else {
                     return Err(ExecutableErrorV1::MalformedProgram);
                 };
                 let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumEvaluation);
                 self.retain(&relational::sum_with_shape(inputs, predicates, value,
-                    evaluation.configuration, evaluation.arguments, evaluation.context, Some(shape))?)
+                    evaluation.configuration, evaluation.arguments, evaluation.context, Some(shape), group.as_deref())?)
             },
             Node::Number(bits) => ScalarValue::Number(bits),
             Node::Boolean(value) => ScalarValue::Boolean(value),
@@ -443,6 +505,48 @@ mod tests {
             let actual = evaluate_for_trace(&effect, &configuration, &[number(input)], shared, true).unwrap();
             assert_eq!(actual.value, expected.value);
             assert_eq!(actual.reads, expected.reads);
+        }
+    }
+
+    #[test]
+    fn grouped_sums_keep_requested_results_errors_inputs_and_reads_independent() {
+        let number = |value| ExecutableValueV1::number(value).unwrap();
+        let configuration = [ExecutableValueV1::RelationTable(ExecutableRelationTableV1 {
+            subject_domain: 7, value_kind: ExecutableRelationValueKindV1::Number,
+            value_domain: None, cardinality: ExecutableRelationCardinalityV1::One, total: false,
+            rows: Arc::new([1.0, 2.0].into_iter().enumerate().map(|(id, value)|
+                (ExecutableReferentV1::declared(7, id as u32), [number(value)].into()))
+                .collect::<BTreeMap<_, _>>().into()),
+        }).into()];
+        let base = E::Multiply(Box::new(E::Binding(1)), Box::new(E::Argument(0)));
+        let query = |value| E::Sum { inputs: vec![E::Argument(0)],
+            predicates: vec![E::RelationMatch(0, Box::new(E::Binding(0)), Box::new(E::Binding(1)))], value: Box::new(value) };
+        let first = query(E::Add(Box::new(base.clone()), Box::new(base.clone())));
+        let second = query(E::Add(Box::new(base.clone()), Box::new(E::Constant(number(1.0)))));
+        let invalid = query(E::Divide(Box::new(base), Box::new(E::Constant(number(0.0)))));
+        let expression = E::Conditional(Box::new(E::Argument(1)),
+            Box::new(E::Add(Box::new(first), Box::new(second))), Box::new(invalid));
+        let plan = ScalarPlan::new(&expression).unwrap();
+        assert_eq!(plan.nodes.iter().filter(|(node, _, _)| matches!(node, Node::Sum { group: Some(_), .. })).count(), 3);
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
+            reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
+        let queries = std::cell::RefCell::new(relational::SumQueries::default());
+        let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
+        for (input, selected) in [(2.0, true), (5.0, true), (2.0, false), (2.0, true)] {
+            let arguments = [number(input), ExecutableValueV1::Boolean(selected)];
+            let memo = plan.memo();
+            let expected = evaluate(&expression, &configuration, &arguments, context);
+            assert_eq!(evaluate(&plan.expression, &configuration, &arguments,
+                EvaluationContextV1 { scalar_memo: Some(&memo), ..shared }), expected);
+            if selected { assert_eq!(expected, Ok(number(input * 9.0 + 2.0))); }
+            else { assert_eq!(expected, Err(ExecutableErrorV1::NumericDomain)); }
+            let expected = evaluate_with_reads(&expression, &configuration, &arguments, context);
+            let actual = evaluate_with_reads(&expression, &configuration, &arguments, shared);
+            match (actual, expected) {
+                (Ok(actual), Ok(expected)) => { assert_eq!(actual.value, expected.value); assert_eq!(actual.reads, expected.reads); }
+                (Err(actual), Err(expected)) => assert_eq!(actual, expected),
+                _ => panic!("grouped and ordinary evaluations disagreed"),
+            }
         }
     }
 

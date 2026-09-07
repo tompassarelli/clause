@@ -195,7 +195,7 @@ pub(super) struct Matched {
     pub predicates: Vec<EvaluatedValue>,
 }
 
-// Successful queries belong to one immutable pre-state evaluation scope; no
+// Query results belong to one immutable pre-state evaluation scope; no
 // result survives another preparation, state, or step.
 #[derive(Default)]
 pub(super) struct SumQueries {
@@ -205,7 +205,20 @@ pub(super) struct SumQueries {
 }
 
 #[derive(Default)]
-pub(super) struct ScalarPlans(Mutex<Vec<Arc<scalar_reuse::ScalarPlan>>>);
+pub(super) struct ScalarPlans {
+    plans: Mutex<Vec<Arc<scalar_reuse::ScalarPlan>>>,
+    groups: Mutex<Vec<Arc<SumGroupPlan>>>,
+}
+
+pub(super) struct SumGroup {
+    pub shapes: Vec<Arc<[u8]>>,
+    pub contributions: Vec<ExecutableExpressionV1>,
+}
+
+struct SumGroupPlan {
+    shapes: Vec<Arc<[u8]>>,
+    plans: Vec<scalar_reuse::ScalarPlan>,
+}
 
 struct SumPrefix {
     predicates: Vec<ExecutableExpressionV1>,
@@ -225,7 +238,7 @@ struct SumQuery {
 
 struct SumResult {
     inputs: Vec<ExecutableValueV1>,
-    result: ExecutableValueV1,
+    result: Result<ExecutableValueV1, ExecutableErrorV1>,
     reads: Vec<ExecutableReadV1>,
 }
 
@@ -237,7 +250,7 @@ pub(super) fn sum(
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
-    sum_with_shape(inputs, predicates, value, configuration, arguments, context, None)
+    sum_with_shape(inputs, predicates, value, configuration, arguments, context, None, None)
 }
 
 pub(super) fn sum_with_shape(
@@ -248,6 +261,7 @@ pub(super) fn sum_with_shape(
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
     shape: Option<&Arc<[u8]>>,
+    group: Option<&SumGroup>,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     let same_query = |previous: &SumQuery| {
         previous.captured_reads == context.reads.is_some()
@@ -265,7 +279,12 @@ pub(super) fn sum_with_shape(
             if let Some(reads) = context.reads {
                 reads.borrow_mut().extend(previous.reads.iter().cloned());
             }
-            return Ok(previous.result.clone());
+            return previous.result.clone();
+        }
+    }
+    if context.reads.is_none() && context.sum_queries.is_some() {
+        if let (Some(group), Some(shape)) = (group, shape) {
+            return grouped_sum(group, shape, inputs, predicates, configuration, context);
         }
     }
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumQuery);
@@ -299,7 +318,7 @@ pub(super) fn sum_with_shape(
     }
     if let Some(queries) = context.sum_queries {
         let mut queries = queries.borrow_mut();
-        let result = SumResult { inputs, result: result.clone(), reads: query_reads };
+        let result = SumResult { inputs, result: Ok(result.clone()), reads: query_reads };
         if let Some(query) = queries.entries.iter_mut().find(|previous|
             same_query(previous)) {
             query.results.push(result);
@@ -313,6 +332,65 @@ pub(super) fn sum_with_shape(
     Ok(result)
 }
 
+// Contributions are pure: an unrequested aggregate's error stays with that
+// aggregate, while each total still consumes its rows in the original order.
+fn grouped_sum(group: &SumGroup, requested_shape: &Arc<[u8]>, inputs: Vec<ExecutableValueV1>,
+    predicates: &[ExecutableExpressionV1], configuration: &[ExecutableSlotV1], context: EvaluationContextV1)
+    -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumQuery);
+    let queries = context.sum_queries.ok_or(ExecutableErrorV1::MalformedProgram)?;
+    let scalar_plans = queries.borrow().scalar_plans.clone();
+    let plan = {
+        let mut groups = scalar_plans.groups.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+        if let Some(previous) = groups.iter().find(|previous| previous.shapes == group.shapes) { previous.clone() }
+        else {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanBuild);
+            let plan = Arc::new(SumGroupPlan { shapes: group.shapes.clone(),
+                plans: scalar_reuse::ScalarPlan::shared(&group.contributions)? });
+            groups.push(plan.clone()); plan
+        }
+    };
+    let requested = plan.shapes.iter().position(|shape| shape == requested_shape).ok_or(ExecutableErrorV1::MalformedProgram)?;
+    let matches = match_sum(predicates, configuration, &inputs,
+        EvaluationContextV1 { bindings: None, scalar_memo: None, ..context }, &mut 0)?;
+    let memo = plan.plans.first().ok_or(ExecutableErrorV1::MalformedProgram)?.memo();
+    let mut totals = vec![Ok(0.0_f64); plan.plans.len()];
+    {
+        let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
+        for (matched, accepted) in matches {
+            if !accepted { continue; }
+            memo.begin_row();
+            for (scalar, total) in plan.plans.iter().zip(&mut totals) {
+                let previous = match total { Ok(value) => *value, Err(_) => continue };
+                *total = memo.evaluate_shared(scalar, configuration, &inputs,
+                    EvaluationContextV1 { bindings: Some(&matched.bindings), scalar_memo: None, ..context })
+                    .and_then(|value| value.as_number().ok_or(ExecutableErrorV1::TypeMismatch))
+                    .and_then(|value| {
+                        let next = previous + value;
+                        if next.is_finite() { Ok(next) } else { Err(ExecutableErrorV1::NumericDomain) }
+                    });
+            }
+        }
+    }
+    let results = totals.into_iter().map(|total| total.and_then(ExecutableValueV1::number)).collect::<Vec<_>>();
+    let result = results[requested].clone();
+    let mut queries = queries.borrow_mut();
+    for ((scalar, shape), result) in plan.plans.iter().zip(&plan.shapes).zip(results) {
+        let result = SumResult { inputs: inputs.clone(), result, reads: Vec::new() };
+        if let Some(query) = queries.entries.iter_mut().find(|query| !query.captured_reads &&
+            match query.shape.as_ref() {
+                Some(previous) => previous == shape,
+                None => query.predicates == predicates && query.contribution == *scalar.expression,
+            }) {
+            if !query.results.iter().any(|previous| previous.inputs == inputs) { query.results.push(result); }
+        } else {
+            queries.entries.push(SumQuery { shape: Some(shape.clone()), predicates: predicates.to_vec(),
+                contribution: scalar.expression.as_ref().clone(), captured_reads: false, results: vec![result] });
+        }
+    }
+    result
+}
+
 pub(super) fn scalar_plan(expression: &ExecutableExpressionV1, context: EvaluationContextV1)
     -> Result<Option<Arc<scalar_reuse::ScalarPlan>>, ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
@@ -322,7 +400,7 @@ pub(super) fn scalar_plan(expression: &ExecutableExpressionV1, context: Evaluati
     let Some(queries) = context.sum_queries else { return Ok(None) };
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanLookup);
     let queries = queries.borrow();
-    let mut plans = queries.scalar_plans.0.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+    let mut plans = queries.scalar_plans.plans.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?;
     if let Some(existing) = plans.iter().find(|plan| plan.expression.as_ref() == expression) {
         return Ok(Some(existing.clone()));
     }
