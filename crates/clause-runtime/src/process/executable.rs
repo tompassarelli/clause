@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use clause_package::*;
 use sha2::{Digest, Sha256};
@@ -198,7 +198,7 @@ impl ExecutableSymbolV1 {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ExecutableTextV1 {
-    value: String,
+    value: Arc<str>,
 }
 
 impl ExecutableTextV1 {
@@ -207,7 +207,7 @@ impl ExecutableTextV1 {
             return Err(ExecutableErrorV1::ResourceLimit);
         }
         Ok(Self {
-            value: value.to_owned(),
+            value: Arc::from(value),
         })
     }
 
@@ -276,7 +276,7 @@ pub struct ExecutableRelationTableV1 {
     value_domain: Option<u32>,
     cardinality: ExecutableRelationCardinalityV1,
     total: bool,
-    rows: BTreeMap<ExecutableReferentV1, BTreeSet<ExecutableValueV1>>,
+    rows: Arc<BTreeMap<ExecutableReferentV1, BTreeSet<ExecutableValueV1>>>,
 }
 
 impl ExecutableRelationTableV1 {
@@ -291,7 +291,7 @@ impl ExecutableRelationTableV1 {
     }
 
     #[must_use]
-    pub const fn rows(&self) -> &BTreeMap<ExecutableReferentV1, BTreeSet<ExecutableValueV1>> {
+    pub fn rows(&self) -> &BTreeMap<ExecutableReferentV1, BTreeSet<ExecutableValueV1>> {
         &self.rows
     }
 
@@ -356,59 +356,55 @@ impl ExecutableRelationTableV1 {
     }
 
     fn put(
-        &self,
+        &mut self,
         subject: &ExecutableValueV1,
         value: ExecutableValueV1,
-    ) -> Result<Self, ExecutableErrorV1> {
+    ) -> Result<(), ExecutableErrorV1> {
         if self.cardinality == ExecutableRelationCardinalityV1::Many || !self.value_matches(&value)
         {
             return Err(ExecutableErrorV1::TypeMismatch);
         }
         let subject = self.subject(subject)?.clone();
-        let mut next = self.clone();
-        next.rows.insert(subject, BTreeSet::from([value]));
-        Ok(next)
+        Arc::make_mut(&mut self.rows).insert(subject, BTreeSet::from([value]));
+        Ok(())
     }
 
     fn insert(
-        &self,
+        &mut self,
         subject: &ExecutableValueV1,
         value: ExecutableValueV1,
-    ) -> Result<Self, ExecutableErrorV1> {
+    ) -> Result<(), ExecutableErrorV1> {
         if self.cardinality != ExecutableRelationCardinalityV1::Many || !self.value_matches(&value)
         {
             return Err(ExecutableErrorV1::TypeMismatch);
         }
         let subject = self.subject(subject)?.clone();
-        let mut next = self.clone();
-        next.rows.entry(subject).or_default().insert(value);
-        Ok(next)
+        Arc::make_mut(&mut self.rows).entry(subject).or_default().insert(value);
+        Ok(())
     }
 
-    fn remove_row(&self, subject: &ExecutableValueV1) -> Result<Self, ExecutableErrorV1> {
-        let subject = self.subject(subject)?;
-        let mut next = self.clone();
-        next.rows.remove(subject);
-        Ok(next)
+    fn remove_row(&mut self, subject: &ExecutableValueV1) -> Result<(), ExecutableErrorV1> {
+        let subject = self.subject(subject)?.clone();
+        Arc::make_mut(&mut self.rows).remove(&subject);
+        Ok(())
     }
 
     fn remove_value(
-        &self,
+        &mut self,
         subject: &ExecutableValueV1,
         value: &ExecutableValueV1,
-    ) -> Result<Self, ExecutableErrorV1> {
+    ) -> Result<(), ExecutableErrorV1> {
         if self.cardinality != ExecutableRelationCardinalityV1::Many || !self.value_matches(value) {
             return Err(ExecutableErrorV1::TypeMismatch);
         }
-        let subject = self.subject(subject)?;
-        let mut next = self.clone();
-        if let Some(values) = next.rows.get_mut(subject) {
+        let subject = self.subject(subject)?.clone();
+        if let Some(values) = Arc::make_mut(&mut self.rows).get_mut(&subject) {
             values.remove(value);
             if values.is_empty() {
-                next.rows.remove(subject);
+                Arc::make_mut(&mut self.rows).remove(&subject);
             }
         }
-        Ok(next)
+        Ok(())
     }
 }
 
@@ -1920,7 +1916,7 @@ fn lower_scalar_value(
                     },
                     cardinality,
                     total: table.total,
-                    rows,
+                    rows: Arc::new(rows),
                 },
             ))
         }
@@ -6810,44 +6806,40 @@ fn evaluate(
             let table = evaluate(table, slots, arguments, context)?;
             let subject = evaluate(subject, slots, arguments, context)?;
             let value = evaluate(value, slots, arguments, context)?;
-            let ExecutableValueV1::RelationTable(table) = table else {
+            let ExecutableValueV1::RelationTable(mut table) = table else {
                 return Err(ExecutableErrorV1::TypeMismatch);
             };
-            Ok(ExecutableValueV1::RelationTable(
-                table.put(&subject, value)?,
-            ))
+            table.put(&subject, value)?;
+            Ok(ExecutableValueV1::RelationTable(table))
         }
         E::RelationInsert(table, subject, value) => {
             let table = evaluate(table, slots, arguments, context)?;
             let subject = evaluate(subject, slots, arguments, context)?;
             let value = evaluate(value, slots, arguments, context)?;
-            let ExecutableValueV1::RelationTable(table) = table else {
+            let ExecutableValueV1::RelationTable(mut table) = table else {
                 return Err(ExecutableErrorV1::TypeMismatch);
             };
-            Ok(ExecutableValueV1::RelationTable(
-                table.insert(&subject, value)?,
-            ))
+            table.insert(&subject, value)?;
+            Ok(ExecutableValueV1::RelationTable(table))
         }
         E::RelationRemoveRow(table, subject) => {
             let table = evaluate(table, slots, arguments, context)?;
             let subject = evaluate(subject, slots, arguments, context)?;
-            let ExecutableValueV1::RelationTable(table) = table else {
+            let ExecutableValueV1::RelationTable(mut table) = table else {
                 return Err(ExecutableErrorV1::TypeMismatch);
             };
-            Ok(ExecutableValueV1::RelationTable(
-                table.remove_row(&subject)?,
-            ))
+            table.remove_row(&subject)?;
+            Ok(ExecutableValueV1::RelationTable(table))
         }
         E::RelationRemoveValue(table, subject, value) => {
             let table = evaluate(table, slots, arguments, context)?;
             let subject = evaluate(subject, slots, arguments, context)?;
             let value = evaluate(value, slots, arguments, context)?;
-            let ExecutableValueV1::RelationTable(table) = table else {
+            let ExecutableValueV1::RelationTable(mut table) = table else {
                 return Err(ExecutableErrorV1::TypeMismatch);
             };
-            Ok(ExecutableValueV1::RelationTable(
-                table.remove_value(&subject, &value)?,
-            ))
+            table.remove_value(&subject, &value)?;
+            Ok(ExecutableValueV1::RelationTable(table))
         }
         E::Conditional(condition, yes, no) => {
             let branch = if boolean(evaluate(condition, slots, arguments, context)?)? { yes } else { no };
@@ -7223,7 +7215,7 @@ pub(super) fn encode_value(
                 3
             } else { table.cardinality as u8 });
             encode_count(bytes, table.rows.len())?;
-            for (subject, values) in &table.rows {
+            for (subject, values) in table.rows.iter() {
                 encode_referent(bytes, subject);
                 encode_count(bytes, values.len())?;
                 for value in values {
@@ -7537,7 +7529,7 @@ impl<'a> Decoder<'a> {
                     value_domain,
                     cardinality,
                     total,
-                    rows: BTreeMap::new(),
+                    rows: Arc::default(),
                 };
                 let count = self.count()?;
                 for _ in 0..count {
@@ -7559,7 +7551,7 @@ impl<'a> Decoder<'a> {
                             return Err(ExecutableErrorV1::MalformedProgram);
                         }
                     }
-                    if table.rows.insert(subject, values).is_some() {
+                    if Arc::make_mut(&mut table.rows).insert(subject, values).is_some() {
                         return Err(ExecutableErrorV1::MalformedProgram);
                     }
                 }

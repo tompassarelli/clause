@@ -101,7 +101,7 @@ pub(super) fn close(
                 next.get_mut(usize::from(*slot)) else {
                 return Err(ExecutableErrorV1::MalformedProgram);
             };
-            table.rows.clear();
+            Arc::make_mut(&mut table.rows).clear();
         }
     }
     let mut checks = 0;
@@ -135,7 +135,7 @@ pub(super) fn close(
                         };
                         let subject = table.subject(&subject.value)?.clone();
                         if !table.value_matches(&value.value) { return Err(ExecutableErrorV1::TypeMismatch); }
-                        if table.rows.entry(subject.clone()).or_default().insert(value.value.clone()) {
+                        if Arc::make_mut(&mut table.rows).entry(subject.clone()).or_default().insert(value.value.clone()) {
                             count += 1;
                             if count > MAX_DERIVED_ROWS { return Err(ExecutableErrorV1::ResourceLimit); }
                             discovered.push((*slot, subject, assignment, effect_index, value));

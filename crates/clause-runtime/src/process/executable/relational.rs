@@ -15,7 +15,7 @@ pub(super) fn validate_contracts(configuration: &[ExecutableSlotV1]) -> Result<(
     if !tables.iter().any(|table| table.total) { return Ok(()); }
     let mut participants = BTreeMap::<u32, BTreeSet<ExecutableReferentV1>>::new();
     for table in &tables {
-        for (subject, values) in &table.rows {
+        for (subject, values) in table.rows.iter() {
             participants.entry(subject.domain).or_default().insert(subject.clone());
             for value in values {
                 if let ExecutableValueV1::Referent(value) = value {
@@ -375,7 +375,7 @@ pub(super) fn match_rule(
                         if unbound {
                             if by_value.is_none() {
                                 let mut index = BTreeMap::<_, Vec<_>>::new();
-                                for (subject, values) in &table.rows {
+                                for (subject, values) in table.rows.iter() {
                                     for value in values {
                                         *visits = visits.checked_add(1).ok_or(ExecutableErrorV1::ResourceLimit)?;
                                         if *visits > MAX_JOIN_VISITS { return Err(ExecutableErrorV1::ResourceLimit); }
@@ -556,11 +556,10 @@ impl RowEffects {
 
     pub fn apply(self, next: &mut [ExecutableSlotV1]) -> Result<(), ExecutableErrorV1> {
         for ((slot, subject), effects) in self.rows {
-            let Some(ExecutableValueV1::RelationTable(current)) = next[usize::from(slot)].value()
+            let ExecutableSlotV1::Present(ExecutableValueV1::RelationTable(table)) = &mut next[usize::from(slot)]
             else {
                 return Err(ExecutableErrorV1::TypeMismatch);
             };
-            let mut table = current.clone();
             let subject = ExecutableValueV1::Referent(subject);
             if effects[0].0 == 3 {
                 let mut value = number(table.read(&subject)?)?;
@@ -575,10 +574,10 @@ impl RowEffects {
                         return Err(ExecutableErrorV1::NumericDomain);
                     }
                 }
-                table = table.put(&subject, ExecutableValueV1::number(value)?)?;
+                table.put(&subject, ExecutableValueV1::number(value)?)?;
             } else {
                 for (mode, value) in effects {
-                    table = match mode {
+                    match mode {
                         0 => table.put(&subject, value)?,
                         1 => table.insert(&subject, value)?,
                         2 if table.cardinality == ExecutableRelationCardinalityV1::Many => {
@@ -594,7 +593,6 @@ impl RowEffects {
                     };
                 }
             }
-            next[usize::from(slot)] = ExecutableValueV1::RelationTable(table).into();
         }
         Ok(())
     }
