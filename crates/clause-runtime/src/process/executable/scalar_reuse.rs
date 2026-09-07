@@ -1,59 +1,62 @@
-//! Lazy reuse of equal pure subexpressions within one fixed substitution.
+//! Lazy reuse of equal scalar subexpressions within one fixed substitution.
 use super::*;
-use std::collections::HashMap;
 
 pub(super) struct ScalarPlan {
     pub expression: Box<ExecutableExpressionV1>,
-    slots: HashMap<usize, usize>,
-    count: usize,
+    nodes: Vec<(Node, bool)>,
+    root: usize,
+}
+
+enum Node {
+    Value(ExecutableExpressionV1),
+    Add(usize, usize), Subtract(usize, usize), Multiply(usize, usize), Divide(usize, usize),
+    GreaterThan(usize, usize), LessThanOrEqual(usize, usize), Equal(usize, usize), And(usize, usize),
+    Not(usize), SquareRoot(usize), Conditional(usize, usize, usize), Clamp(usize, usize, usize),
 }
 
 impl ScalarPlan {
     pub fn new(expression: &ExecutableExpressionV1) -> Result<Self, ExecutableErrorV1> {
-        let expression = Box::new(expression.clone());
-        let mut slots = HashMap::new();
+        let mut nodes = Vec::new();
         let mut interned = BTreeMap::<Vec<u8>, usize>::new();
-        let mut counts = Vec::<usize>::new();
-        fn collect(expression: &ExecutableExpressionV1, slots: &mut HashMap<usize, usize>,
-            interned: &mut BTreeMap<Vec<u8>, usize>, counts: &mut Vec<usize>) -> Result<bool, ExecutableErrorV1> {
+        fn collect(expression: &ExecutableExpressionV1, nodes: &mut Vec<(Node, bool)>,
+            interned: &mut BTreeMap<Vec<u8>, usize>) -> Result<usize, ExecutableErrorV1> {
             use ExecutableExpressionV1 as E;
-            let children: Vec<&E> = match expression {
-                E::Constant(_) | E::Slot(_) | E::Argument(_) | E::Binding(_) => return Ok(true),
-                // These introduce another binding, identity or evaluation scope.
-                E::Sum { .. } | E::FreshReferent { .. } | E::RelationMatch(..)
-                | E::RelationEffects(_) | E::DerivedRelation(_) | E::Accumulate(_) => return Ok(false),
-                E::Not(a) | E::SquareRoot(a) | E::TextTransform(_, a) | E::ReferentFacet { value: a, .. } => vec![a],
-                E::RelationRead(a, b) | E::RelationPresent(a, b) | E::RelationRemoveRow(a, b)
-                | E::Concatenate(a, b) | E::StartsWith(a, b) | E::ContainsText(a, b)
-                | E::Add(a, b) | E::Subtract(a, b) | E::Multiply(a, b) | E::Divide(a, b)
-                | E::GreaterThan(a, b) | E::LessThanOrEqual(a, b) | E::Equal(a, b) | E::And(a, b)
-                | E::SetInsert(a, b) | E::SetContains(a, b) | E::SetRemove(a, b) => vec![a, b],
-                E::RelationPut(a, b, c) | E::RelationInsert(a, b, c) | E::RelationRemoveValue(a, b, c)
-                | E::Conditional(a, b, c) | E::Clamp(a, b, c) => vec![a, b, c],
+            let mut key = Vec::new();
+            encode_expression(&mut key, expression)?;
+            if let Some(index) = interned.get(&key) { return Ok(*index); }
+            let mut reusable = true;
+            let mut child = |expression: &E| -> Result<usize, ExecutableErrorV1> {
+                let index = collect(expression, nodes, interned)?;
+                reusable &= nodes[index].1;
+                Ok(index)
             };
-            let mut pure = true;
-            for child in children { pure &= collect(child, slots, interned, counts)?; }
-            if pure {
-                let mut key = Vec::new();
-                encode_expression(&mut key, expression)?;
-                let index = *interned.entry(key).or_insert_with(|| {
-                    counts.push(0);
-                    counts.len() - 1
-                });
-                counts[index] += 1;
-                slots.insert(std::ptr::from_ref(expression) as usize, index);
-            }
-            Ok(pure)
+            let node = match expression {
+                E::Add(a, b) => Node::Add(child(a)?, child(b)?),
+                E::Subtract(a, b) => Node::Subtract(child(a)?, child(b)?),
+                E::Multiply(a, b) => Node::Multiply(child(a)?, child(b)?),
+                E::Divide(a, b) => Node::Divide(child(a)?, child(b)?),
+                E::GreaterThan(a, b) => Node::GreaterThan(child(a)?, child(b)?),
+                E::LessThanOrEqual(a, b) => Node::LessThanOrEqual(child(a)?, child(b)?),
+                E::Equal(a, b) => Node::Equal(child(a)?, child(b)?),
+                E::And(a, b) => Node::And(child(a)?, child(b)?),
+                E::Not(a) => Node::Not(child(a)?),
+                E::SquareRoot(a) => Node::SquareRoot(child(a)?),
+                E::Conditional(a, b, c) => Node::Conditional(child(a)?, child(b)?, child(c)?),
+                E::Clamp(a, b, c) => Node::Clamp(child(a)?, child(b)?, child(c)?),
+                E::Constant(_) | E::Slot(_) | E::Argument(_) | E::Binding(_) => Node::Value(expression.clone()),
+                _ => { reusable = false; Node::Value(expression.clone()) },
+            };
+            let index = nodes.len();
+            nodes.push((node, reusable));
+            if reusable { interned.insert(key, index); }
+            Ok(index)
         }
-        collect(&expression, &mut slots, &mut interned, &mut counts)?;
-        slots.retain(|_, index| counts[*index] > 1);
-        // Addresses only locate nodes inside this owned, unmoved tree. Exact
-        // expression encoding, not addresses, establishes reusable equality.
-        Ok(Self { expression, slots, count: counts.len() })
+        let root = collect(expression, &mut nodes, &mut interned)?;
+        Ok(Self { expression: Box::new(expression.clone()), nodes, root })
     }
 
     pub fn memo(&self) -> ScalarMemo<'_> {
-        ScalarMemo { plan: self, values: std::cell::RefCell::new(vec![None; self.count]) }
+        ScalarMemo { plan: self, values: std::cell::RefCell::new(vec![None; self.nodes.len()]) }
     }
 }
 
@@ -66,12 +69,46 @@ impl ScalarMemo<'_> {
     pub fn evaluate(&self, expression: &ExecutableExpressionV1,
         configuration: &[ExecutableSlotV1], arguments: &[ExecutableValueV1], context: EvaluationContextV1)
         -> Result<ExecutableValueV1, ExecutableErrorV1> {
-        let Some(index) = self.plan.slots.get(&(std::ptr::from_ref(expression) as usize)).copied() else {
-            return evaluate_uncached(expression, configuration, arguments, context);
-        };
+        debug_assert!(std::ptr::eq(expression, self.plan.expression.as_ref()));
+        self.node(self.plan.root, configuration, arguments, EvaluationContextV1 { scalar_memo: None, ..context })
+    }
+
+    fn node(&self, index: usize, configuration: &[ExecutableSlotV1], arguments: &[ExecutableValueV1], context: EvaluationContextV1)
+        -> Result<ExecutableValueV1, ExecutableErrorV1> {
         if let Some(value) = &self.values.borrow()[index] { return Ok(value.clone()); }
-        let value = evaluate_uncached(expression, configuration, arguments, context)?;
-        self.values.borrow_mut()[index] = Some(value.clone());
+        let eval = |index| self.node(index, configuration, arguments, context);
+        let numeric = |index| number(eval(index)?);
+        let boolean_value = |index| boolean(eval(index)?);
+        let value = match self.plan.nodes[index].0 {
+            Node::Value(ref expression) => evaluate_uncached(expression, configuration, arguments, context)?,
+            Node::Add(a, b) => ExecutableValueV1::number(numeric(a)? + numeric(b)?)?,
+            Node::Subtract(a, b) => ExecutableValueV1::number(numeric(a)? - numeric(b)?)?,
+            Node::Multiply(a, b) => ExecutableValueV1::number(numeric(a)? * numeric(b)?)?,
+            Node::Divide(a, b) => {
+                let denominator = numeric(b)?;
+                if denominator == 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
+                ExecutableValueV1::number(numeric(a)? / denominator)?
+            },
+            Node::GreaterThan(a, b) => ExecutableValueV1::Boolean(numeric(a)? > numeric(b)?),
+            Node::LessThanOrEqual(a, b) => ExecutableValueV1::Boolean(numeric(a)? <= numeric(b)?),
+            Node::Equal(a, b) => ExecutableValueV1::Boolean(eval(a)? == eval(b)?),
+            Node::And(a, b) => ExecutableValueV1::Boolean(boolean_value(a)? && boolean_value(b)?),
+            Node::Not(a) => ExecutableValueV1::Boolean(!boolean_value(a)?),
+            Node::SquareRoot(a) => {
+                let value = numeric(a)?;
+                if value < 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
+                ExecutableValueV1::number(value.sqrt())?
+            },
+            Node::Conditional(a, b, c) => eval(if boolean_value(a)? { b } else { c })?,
+            Node::Clamp(a, b, c) => {
+                let value = numeric(a)?;
+                let lower = numeric(b)?;
+                let upper = numeric(c)?;
+                if lower > upper { return Err(ExecutableErrorV1::NumericDomain); }
+                ExecutableValueV1::number(value.clamp(lower, upper))?
+            },
+        };
+        if self.plan.nodes[index].1 { self.values.borrow_mut()[index] = Some(value.clone()); }
         Ok(value)
     }
 }
@@ -116,7 +153,7 @@ mod tests {
         let expression = E::Conditional(Box::new(E::Argument(1)),
             Box::new(E::Add(Box::new(repeated.clone()), Box::new(repeated))), Box::new(invalid.clone()));
         let plan = ScalarPlan::new(&expression).unwrap();
-        assert!(!plan.slots.is_empty());
+        assert!(!plan.nodes.is_empty());
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
             reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         for value in [3.0, 7.0] {
@@ -128,7 +165,7 @@ mod tests {
             let expected = evaluate(&expression, &[], &arguments, context).unwrap();
             assert_eq!(evaluate(&plan.expression, &[], &arguments, reused).unwrap(), expected);
             assert_eq!(expected, ExecutableValueV1::number(value * 4.0).unwrap());
-            assert_eq!(memo.values.borrow().iter().filter(|value| value.is_some()).count(), 1);
+            assert_eq!(memo.values.borrow().iter().filter(|value| value.is_some()).count(), 6);
             let expected_reads = evaluate_with_reads(&expression, &[], &arguments, context).unwrap();
             let actual_reads = evaluate_with_reads(&plan.expression, &[], &arguments, reused).unwrap();
             assert_eq!(expected_reads.value, actual_reads.value);
