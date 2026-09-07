@@ -27,7 +27,7 @@ create independent allocation roots. The SHA-256 digest detects corruption, not
 forgery. Corruption, truncation, source mismatch and changed compiled bindings
 reject without deleting data or silently opening a fresh world. There is no
 cross-compiler checkpoint migration path in this first format. The runtime
-frontier and complete boundary checkpoint share a 32 MiB aggregate ceiling;
+frontier and complete boundary checkpoint share a 64 MiB aggregate ceiling;
 caller metadata, the exact open request and the digest consume space inside
 that same outer envelope. The separate 16 MiB per-Atom/Text bound is unchanged.
 The wire format is unchanged, including the encoding of existing checkpoints.

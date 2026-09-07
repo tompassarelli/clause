@@ -228,7 +228,7 @@ fn admitted_world_projection_reopens_above_diagnostic_size() {
 fn aggregate_checkpoint_uses_boundary_capacity_and_reopens() {
     let value = "x".repeat(450 * 1024);
     let mut w = ResidentSourceWorkbenchV1::open_continuous(SOURCE).unwrap();
-    for _ in 0..4 {
+    for _ in 0..7 {
         run(&mut w, b"create-goal", &[text(&value), text(&value)]);
     }
     let before = w.project_current_world().unwrap();
@@ -242,7 +242,7 @@ fn aggregate_checkpoint_uses_boundary_capacity_and_reopens() {
     }
     assert_eq!(&inner[..4], b"CRF1");
     assert!(inner.len() > 16 * 1024 * 1024);
-    assert!(checkpoint.len() < 32 * 1024 * 1024);
+    assert!(checkpoint.len() < 64 * 1024 * 1024);
     let generation = w.generation().clone();
     drop(w);
     let reopened = ResidentSourceWorkbenchV1::reopen(SOURCE, &checkpoint).unwrap();

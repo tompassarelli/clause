@@ -15,7 +15,10 @@ mod wasm_boundary;
 
 // The frontier and its enclosing checkpoint share one aggregate resource ceiling;
 // caller metadata and the exact open request still count toward the outer total.
-const MAX_ADMITTED_CHECKPOINT_BYTES_V1: usize = 32 * 1024 * 1024;
+// Admitted worlds may legitimately exceed the source/input request bound as
+// they accumulate resident data, so checkpoint storage has a separate 64 MiB
+// envelope while per-value and request limits remain unchanged.
+const MAX_ADMITTED_CHECKPOINT_BYTES_V1: usize = 64 * 1024 * 1024;
 
 pub use branch::*;
 pub use branch_wasm_boundary::*;
