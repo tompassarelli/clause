@@ -232,7 +232,10 @@ mod tests {
             assert_eq!(actual.value, expected.value);
             assert_eq!(actual.reads, expected.reads);
             let expected = evaluate_with_reads(&effect, &configuration, &[number(input)], context).unwrap();
-            assert_eq!(evaluate_for_trace(&effect, &configuration, &[number(input)], shared, false).unwrap().value, expected.value);
+            let plan = ScalarPlan::new(&effect).unwrap();
+            let memo = plan.memo();
+            assert_eq!(evaluate_for_trace(&plan.expression, &configuration, &[number(input)],
+                EvaluationContextV1 { scalar_memo: Some(&memo), ..shared }, false).unwrap().value, expected.value);
             let actual = evaluate_for_trace(&effect, &configuration, &[number(input)], shared, true).unwrap();
             assert_eq!(actual.value, expected.value);
             assert_eq!(actual.reads, expected.reads);

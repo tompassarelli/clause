@@ -556,15 +556,7 @@ pub(super) fn evaluate_for_trace(
     capture: bool,
 ) -> Result<EvaluatedValue, ExecutableErrorV1> {
     if capture { evaluate_with_reads(expression, configuration, arguments, context) }
-    else {
-        let plan = if context.scalar_memo.is_none() { relational::scalar_plan(expression, context)? } else { None };
-        let memo = plan.as_ref().map(|plan| plan.memo());
-        Ok(EvaluatedValue {
-            value: evaluate(plan.as_ref().map_or(expression, |plan| plan.expression.as_ref()), configuration, arguments,
-                EvaluationContextV1 { scalar_memo: memo.as_ref().or(context.scalar_memo), ..context })?,
-            reads: Vec::new(),
-        })
-    }
+    else { Ok(EvaluatedValue { value: evaluate(expression, configuration, arguments, context)?, reads: Vec::new() }) }
 }
 
 impl ExecutableProcessRuntimeV1 {

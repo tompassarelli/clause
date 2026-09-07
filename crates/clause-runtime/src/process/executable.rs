@@ -5096,9 +5096,12 @@ impl ExecutableProcessRuntimeV1 {
         if let Some((record, _, _)) = &projected {
             ingress.push(record.clone());
         }
-        self.carrier
-            .apply_ingress(&ingress)
-            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::CarrierIngress);
+            self.carrier
+                .apply_ingress(&ingress)
+                .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        }
 
         let admitted = prepared.executable_state;
         let admission = prepared.executable_admission.id;
@@ -5141,6 +5144,7 @@ impl ExecutableProcessRuntimeV1 {
         Option<(ProcessRecordV2, ExecutableProjectedObservationV1, u64)>,
         ExecutableCarrierErrorV1,
     > {
+        let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RowProjection);
         let Some(projection) = &self.program.projection else {
             return Ok(None);
         };
@@ -7620,6 +7624,7 @@ impl StepEvaluator<'_> {
         // All effects read this preparation's immutable, closed pre-state.
         // The context below never reaches closure of the staged next state.
         let sum_queries = std::cell::RefCell::new(relational::SumQueries::default());
+        let mut effect_plans = BTreeMap::new();
         for (rule_index, rule, bindings, trace_index) in &selected {
             let identity = relational::LazyOccurrenceIdentity::new(evaluation, *rule_index, bindings);
             let evaluation = EvaluationContextV1 {
@@ -7648,11 +7653,21 @@ impl StepEvaluator<'_> {
                             let _profile = source_profile_scope_v1(
                                 SourceProfilePhaseV1::EffectValueEvaluation,
                             );
+                            // Every matched row shares this exact program coordinate;
+                            // only the memo values depend on its current bindings.
+                            let plan = if trace.is_none() {
+                                let key = (*rule_index, assignment, effect_index);
+                                if let std::collections::btree_map::Entry::Vacant(entry) = effect_plans.entry(key) {
+                                    entry.insert(relational::scalar_plan(value, evaluation)?);
+                                }
+                                effect_plans[&key].as_ref()
+                            } else { None };
+                            let memo = plan.map(|plan| plan.memo());
                             evaluate_for_trace(
-                                value,
+                                plan.map_or(value, |plan| plan.expression.as_ref()),
                                 configuration,
                                 &occurrence.arguments,
-                                evaluation,
+                                EvaluationContextV1 { scalar_memo: memo.as_ref(), ..evaluation },
                                 trace.is_some(),
                             )?
                         };
