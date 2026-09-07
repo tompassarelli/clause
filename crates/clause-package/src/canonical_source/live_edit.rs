@@ -16,19 +16,19 @@ pub struct CanonicalScalarEffectV1 {
     pub expression: Vec<u8>,
 }
 
-/// The only constructor replays one expression replacement on the exact old
-/// tree. Every other allocation is retained by that operation, NOT inferred
+/// Constructors replay explicit replacements on the exact old tree.
+/// Unchanged allocations are retained by that operation, NOT inferred
 /// from equal names, values, source spans, or arbitrary imported text.
 /// Local coordinates in the new snapshot are fresh; these pairs explicitly
 /// connect their continuing semantic occurrences across snapshot addresses.
 #[derive(Clone, Debug)]
-pub struct CanonicalScalarEditV1 {
+pub struct CanonicalSourceEditV1 {
     source: CanonicalSourceCstV1,
     plan: CanonicalSourceAllocationPlanV1,
     retained: BTreeMap<CanonicalAllocatedIdentityV1, CanonicalAllocatedIdentityV1>,
 }
 
-impl CanonicalScalarEditV1 {
+impl CanonicalSourceEditV1 {
     pub fn source(&self) -> &CanonicalSourceCstV1 {
         &self.source
     }
@@ -255,7 +255,7 @@ pub fn replace_canonical_scalar_effect_v1(
     selected: &CanonicalScalarEffectV1,
     replacement: &[u8],
     new_root: ProgramChangeOccurrenceId,
-) -> Result<CanonicalScalarEditV1, CanonicalSourceErrorV1> {
+) -> Result<CanonicalSourceEditV1, CanonicalSourceErrorV1> {
     let offered = canonical_scalar_effects_v1(cst, old_plan)?;
     if !offered.contains(selected) || new_root == old_plan.root {
         return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
@@ -349,7 +349,231 @@ pub fn replace_canonical_scalar_effect_v1(
             .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
         retained.insert(old, new);
     }
-    Ok(CanonicalScalarEditV1 {
+    Ok(CanonicalSourceEditV1 {
+        source,
+        plan,
+        retained,
+    })
+}
+
+/// A checked occurrence offered for whole-item replacement. The identity
+/// selects it; the origin and exact bytes are replay/display data, not identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalEditableSourceItemV1 {
+    pub identity: CanonicalAllocatedIdentityV1,
+    pub production: CanonicalSourceProductionV1,
+    pub origin: CanonicalSourceOriginV1,
+    pub source: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalSourceItemReplacementV1 {
+    pub selected: CanonicalEditableSourceItemV1,
+    pub replacement: Vec<u8>,
+}
+
+fn editable_item_producer(item: &CstItem) -> Option<CanonicalSemanticProducerV1> {
+    Some(match &item.kind {
+        CstKind::Relation(relation) if relation.contract_origin.is_none() => {
+            semantic_producer(CanonicalSourceProductionV1::Relation, &relation.designation)
+        }
+        CstKind::ScalarLaw(law) => {
+            semantic_producer(CanonicalSourceProductionV1::Law, &law.designation)
+        }
+        CstKind::BooleanLaw(law) => {
+            semantic_producer(CanonicalSourceProductionV1::Law, &law.designation)
+        }
+        CstKind::GeneralHandler(handler) => handler.producer.clone(),
+        CstKind::ScalarHandler(handler) => handler.producer.clone(),
+        CstKind::InputHandler(handler) => handler.producer.clone(),
+        _ => return None,
+    })
+}
+
+pub fn canonical_editable_source_items_v1(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+) -> Result<Vec<CanonicalEditableSourceItemV1>, CanonicalSourceErrorV1> {
+    rematerialize_canonical_source_allocation_plan_v1(cst, plan)?;
+    let mut offered = Vec::new();
+    for item in &cst.items {
+        let Some(producer) = editable_item_producer(item) else {
+            continue;
+        };
+        offered.push(CanonicalEditableSourceItemV1 {
+            identity: CanonicalAllocatedIdentityV1::Formation(formation_id(
+                plan,
+                &producer,
+                &head_slot(producer.production),
+            )?),
+            production: producer.production,
+            origin: item.origin,
+            source: cst
+                .source_slice(item.origin)
+                .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?
+                .to_vec(),
+        });
+        if let CstKind::Relation(relation) = &item.kind {
+            for mode in &relation.modes {
+                offered.push(CanonicalEditableSourceItemV1 {
+                    identity: plan
+                        .identity(
+                            &producer,
+                            &child_slot(CanonicalSourceProductionV1::RelationMode, &mode.canonical),
+                            AllocationDomain::Mode,
+                        )
+                        .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?,
+                    production: CanonicalSourceProductionV1::RelationMode,
+                    origin: mode.origin,
+                    source: cst
+                        .source_slice(mode.origin)
+                        .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?
+                        .to_vec(),
+                });
+            }
+        }
+    }
+    Ok(offered)
+}
+
+/// Replace a nonoverlapping batch on one exact tree. Each replacement must
+/// produce exactly one construct of the selected kind. Its head continues;
+/// its children are fresh. Copied constructs retain their allocations by
+/// operation replay, including handlers whose expanded laws have changed.
+/// State-schema changes are not licensed: runtime continuity checks must still
+/// account for every live slot and referent before admitting the successor.
+pub fn replace_canonical_source_items_v1(
+    cst: &CanonicalSourceCstV1,
+    old_plan: &CanonicalSourceAllocationPlanV1,
+    replacements: &[CanonicalSourceItemReplacementV1],
+    new_root: ProgramChangeOccurrenceId,
+) -> Result<CanonicalSourceEditV1, CanonicalSourceErrorV1> {
+    let reject = CanonicalSourceErrorV1::RecordedPlanMismatch;
+    let offered = canonical_editable_source_items_v1(cst, old_plan)?;
+    if replacements.is_empty() || new_root == old_plan.root {
+        return Err(reject);
+    }
+    if replacements
+        .iter()
+        .any(|op| !offered.contains(&op.selected))
+    {
+        return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+    }
+    let mut operations = replacements
+        .iter()
+        .filter(|op| op.selected.source != op.replacement)
+        .collect::<Vec<_>>();
+    operations.sort_by_key(|op| op.selected.origin.start);
+    let mut exact = Vec::new();
+    let mut cursor = 0;
+    let mut segments = Vec::new();
+    for op in &operations {
+        if !offered.contains(&op.selected) {
+            return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+        }
+        let start = op.selected.origin.start as usize;
+        let end = op.selected.origin.end as usize;
+        if start < cursor || op.replacement.is_empty() {
+            return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+        }
+        exact.extend_from_slice(&cst.exact_source[cursor..start]);
+        let new_start = exact.len() as u64;
+        exact.extend_from_slice(&op.replacement);
+        segments.push((op.selected.origin, new_start, exact.len() as u64));
+        cursor = end;
+    }
+    exact.extend_from_slice(&cst.exact_source[cursor..]);
+    if exact.as_slice() == cst.exact_source.as_ref() {
+        return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+    }
+    let source = read_canonical_source_with_declared_frontend_v1(&exact, &cst.declared_frontend)?;
+    let plan = build_independent_plan(&source, new_root)?;
+    let new_offered = canonical_editable_source_items_v1(&source, &plan)?;
+    let translated_origin =
+        |old: CanonicalSourceOriginV1| -> Result<CanonicalSourceOriginV1, CanonicalSourceErrorV1> {
+            let mut delta = 0i128;
+            for (replaced, start, end) in &segments {
+                if old == *replaced {
+                    return Ok(CanonicalSourceOriginV1 {
+                        artifact: source.artifact,
+                        start: *start,
+                        end: *end,
+                    });
+                }
+                if old.start < replaced.end && replaced.start < old.end {
+                    return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+                }
+                if replaced.end <= old.start {
+                    delta += i128::from(end - start) - i128::from(replaced.end - replaced.start);
+                }
+            }
+            Ok(CanonicalSourceOriginV1 {
+                artifact: source.artifact,
+                start: (i128::from(old.start) + delta)
+                    .try_into()
+                    .map_err(|_| CanonicalSourceErrorV1::RecordedPlanMismatch)?,
+                end: (i128::from(old.end) + delta)
+                    .try_into()
+                    .map_err(|_| CanonicalSourceErrorV1::RecordedPlanMismatch)?,
+            })
+        };
+    let mut retained = BTreeMap::new();
+    for old in &offered {
+        let origin = translated_origin(old.origin)?;
+        let matches = new_offered
+            .iter()
+            .filter(|item| item.origin == origin && item.production == old.production)
+            .collect::<Vec<_>>();
+        let [new] = matches.as_slice() else {
+            return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+        };
+        retained.insert(old.identity, new.identity);
+    }
+    let mut producers = BTreeMap::new();
+    for old in &cst.items {
+        let Some(old_producer) = editable_item_producer(old) else {
+            continue;
+        };
+        let origin = translated_origin(old.origin)?;
+        let new = source
+            .items
+            .iter()
+            .find(|item| item.origin == origin)
+            .and_then(editable_item_producer)
+            .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
+        if old_producer.production != new.production {
+            return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+        }
+        let replaced = operations.iter().any(|op| op.selected.origin == old.origin);
+        producers.insert(old_producer, (new, replaced));
+    }
+    let new_requests = allocation_requests(&source)?;
+    for request in allocation_requests(cst)? {
+        let old = old_plan
+            .identity(&request.producer, &request.slot, request.domain)
+            .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
+        if retained.contains_key(&old) {
+            continue;
+        }
+        let mut continued = request.clone();
+        if let Some((new, replaced)) = producers.get(&request.producer) {
+            if *replaced {
+                continue;
+            }
+            continued.producer = new.clone();
+        }
+        if !new_requests.contains(&continued) {
+            return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+        }
+        let new = plan
+            .identity(&continued.producer, &continued.slot, continued.domain)
+            .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
+        retained.insert(old, new);
+    }
+    if retained.values().collect::<BTreeSet<_>>().len() != retained.len() {
+        return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+    }
+    Ok(CanonicalSourceEditV1 {
         source,
         plan,
         retained,

@@ -359,10 +359,91 @@ impl ResidentSourceWorkbenchV1 {
         let edit = clause_package::replace_canonical_scalar_effect_v1(&cst, &plan, selected, replacement, new_root)
             .map_err(|error| debug_error("structured edit", error))?;
         let witness = clause_runtime::ExecutableSourceEditV1 {
-            old_source: self.exact_source.clone(), old_root, new_root, handler: selected.handler,
+            old_source: self.exact_source.clone(), old_root, new_root,
             declared_frontend: self.declared_frontend.exact_source().to_vec(),
-            effect: selected.effect, field_path: selected.field_path.clone(),
-            expression: replacement.to_vec(), old_cpp1: self.generation.cpp1.clone(), new_cpp1: vec![],
+            operation: clause_runtime::ExecutableSourceOperationV1::ScalarEffect {
+                handler: selected.handler, effect: selected.effect, field_path: selected.field_path.clone(),
+                expression: replacement.to_vec(),
+            }, old_cpp1: self.generation.cpp1.clone(), new_cpp1: vec![],
+        };
+        self.install_source_with_edit(edit.source().exact_source(), Some(witness))?;
+        while self.boundary.reclaim_retired() {}
+        Ok(self.generation.clone())
+    }
+
+    pub fn source_items(
+        &self,
+    ) -> Result<Vec<clause_package::CanonicalEditableSourceItemV1>, ResidentSourceWorkbenchErrorV1>
+    {
+        let cst = self
+            .read_source(&self.exact_source)
+            .map_err(|error| debug_error("source read", error))?;
+        let root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change));
+        let plan = plan_independent_canonical_source_allocations_v1(&cst, root)
+            .map_err(|error| debug_error("source allocations", error))?;
+        clause_package::canonical_editable_source_items_v1(&cst, &plan)
+            .map_err(|error| debug_error("editable source items", error))
+    }
+
+    /// Atomically replay selected declaration, mode, law, or handler replacements.
+    /// Stale selections, changed state schemas, and invalid replacements reject
+    /// without changing the admitted world. Unselected source is copied exactly.
+    pub fn replace_source_items(
+        &mut self,
+        captured_handle: WasmSessionHandleV1,
+        replacements: &[clause_package::CanonicalSourceItemReplacementV1],
+    ) -> Result<ResidentSourceGenerationV1, ResidentSourceWorkbenchErrorV1> {
+        let offered = self.source_items()?;
+        if captured_handle != self.generation.handle
+            || replacements
+                .iter()
+                .any(|op| !offered.contains(&op.selected))
+        {
+            return Err(ResidentSourceWorkbenchErrorV1(
+                "stale structured source operation".into(),
+            ));
+        }
+        if replacements
+            .iter()
+            .all(|op| op.selected.source == op.replacement)
+        {
+            return Ok(self.generation.clone());
+        }
+        if self.pending.is_some() {
+            return Err(ResidentSourceWorkbenchErrorV1(
+                "settle hidden candidate before changed source edit".into(),
+            ));
+        }
+        let old_root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change));
+        let new_root = ProgramChangeOccurrenceId::from_bytes(sequence_id(
+            self.next_change.checked_add(1).ok_or_else(|| {
+                ResidentSourceWorkbenchErrorV1("source sequence exhausted".into())
+            })?,
+        ));
+        let cst = self
+            .read_source(&self.exact_source)
+            .map_err(|error| debug_error("source read", error))?;
+        let plan = plan_independent_canonical_source_allocations_v1(&cst, old_root)
+            .map_err(|error| debug_error("source allocation", error))?;
+        let edit =
+            clause_package::replace_canonical_source_items_v1(&cst, &plan, replacements, new_root)
+                .map_err(|error| debug_error("structured edit", error))?;
+        let witness = clause_runtime::ExecutableSourceEditV1 {
+            old_source: self.exact_source.clone(),
+            declared_frontend: self.declared_frontend.exact_source().to_vec(),
+            old_root,
+            new_root,
+            operation: clause_runtime::ExecutableSourceOperationV1::ReplaceItems(
+                replacements
+                    .iter()
+                    .map(|op| clause_runtime::ExecutableSourceItemReplacementV1 {
+                        identity: op.selected.identity,
+                        replacement: op.replacement.clone(),
+                    })
+                    .collect(),
+            ),
+            old_cpp1: self.generation.cpp1.clone(),
+            new_cpp1: vec![],
         };
         self.install_source_with_edit(edit.source().exact_source(), Some(witness))?;
         while self.boundary.reclaim_retired() {}

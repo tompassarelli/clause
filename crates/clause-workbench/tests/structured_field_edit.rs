@@ -114,7 +114,12 @@ fn checked_field_edit_preserves_equal_siblings_occurrences_and_live_world() {
         "editing a future effect must not reset or run the world"
     );
     let witness = decode_executable_source_edit_v1(w.last_source_edit().unwrap()).unwrap();
-    assert_eq!(witness.field_path, selected.field_path);
+    let clause_runtime::ExecutableSourceOperationV1::ScalarEffect { field_path, .. } =
+        &witness.operation
+    else {
+        panic!("expected scalar operation")
+    };
+    assert_eq!(*field_path, selected.field_path);
     assert_eq!(
         decode_executable_source_edit_v1(&encode_executable_source_edit_v1(&witness).unwrap())
             .unwrap(),
@@ -123,14 +128,25 @@ fn checked_field_edit_preserves_equal_siblings_occurrences_and_live_world() {
     let scope = world.scope();
     check_executable_source_edit_v1(&witness, scope).unwrap();
     let mut forged = witness.clone();
-    forged.field_path = peer.field_path.clone();
-    forged.effect = peer.effect;
+    let clause_runtime::ExecutableSourceOperationV1::ScalarEffect {
+        field_path, effect, ..
+    } = &mut forged.operation
+    else {
+        panic!("expected scalar operation")
+    };
+    *field_path = peer.field_path.clone();
+    *effect = peer.effect;
     assert!(
         check_executable_source_edit_v1(&forged, scope).is_err(),
         "equal source text does not select another occurrence"
     );
     forged = witness;
-    forged.field_path = sibling.field_path.clone();
+    let clause_runtime::ExecutableSourceOperationV1::ScalarEffect { field_path, .. } =
+        &mut forged.operation
+    else {
+        panic!("expected scalar operation")
+    };
+    *field_path = sibling.field_path.clone();
     assert!(
         check_executable_source_edit_v1(&forged, scope).is_err(),
         "equal sibling value does not select another field"

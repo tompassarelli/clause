@@ -1,7 +1,7 @@
 //! Compiler-checked source transitions applied to runtime-owned live state.
 use super::*;
 use clause_package::{
-    CanonicalAllocatedIdentityV1, CanonicalDeclaredFrontendV1, CanonicalScalarEditV1, CanonicalSourceContextV1,
+    CanonicalAllocatedIdentityV1, CanonicalDeclaredFrontendV1, CanonicalSourceEditV1, CanonicalSourceContextV1,
     ProgramChangeOccurrenceId, canonical_scalar_effects_v1, elaborate_canonical_source_package_v1,
     plan_independent_canonical_source_allocations_v1, read_canonical_source_with_declared_frontend_v1,
     replace_canonical_scalar_effect_v1,
@@ -20,13 +20,26 @@ pub struct ExecutableSourceEditV1 {
     pub declared_frontend: Vec<u8>,
     pub old_root: ProgramChangeOccurrenceId,
     pub new_root: ProgramChangeOccurrenceId,
-    pub handler: FormationLocalId,
-    pub effect: FormationLocalId,
-    /// Declared field coordinates within this effect; empty for its scalar value.
-    pub field_path: Vec<FormationLocalId>,
-    pub expression: Vec<u8>,
+    pub operation: ExecutableSourceOperationV1,
     pub old_cpp1: Vec<u8>,
     pub new_cpp1: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExecutableSourceOperationV1 {
+    ScalarEffect {
+        handler: FormationLocalId,
+        effect: FormationLocalId,
+        field_path: Vec<FormationLocalId>,
+        expression: Vec<u8>,
+    },
+    ReplaceItems(Vec<ExecutableSourceItemReplacementV1>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableSourceItemReplacementV1 {
+    pub identity: CanonicalAllocatedIdentityV1,
+    pub replacement: Vec<u8>,
 }
 
 /// Exact old/new snapshot addresses of a continuing source occurrence.
@@ -50,7 +63,7 @@ pub struct ExecutableSourceContinuityV1 {
 pub struct CheckedExecutableSourceEditV1 {
     old_plan: ExecutablePhysicalPlanIdV1,
     new_plan: ExecutablePhysicalPlanIdV1,
-    edit: CanonicalScalarEditV1,
+    edit: CanonicalSourceEditV1,
     continuity: ExecutableSourceContinuityV1,
 }
 
@@ -353,26 +366,70 @@ pub(super) fn diagnostic_index_field(term: &Term, index: u16) -> Option<&Term> {
 pub fn encode_executable_source_edit_v1(
     edit: &ExecutableSourceEditV1,
 ) -> Result<Vec<u8>, ExecutableErrorV1> {
-    let mut bytes = b"CET1".to_vec();
+    let mut bytes = match edit.operation {
+        ExecutableSourceOperationV1::ScalarEffect { .. } => b"CET1".to_vec(),
+        ExecutableSourceOperationV1::ReplaceItems(_) => b"CET2".to_vec(),
+    };
     bytes.extend_from_slice(edit.old_root.as_bytes());
     bytes.extend_from_slice(edit.new_root.as_bytes());
-    bytes.extend_from_slice(&edit.handler.get().to_le_bytes());
-    bytes.extend_from_slice(&edit.effect.get().to_le_bytes());
-    bytes.extend_from_slice(
-        &u32::try_from(edit.field_path.len())
-            .map_err(|_| ExecutableErrorV1::ResourceLimit)?
-            .to_le_bytes(),
-    );
-    for field in &edit.field_path {
-        bytes.extend_from_slice(&field.get().to_le_bytes());
-    }
+    let expression = match &edit.operation {
+        ExecutableSourceOperationV1::ScalarEffect {
+            handler,
+            effect,
+            field_path,
+            expression,
+        } => {
+            bytes.extend_from_slice(&handler.get().to_le_bytes());
+            bytes.extend_from_slice(&effect.get().to_le_bytes());
+            bytes.extend_from_slice(
+                &u32::try_from(field_path.len())
+                    .map_err(|_| ExecutableErrorV1::ResourceLimit)?
+                    .to_le_bytes(),
+            );
+            for field in field_path {
+                bytes.extend_from_slice(&field.get().to_le_bytes());
+            }
+            Some(expression)
+        }
+        ExecutableSourceOperationV1::ReplaceItems(items) => {
+            bytes.extend_from_slice(
+                &u32::try_from(items.len())
+                    .map_err(|_| ExecutableErrorV1::ResourceLimit)?
+                    .to_le_bytes(),
+            );
+            for item in items {
+                match item.identity {
+                    CanonicalAllocatedIdentityV1::Formation(id) => {
+                        bytes.push(0);
+                        bytes.extend_from_slice(&id.get().to_le_bytes());
+                    }
+                    CanonicalAllocatedIdentityV1::Mode(id) => {
+                        bytes.push(1);
+                        bytes.extend_from_slice(&id.operator.get().to_le_bytes());
+                        bytes.extend_from_slice(&id.mode.get().to_le_bytes());
+                    }
+                    _ => return Err(ExecutableErrorV1::MalformedProgram),
+                }
+                bytes.extend_from_slice(
+                    &u32::try_from(item.replacement.len())
+                        .map_err(|_| ExecutableErrorV1::ResourceLimit)?
+                        .to_le_bytes(),
+                );
+                bytes.extend_from_slice(&item.replacement);
+            }
+            None
+        }
+    };
     for blob in [
-        &edit.old_source,
-        &edit.declared_frontend,
-        &edit.expression,
-        &edit.old_cpp1,
-        &edit.new_cpp1,
-    ] {
+        Some(&edit.old_source),
+        Some(&edit.declared_frontend),
+        expression,
+        Some(&edit.old_cpp1),
+        Some(&edit.new_cpp1),
+    ]
+    .into_iter()
+    .flatten()
+    {
         bytes.extend_from_slice(
             &u32::try_from(blob.len())
                 .map_err(|_| ExecutableErrorV1::ResourceLimit)?
@@ -393,33 +450,68 @@ pub fn decode_executable_source_edit_v1(
         return Err(ExecutableErrorV1::ResourceLimit);
     }
     let mut d = Decoder::new(bytes);
-    if d.take(4)? != b"CET1" {
+    let magic = d.take(4)?;
+    if magic != b"CET1" && magic != b"CET2" {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
     let old_root = ProgramChangeOccurrenceId::from_bytes(d.identity()?);
     let new_root = ProgramChangeOccurrenceId::from_bytes(d.identity()?);
-    let handler = FormationLocalId::new(d.u32()?);
-    let effect = FormationLocalId::new(d.u32()?);
-    let field_count = d.u32()? as usize;
-    if field_count > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 / size_of::<u32>() {
-        return Err(ExecutableErrorV1::ResourceLimit);
-    }
-    let field_path = (0..field_count)
-        .map(|_| d.u32().map(FormationLocalId::new))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut operation = if magic == b"CET1" {
+        let handler = FormationLocalId::new(d.u32()?);
+        let effect = FormationLocalId::new(d.u32()?);
+        let field_count = d.u32()? as usize;
+        if field_count > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 / size_of::<u32>() {
+            return Err(ExecutableErrorV1::ResourceLimit);
+        }
+        let field_path = (0..field_count)
+            .map(|_| d.u32().map(FormationLocalId::new))
+            .collect::<Result<Vec<_>, _>>()?;
+        ExecutableSourceOperationV1::ScalarEffect {
+            handler,
+            effect,
+            field_path,
+            expression: vec![],
+        }
+    } else {
+        let count = d.u32()? as usize;
+        if count > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 / 9 {
+            return Err(ExecutableErrorV1::ResourceLimit);
+        }
+        let mut items = Vec::new();
+        for _ in 0..count {
+            let kind = d.take(1)?[0];
+            let id = d.u32()?;
+            let identity = match kind {
+                0 => CanonicalAllocatedIdentityV1::Formation(FormationLocalId::new(id)),
+                1 => CanonicalAllocatedIdentityV1::Mode(clause_package::LocalModeRefV2 {
+                    operator: clause_package::OperatorLocalId::new(id),
+                    mode: clause_package::ModeLocalId::new(d.u32()?),
+                }),
+                _ => return Err(ExecutableErrorV1::MalformedProgram),
+            };
+            let len = d.u32()? as usize;
+            items.push(ExecutableSourceItemReplacementV1 {
+                identity,
+                replacement: d.take(len)?.to_vec(),
+            });
+        }
+        ExecutableSourceOperationV1::ReplaceItems(items)
+    };
     let mut blob = || {
         let len = d.u32()? as usize;
         Ok::<_, ExecutableErrorV1>(d.take(len)?.to_vec())
     };
+    let old_source = blob()?;
+    let declared_frontend = blob()?;
+    if let ExecutableSourceOperationV1::ScalarEffect { expression, .. } = &mut operation {
+        *expression = blob()?;
+    }
     let result = ExecutableSourceEditV1 {
         old_root,
         new_root,
-        handler,
-        effect,
-        field_path,
-        old_source: blob()?,
-        declared_frontend: blob()?,
-        expression: blob()?,
+        operation,
+        old_source,
+        declared_frontend,
         old_cpp1: blob()?,
         new_cpp1: blob()?,
     };
@@ -436,8 +528,10 @@ pub fn check_executable_source_edit_v1(
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::WitnessCheck);
     let rejected = |_| ExecutableErrorV1::MalformedProgram;
     let phase = source_profile_scope_v1(SourceProfilePhaseV1::SourceRead);
-    let frontend = CanonicalDeclaredFrontendV1::read(&witness.declared_frontend).map_err(rejected)?;
-    let old_cst = read_canonical_source_with_declared_frontend_v1(&witness.old_source, &frontend).map_err(rejected)?;
+    let frontend =
+        CanonicalDeclaredFrontendV1::read(&witness.declared_frontend).map_err(rejected)?;
+    let old_cst = read_canonical_source_with_declared_frontend_v1(&witness.old_source, &frontend)
+        .map_err(rejected)?;
     drop(phase);
     let phase = source_profile_scope_v1(SourceProfilePhaseV1::Allocation);
     let old_allocations =
@@ -445,26 +539,61 @@ pub fn check_executable_source_edit_v1(
             .map_err(rejected)?;
     drop(phase);
     let phase = source_profile_scope_v1(SourceProfilePhaseV1::OfferedEdit);
-    let offered = canonical_scalar_effects_v1(&old_cst, &old_allocations).map_err(rejected)?;
-    let selected = offered
-        .iter()
-        .find(|effect| {
-            effect.handler == witness.handler
-                && effect.effect == witness.effect
-                && effect.field_path == witness.field_path
-        })
-        .ok_or(ExecutableErrorV1::MalformedProgram)?;
-    if selected.expression == witness.expression {
-        return Err(ExecutableErrorV1::MalformedProgram);
-    }
-    let edit = replace_canonical_scalar_effect_v1(
-        &old_cst,
-        &old_allocations,
-        selected,
-        &witness.expression,
-        witness.new_root,
-    )
-    .map_err(rejected)?;
+    let edit = match &witness.operation {
+        ExecutableSourceOperationV1::ScalarEffect {
+            handler,
+            effect,
+            field_path,
+            expression,
+        } => {
+            let offered =
+                canonical_scalar_effects_v1(&old_cst, &old_allocations).map_err(rejected)?;
+            let selected = offered
+                .iter()
+                .find(|selected| {
+                    selected.handler == *handler
+                        && selected.effect == *effect
+                        && selected.field_path == *field_path
+                })
+                .ok_or(ExecutableErrorV1::MalformedProgram)?;
+            if selected.expression == *expression {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            replace_canonical_scalar_effect_v1(
+                &old_cst,
+                &old_allocations,
+                selected,
+                expression,
+                witness.new_root,
+            )
+            .map_err(rejected)?
+        }
+        ExecutableSourceOperationV1::ReplaceItems(items) => {
+            let offered =
+                clause_package::canonical_editable_source_items_v1(&old_cst, &old_allocations)
+                    .map_err(rejected)?;
+            let replacements = items
+                .iter()
+                .map(|item| {
+                    Ok(clause_package::CanonicalSourceItemReplacementV1 {
+                        selected: offered
+                            .iter()
+                            .find(|selected| selected.identity == item.identity)
+                            .ok_or(ExecutableErrorV1::MalformedProgram)?
+                            .clone(),
+                        replacement: item.replacement.clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>, ExecutableErrorV1>>()?;
+            clause_package::replace_canonical_source_items_v1(
+                &old_cst,
+                &old_allocations,
+                &replacements,
+                witness.new_root,
+            )
+            .map_err(rejected)?
+        }
+    };
     drop(phase);
     let context = CanonicalSourceContextV1 {
         universe: scope.universe,
@@ -536,8 +665,14 @@ pub fn check_executable_source_edit_v1(
         {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
-        let new_entry = new_lowered.program.rules.iter().map(|rule| rule.entry).max()
-            .and_then(|entry| entry.checked_add(1)).ok_or(ExecutableErrorV1::ResourceLimit)?;
+        let new_entry = new_lowered
+            .program
+            .rules
+            .iter()
+            .map(|rule| rule.entry)
+            .max()
+            .and_then(|entry| entry.checked_add(1))
+            .ok_or(ExecutableErrorV1::ResourceLimit)?;
         entries.insert(checkpoint.entry, new_entry);
         expected_old.program.rules.push(checkpoint.clone());
         let mut replacement = checkpoint.clone();
@@ -640,7 +775,7 @@ fn physical_plan_identity(bytes: &[u8]) -> ExecutablePhysicalPlanIdV1 {
 
 fn migrate_value(
     value: &ExecutableValueV1,
-    edit: &CanonicalScalarEditV1,
+    edit: &CanonicalSourceEditV1,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     let formation = |old| {
         edit.formation(FormationLocalId::new(old))
@@ -888,10 +1023,12 @@ mod tests {
             declared_frontend: Vec::new(),
             old_root: ProgramChangeOccurrenceId::from_bytes([1; IDENTITY_BYTES]),
             new_root: ProgramChangeOccurrenceId::from_bytes([2; IDENTITY_BYTES]),
-            handler: FormationLocalId::new(1),
-            effect: FormationLocalId::new(2),
-            field_path: vec![],
-            expression: Vec::new(),
+            operation: ExecutableSourceOperationV1::ScalarEffect {
+                handler: FormationLocalId::new(1),
+                effect: FormationLocalId::new(2),
+                field_path: vec![],
+                expression: Vec::new(),
+            },
             old_cpp1: Vec::new(),
             new_cpp1: Vec::new(),
         }
