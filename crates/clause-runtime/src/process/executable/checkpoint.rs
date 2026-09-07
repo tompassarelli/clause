@@ -1,5 +1,4 @@
 //! Physical reconstitution of a trusted, already-admitted world frontier.
-use super::super::MAX_ADMITTED_CHECKPOINT_BYTES_V1 as LIMIT;
 use super::*;
 
 const MAGIC: &[u8; 4] = b"CRF1";
@@ -36,9 +35,7 @@ ordinal_wire!(
 
 fn blob(bytes: &mut Vec<u8>, value: &[u8]) -> Result<(), ExecutableErrorV1> {
     let length = u32::try_from(value.len()).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
-    if bytes.len().saturating_add(value.len()).saturating_add(4) > LIMIT {
-        return Err(ExecutableErrorV1::ResourceLimit);
-    }
+    bytes.len().checked_add(value.len()).and_then(|n| n.checked_add(4)).ok_or(ExecutableErrorV1::ResourceLimit)?;
     bytes.extend_from_slice(&length.to_le_bytes());
     bytes.extend_from_slice(value);
     Ok(())
@@ -83,9 +80,6 @@ impl ExecutableProcessRuntimeV1 {
         self.identity_ordinals.encode(&mut bytes);
         encode_slots(&mut bytes, &self.configuration)?;
         encode_continuity(&mut bytes, self.source_continuity.as_ref())?;
-        if bytes.len() > LIMIT {
-            return Err(ExecutableErrorV1::ResourceLimit.into());
-        }
         Ok(bytes)
     }
 
@@ -97,9 +91,6 @@ impl ExecutableProcessRuntimeV1 {
         facts: ExecutableAuthorityFactsV1,
         bytes: &[u8],
     ) -> Result<Self, ExecutableCarrierErrorV1> {
-        if bytes.len() > LIMIT {
-            return Err(ExecutableErrorV1::ResourceLimit.into());
-        }
         let mut d = Decoder::new(bytes);
         if d.take(4)? != MAGIC {
             return Err(ExecutableErrorV1::MalformedProgram.into());

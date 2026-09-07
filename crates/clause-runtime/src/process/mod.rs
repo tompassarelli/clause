@@ -13,10 +13,6 @@ mod persistent_session;
 mod persistent_wasm_boundary;
 mod wasm_boundary;
 
-// The frontier and its enclosing checkpoint share one aggregate resource ceiling;
-// caller metadata and the exact open request still count toward the outer total.
-const MAX_ADMITTED_CHECKPOINT_BYTES_V1: usize = 32 * 1024 * 1024;
-
 pub use branch::*;
 pub use branch_wasm_boundary::*;
 pub use executable::*;
