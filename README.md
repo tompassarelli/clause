@@ -36,6 +36,13 @@ remaining work; Clause is not yet a supported language or toolchain.
 
 The [semantic foundation](docs/foundation.md) defines these distinctions.
 
+## Examples
+
+- [Scheduling walkthrough](docs/language-tour.md#run-the-scheduling-example):
+  task dependencies, derived blockers, and checked changes.
+- [Jump Arena](https://github.com/tompassarelli/jump-arena): a standalone
+  browser game with its own source and pinned Clause dependency.
+
 ## Documentation
 
 | Document | Owns |
