@@ -743,11 +743,11 @@ mod ordered_specialization_tests {
             value_domain: None,
             cardinality: ExecutableRelationCardinalityV1::Many,
             total: false,
-            rows: BTreeMap::from([
+            rows: Arc::new(BTreeMap::from([
                 (ExecutableReferentV1::declared(7, 9), BTreeSet::from([n(4.0), n(9.0)]).into()),
                 (ExecutableReferentV1::created(7, [1; IDENTITY_BYTES]), BTreeSet::from([n(4.0)]).into()),
                 (ExecutableReferentV1::created(7, [2; IDENTITY_BYTES]), BTreeSet::from([n(4.0)]).into()),
-            ]).into(),
+            ]).into()),
         }
     }
 
@@ -817,8 +817,8 @@ mod sum_reuse_tests {
             subject_domain: 7, value_kind: ExecutableRelationValueKindV1::Number,
             value_domain: None, cardinality: ExecutableRelationCardinalityV1::One,
             total: false,
-            rows: (0..3).map(|id| (ExecutableReferentV1::declared(7, id),
-                BTreeSet::from([number(1.0)]).into())).collect::<BTreeMap<_, _>>().into(),
+            rows: Arc::new((0..3).map(|id| (ExecutableReferentV1::declared(7, id),
+                BTreeSet::from([number(1.0)]).into())).collect::<BTreeMap<_, _>>().into()),
         }).into()];
         let query = E::Sum {
             inputs: vec![E::Argument(0)],
@@ -865,8 +865,8 @@ mod sum_reuse_tests {
             value_domain: None,
             cardinality: ExecutableRelationCardinalityV1::One,
             total: false,
-            rows: (0..100).map(|id| (ExecutableReferentV1::declared(7, id),
-                BTreeSet::from([number(1.0)]).into())).collect::<BTreeMap<_, _>>().into(),
+            rows: Arc::new((0..100).map(|id| (ExecutableReferentV1::declared(7, id),
+                BTreeSet::from([number(1.0)]).into())).collect::<BTreeMap<_, _>>().into()),
         };
         let configuration = vec![ExecutableValueV1::RelationTable(table).into()];
         let sum = ExecutableExpressionV1::Sum {
@@ -904,7 +904,7 @@ mod sum_reuse_tests {
         let different = ExecutableExpressionV1::Add(Box::new(query(1.0)), Box::new(query(2.0)));
         assert_eq!(evaluate_with_reads(&different, &[], &[], context).unwrap().value, number(3.0));
         let changed = vec![ExecutableValueV1::RelationTable(ExecutableRelationTableV1 {
-            rows: BTreeMap::new().into(),
+            rows: Arc::default(),
             ..match configuration[0].value().unwrap() {
                 ExecutableValueV1::RelationTable(table) => table.clone(),
                 _ => unreachable!(),
