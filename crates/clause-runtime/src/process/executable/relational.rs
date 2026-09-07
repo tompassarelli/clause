@@ -246,7 +246,7 @@ pub(super) fn sum(
     Ok(result)
 }
 
-fn scalar_plan(expression: &ExecutableExpressionV1, context: EvaluationContextV1)
+pub(super) fn scalar_plan(expression: &ExecutableExpressionV1, context: EvaluationContextV1)
     -> Result<Option<Arc<scalar_reuse::ScalarPlan>>, ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
     if context.reads.is_some() || matches!(expression, E::Constant(_) | E::Binding(_) | E::Argument(_) | E::Slot(_)) {

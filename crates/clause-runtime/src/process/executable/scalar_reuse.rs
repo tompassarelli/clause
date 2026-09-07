@@ -52,6 +52,7 @@ impl ScalarPlan {
                 E::Slot(index) => Node::Slot(*index),
                 E::Argument(index) => Node::Argument(*index),
                 E::Binding(index) => { input_only = false; Node::Binding(*index) },
+                E::Sum { .. } => { input_only = false; Node::Value(Box::new(expression.clone())) },
                 _ => { reusable = false; input_only = false; Node::Value(Box::new(expression.clone())) },
             };
             let index = nodes.len();
@@ -223,10 +224,16 @@ mod tests {
             reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         let queries = std::cell::RefCell::new(relational::SumQueries::default());
         let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
+        let effect = E::Add(Box::new(query.clone()), Box::new(query.clone()));
         for input in [2.0, 5.0, 2.0] {
             let expected = evaluate_with_reads(&query, &configuration, &[number(input)], context).unwrap();
             assert_eq!(evaluate(&query, &configuration, &[number(input)], shared).unwrap(), number(input * 8.0));
             let actual = evaluate_with_reads(&query, &configuration, &[number(input)], shared).unwrap();
+            assert_eq!(actual.value, expected.value);
+            assert_eq!(actual.reads, expected.reads);
+            let expected = evaluate_with_reads(&effect, &configuration, &[number(input)], context).unwrap();
+            assert_eq!(evaluate_for_trace(&effect, &configuration, &[number(input)], shared, false).unwrap().value, expected.value);
+            let actual = evaluate_for_trace(&effect, &configuration, &[number(input)], shared, true).unwrap();
             assert_eq!(actual.value, expected.value);
             assert_eq!(actual.reads, expected.reads);
         }
