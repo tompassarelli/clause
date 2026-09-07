@@ -1340,10 +1340,8 @@ function create_workbench_byte_envelope(
   ) {
     throw new Error("workbench byte envelope source exceeds its policy");
   }
-  for (let index = 0; index < sourceText.length; index += 1) {
-    if (sourceText.charCodeAt(index) > 255) {
-      throw new Error("workbench byte envelope source is not exact bytes");
-    }
+  if (/[^\u0000-\u00ff]/.test(sourceText)) {
+    throw new Error("workbench byte envelope source is not exact bytes");
   }
 
   const envelope: WorkbenchByteEnvelope = {
