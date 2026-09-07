@@ -141,19 +141,20 @@ impl ScalarMemo<'_> {
         configuration: &[ExecutableSlotV1], arguments: &[ExecutableValueV1], context: EvaluationContextV1)
         -> Result<ExecutableValueV1, ExecutableErrorV1> {
         debug_assert!(std::ptr::eq(expression, self.plan.expression.as_ref()));
-        {
-            let mut values = self.values.borrow_mut();
-            for index in self.row_values.borrow_mut().drain(..) { values[index] = None; }
-        }
-        Ok(self.expand(self.node(self.plan.root, configuration, arguments, EvaluationContextV1 { scalar_memo: None, ..context })?))
+        let mut values = self.values.borrow_mut();
+        let mut row_values = self.row_values.borrow_mut();
+        for index in row_values.drain(..) { values[index] = None; }
+        Ok(self.expand(self.node(self.plan.root, configuration, arguments,
+            EvaluationContextV1 { scalar_memo: None, ..context }, &mut values, &mut row_values)?))
     }
 
-    fn node(&self, index: usize, configuration: &[ExecutableSlotV1], arguments: &[ExecutableValueV1], context: EvaluationContextV1)
+    fn node(&self, index: usize, configuration: &[ExecutableSlotV1], arguments: &[ExecutableValueV1], context: EvaluationContextV1,
+        values: &mut [Option<ScalarValue>], row_values: &mut Vec<usize>)
         -> Result<ScalarValue, ExecutableErrorV1> {
-        if let Some(value) = &self.values.borrow()[index] { return Ok(*value); }
-        let eval = |index| self.node(index, configuration, arguments, context);
-        let numeric = |index| eval(index)?.as_number();
-        let boolean_value = |index| eval(index)?.as_boolean();
+        if let Some(value) = values[index] { return Ok(value); }
+        macro_rules! eval { ($index:expr) => { self.node($index, configuration, arguments, context, values, row_values) }; }
+        macro_rules! numeric { ($index:expr) => { eval!($index)?.as_number() }; }
+        macro_rules! boolean_value { ($index:expr) => { eval!($index)?.as_boolean() }; }
         let value = match self.plan.nodes[index].0 {
             Node::Value(ref expression) => self.retain(&evaluate_uncached(expression, configuration, arguments, context)?),
             Node::Number(bits) => ScalarValue::Number(bits),
@@ -164,36 +165,36 @@ impl ScalarMemo<'_> {
                 .ok_or(ExecutableErrorV1::UnknownArgument(argument))?),
             Node::Binding(binding) => self.retain(context.bindings.and_then(|bindings| bindings.get(&binding))
                 .ok_or(ExecutableErrorV1::MalformedProgram)?),
-            Node::Add(a, b) => ScalarValue::number(numeric(a)? + numeric(b)?)?,
-            Node::Subtract(a, b) => ScalarValue::number(numeric(a)? - numeric(b)?)?,
-            Node::Multiply(a, b) => ScalarValue::number(numeric(a)? * numeric(b)?)?,
+            Node::Add(a, b) => ScalarValue::number(numeric!(a)? + numeric!(b)?)?,
+            Node::Subtract(a, b) => ScalarValue::number(numeric!(a)? - numeric!(b)?)?,
+            Node::Multiply(a, b) => ScalarValue::number(numeric!(a)? * numeric!(b)?)?,
             Node::Divide(a, b) => {
-                let denominator = numeric(b)?;
+                let denominator = numeric!(b)?;
                 if denominator == 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
-                ScalarValue::number(numeric(a)? / denominator)?
+                ScalarValue::number(numeric!(a)? / denominator)?
             },
-            Node::GreaterThan(a, b) => ScalarValue::Boolean(numeric(a)? > numeric(b)?),
-            Node::LessThanOrEqual(a, b) => ScalarValue::Boolean(numeric(a)? <= numeric(b)?),
-            Node::Equal(a, b) => ScalarValue::Boolean(self.equal(eval(a)?, eval(b)?)),
-            Node::And(a, b) => ScalarValue::Boolean(boolean_value(a)? && boolean_value(b)?),
-            Node::Not(a) => ScalarValue::Boolean(!boolean_value(a)?),
+            Node::GreaterThan(a, b) => ScalarValue::Boolean(numeric!(a)? > numeric!(b)?),
+            Node::LessThanOrEqual(a, b) => ScalarValue::Boolean(numeric!(a)? <= numeric!(b)?),
+            Node::Equal(a, b) => ScalarValue::Boolean(self.equal(eval!(a)?, eval!(b)?)),
+            Node::And(a, b) => ScalarValue::Boolean(boolean_value!(a)? && boolean_value!(b)?),
+            Node::Not(a) => ScalarValue::Boolean(!boolean_value!(a)?),
             Node::SquareRoot(a) => {
-                let value = numeric(a)?;
+                let value = numeric!(a)?;
                 if value < 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
                 ScalarValue::number(value.sqrt())?
             },
-            Node::Conditional(a, b, c) => eval(if boolean_value(a)? { b } else { c })?,
+            Node::Conditional(a, b, c) => eval!(if boolean_value!(a)? { b } else { c })?,
             Node::Clamp(a, b, c) => {
-                let value = numeric(a)?;
-                let lower = numeric(b)?;
-                let upper = numeric(c)?;
+                let value = numeric!(a)?;
+                let lower = numeric!(b)?;
+                let upper = numeric!(c)?;
                 if lower > upper { return Err(ExecutableErrorV1::NumericDomain); }
                 ScalarValue::number(value.clamp(lower, upper))?
             },
         };
         if self.plan.nodes[index].1 {
-            self.values.borrow_mut()[index] = Some(value);
-            if !self.plan.nodes[index].2 { self.row_values.borrow_mut().push(index); }
+            values[index] = Some(value);
+            if !self.plan.nodes[index].2 { row_values.push(index); }
         }
         Ok(value)
     }
