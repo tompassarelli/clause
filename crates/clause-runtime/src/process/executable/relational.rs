@@ -205,7 +205,13 @@ pub(super) struct SumQueries {
 }
 
 #[derive(Default)]
-pub(super) struct ScalarPlans(Mutex<Vec<Arc<scalar_reuse::ScalarPlan>>>);
+pub(super) struct ScalarPlans(Mutex<Vec<Arc<scalar_reuse::ScalarPlan>>>, Mutex<EffectPlans>);
+
+#[derive(Default)]
+struct EffectPlans {
+    program: Option<Arc<ExecutableProgramV1>>,
+    plans: BTreeMap<(usize, usize, usize), Option<Arc<scalar_reuse::ScalarPlan>>>,
+}
 
 struct SumPrefix {
     predicates: Vec<ExecutableExpressionV1>,
@@ -311,6 +317,23 @@ pub(super) fn sum_with_shape(
         }
     }
     Ok(result)
+}
+
+pub(super) fn effect_scalar_plan(
+    program: &Arc<ExecutableProgramV1>, coordinate: (usize, usize, usize),
+    expression: &ExecutableExpressionV1, context: EvaluationContextV1,
+) -> Result<Option<Arc<scalar_reuse::ScalarPlan>>, ExecutableErrorV1> {
+    let Some(queries) = context.sum_queries else { return Ok(None) };
+    let retained = queries.borrow().scalar_plans.clone();
+    let mut effects = retained.1.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+    if effects.program.as_ref().is_none_or(|prior| !Arc::ptr_eq(prior, program)) {
+        effects.plans.clear();
+        effects.program = Some(program.clone());
+    }
+    if let Some(plan) = effects.plans.get(&coordinate) { return Ok(plan.clone()); }
+    let plan = scalar_plan(expression, context)?;
+    effects.plans.insert(coordinate, plan.clone());
+    Ok(plan)
 }
 
 pub(super) fn scalar_plan(expression: &ExecutableExpressionV1, context: EvaluationContextV1)

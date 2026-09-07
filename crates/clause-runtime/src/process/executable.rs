@@ -7592,7 +7592,7 @@ impl StepEvaluator<'_> {
                             let plan = if trace.is_none() {
                                 let key = (*rule_index, assignment, effect_index);
                                 if let std::collections::btree_map::Entry::Vacant(entry) = effect_plans.entry(key) {
-                                    entry.insert(relational::scalar_plan(value, evaluation)?);
+                                    entry.insert(relational::effect_scalar_plan(self.program, key, value, evaluation)?);
                                 }
                                 effect_plans[&key].as_ref()
                             } else { None };
