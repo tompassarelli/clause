@@ -1192,11 +1192,11 @@ function dispatch_session_request(
     : session_command_max_bytes;
   if (exact_byte_array_p(request, maximum) || binary_text_p(request, maximum)) {
     const api = session_module_functions(module);
-    const typed_request = typed_bytes(request);
+    const typed_request = observeSourceTransferPhase("typed-array-construction", () => typed_bytes(request));
     const status = process_status(
-      operation === "open"
+      observeSourceTransferPhase("bulk-call", () => operation === "open"
         ? api.open(typed_request)
-        : api.command(typed_request),
+        : api.command(typed_request)),
     );
     if (!equivalent(status, 0)) {
       (() => {
@@ -1210,7 +1210,7 @@ function dispatch_session_request(
         );
       })();
     }
-    const event = api.event();
+    const event = observeSourceTransferPhase("event-bulk", () => api.event());
     const length = event.length;
     if (length < 21 || length > cse1_max_bytes) {
       (() => {
@@ -1220,11 +1220,13 @@ function dispatch_session_request(
     if (!(event instanceof Uint8Array)) {
       throw new Error("CSE1 bulk event byte is out of bounds");
     }
-    const chunks: string[] = [];
-    for (let start = 0; start < event.length; start += 4096) {
-      chunks.push(String.fromCharCode(...event.subarray(start, start + 4096)));
-    }
-    return chunks.join("");
+    return observeSourceTransferPhase("event-array-construction", () => {
+      const chunks: string[] = [];
+      for (let start = 0; start < event.length; start += 4096) {
+        chunks.push(String.fromCharCode(...event.subarray(start, start + 4096)));
+      }
+      return chunks.join("");
+    });
   } else {
     return (() => {
       throw new Error(
@@ -2014,9 +2016,8 @@ function apply_session_command_bang(
   session: WasmSession,
   command: ExactBytes,
 ): Cse1Event {
-  const event = decode_cse1_event(
-    dispatch_session_request(module, command, "command"),
-  );
+  const bytes = dispatch_session_request(module, command, "command");
+  const event = observeSourceTransferPhase("cse1-decode", () => decode_cse1_event(bytes));
   const current_sequence = session.sequence.value;
   if (
     !equivalent(event.slot, session.handle.slot) ||
