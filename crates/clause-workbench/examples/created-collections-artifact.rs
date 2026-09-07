@@ -17,6 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     std::fs::write(directory.join("encounter.clause"), &source)?;
     let mut w = ResidentSourceWorkbenchV1::open(&source)?;
     std::fs::write(directory.join("initial.cwr1"), &w.generation().cwr1)?;
+    std::fs::write(directory.join("initial.cps1"), w.source_preparation()?)?;
     let effect = w
         .scalar_effects()?
         .into_iter()

@@ -140,9 +140,10 @@ fn declared_focus_changes_contracts_patterns_and_printing_together() {
         .find(|effect| effect.expression == b"?limited").unwrap();
     w.edit_scalar_effect(w.generation().handle, &effect, b"?limited / 2.0").unwrap();
     let encoded = w.last_source_edit().unwrap();
-    let witness = clause_runtime::decode_executable_source_edit_v1(encoded).unwrap();
-    assert_eq!(witness.declared_frontend, declared.as_bytes());
-    assert_eq!(clause_runtime::encode_executable_source_edit_v1(&witness).unwrap(), encoded);
+    let transaction = clause_runtime::decode_executable_scalar_edit_transaction_v1(encoded).unwrap();
+    assert_eq!(clause_runtime::encode_executable_scalar_edit_transaction_v1(&transaction).unwrap(), encoded);
+    assert_eq!(w.source_preparation().unwrap(), clause_runtime::encode_executable_source_preparation_v1(
+        w.exact_source(), transaction.new_root, declared.as_bytes()).unwrap());
     assert_eq!(number(field(field(&settle(&mut w), b"first"), b"charge")), 5.0);
 }
 

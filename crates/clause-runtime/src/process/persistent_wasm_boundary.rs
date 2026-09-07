@@ -294,6 +294,24 @@ struct LiveSessionV1 {
     last_configuration_revision: u64,
 }
 
+/// A local checked transaction cannot be constructed or altered by a caller.
+/// Its retained preparation and custody bind commit to the exact checked edit.
+pub struct PreparedWasmScalarEditV1 {
+    handle: WasmSessionHandleV1,
+    sequence: u64,
+    previous: std::sync::Arc<super::CheckedExecutableSourcePreparationV1>,
+    checked: super::CheckedExecutableSourceEditV1,
+    transaction: Vec<u8>,
+}
+
+impl PreparedWasmScalarEditV1 {
+    pub fn exact_transaction(&self) -> &[u8] { &self.transaction }
+    pub fn analysis(&self) -> &std::sync::Arc<CheckedCanonicalSourceAnalysisV1> { &self.checked.preparation.analysis }
+    pub fn exact_cpp1(&self) -> &[u8] { &self.checked.preparation.exact_cpp1 }
+    pub fn physical_plan(&self) -> &super::ExecutablePhysicalPlanV1 { &self.checked.preparation.plan }
+    pub fn lowered(&self) -> &super::ExecutableCanonicalProgramV1 { &self.checked.preparation.lowered }
+}
+
 /// A bounded physical boundary with one transactionally replaceable live slot.
 /// Its handle never substitutes for a Clause identity; generation exists only
 /// to reject stale host custody.
@@ -504,6 +522,50 @@ impl WasmPersistentSessionBoundaryV1 {
             Some(preparation) => super::check_prepared_executable_source_edit_v1(witness, scope, preparation),
             None => super::check_executable_source_edit_v1(witness, scope),
         }.map_err(|_| WasmProcessStatusV1::ProcessRejected)
+    }
+
+    pub fn prepare_scalar_edit(&self, handle: WasmSessionHandleV1, sequence: u64,
+        new_root: ProgramChangeOccurrenceId, operation: &super::ExecutableSourceOperationV1,
+    ) -> Result<PreparedWasmScalarEditV1, WasmProcessStatusV1> {
+        if handle.slot != SLOT || self.generation != Some(handle.generation) { return Err(WasmProcessStatusV1::StaleSessionHandle); }
+        let live = self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
+        if live.sequence != sequence { return Err(WasmProcessStatusV1::SequenceRejected); }
+        let previous = live.source_preparation.as_ref().ok_or(WasmProcessStatusV1::ProcessRejected)?;
+        let checked = super::derive_prepared_scalar_edit_v1(previous, operation, new_root).map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        let transaction = super::encode_executable_scalar_edit_transaction_v1(&super::ExecutableScalarEditTransactionV1 {
+            old_plan: checked.old_plan, new_plan: checked.new_plan, new_root, operation: operation.clone(),
+        }).map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        Ok(PreparedWasmScalarEditV1 { handle, sequence, previous: std::sync::Arc::clone(previous), checked, transaction })
+    }
+
+    pub fn commit_scalar_edit(&mut self, prepared: PreparedWasmScalarEditV1) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+        let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::Transfer);
+        if prepared.handle.slot != SLOT || self.generation != Some(prepared.handle.generation) { return Err(WasmProcessStatusV1::StaleSessionHandle); }
+        let live = self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
+        if live.sequence != prepared.sequence { return Err(WasmProcessStatusV1::SequenceRejected); }
+        if live.source_preparation.as_ref().is_none_or(|current| !std::sync::Arc::ptr_eq(current, &prepared.previous)) {
+            return Err(WasmProcessStatusV1::ProcessRejected);
+        }
+        let mut open = decode_wasm_session_open_v1(&live.exact_open)?;
+        if super::physical_plan_identity(&open.physical_plan_bytes) != prepared.checked.old_plan { return Err(WasmProcessStatusV1::ProcessRejected); }
+        open.physical_plan_bytes = prepared.checked.preparation.exact_cpp1.clone();
+        open.allocation = WasmSessionAllocationV1::New;
+        self.open_inner(&encode_wasm_session_open_v1(&open)?, Some(&prepared.checked), None)
+    }
+
+    pub fn scalar_edit(&mut self, handle: WasmSessionHandleV1, sequence: u64, bytes: &[u8]) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+        let transaction = super::decode_executable_scalar_edit_transaction_v1(bytes).map_err(|_| WasmProcessStatusV1::MalformedRequest)?;
+        let prepared = self.prepare_scalar_edit(handle, sequence, transaction.new_root, &transaction.operation)?;
+        if prepared.checked.old_plan != transaction.old_plan || prepared.checked.new_plan != transaction.new_plan {
+            return Err(WasmProcessStatusV1::ProcessRejected);
+        }
+        self.commit_scalar_edit(prepared)
+    }
+
+    pub fn scalar_edit_bulk(&mut self, handle: WasmSessionHandleV1, sequence: u64, bytes: &[u8]) -> Result<(), WasmProcessStatusV1> {
+        let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::SourceEditBulk);
+        let event = self.scalar_edit(handle, sequence, bytes)?;
+        self.install_event(event)
     }
 
     /// A compiler witness is replayed against the exact currently owned plan.
@@ -2290,6 +2352,13 @@ mod wasm_exports {
     }
 
     #[wasm_bindgen(skip_typescript)]
+    pub fn clause_session_v1_scalar_edit_bulk(slot: u32, generation: u32, sequence: u64, transaction: &[u8]) -> u32 {
+        SESSION_BOUNDARY.with_borrow_mut(|boundary| match boundary.scalar_edit_bulk(super::WasmSessionHandleV1 { slot, generation }, sequence, transaction) {
+            Ok(()) => WasmProcessStatusV1::Ready as u32, Err(error) => error as u32,
+        })
+    }
+
+    #[wasm_bindgen(skip_typescript)]
     pub fn clause_session_v1_source_edit_bulk(slot: u32, generation: u32, sequence: u64, open: &[u8], witness: &[u8]) -> u32 {
         SESSION_BOUNDARY.with_borrow_mut(|boundary| match boundary.source_edit_bulk(
             super::WasmSessionHandleV1 { slot, generation }, sequence, open, witness,
@@ -2334,6 +2403,7 @@ mod wasm_exports {
 export function clause_session_v1_open_bulk(request: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_command_bulk(request: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_prepare_source(slot: number, generation: number, sequence: bigint, preparation: Uint8Array<ArrayBuffer>): number;
+export function clause_session_v1_scalar_edit_bulk(slot: number, generation: number, sequence: bigint, transaction: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_source_edit_bulk(slot: number, generation: number, sequence: bigint, open: Uint8Array<ArrayBuffer>, witness: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_intervene_bulk(slot: number, generation: number, request: Uint8Array<ArrayBuffer>): Uint8Array;
 "#;

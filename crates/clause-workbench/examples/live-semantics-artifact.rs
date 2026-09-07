@@ -14,6 +14,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "../../../test-vectors/authoring/live-encounter.clause"
     ))?;
     std::fs::write(directory.join("initial.cwr1"), &workbench.generation().cwr1)?;
+    std::fs::write(directory.join("initial.cps1"), workbench.source_preparation()?)?;
     let attack =
         decode_executable_occurrence_v1(&workbench.handler_occurrence(b"party-attack", &[])?)?
             .entry;

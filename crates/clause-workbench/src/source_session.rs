@@ -101,7 +101,7 @@ pub struct ResidentSourceWorkbenchV1 {
     last_projection: Option<WasmSessionProjectionV1>,
     next_change: u64,
     exact_source: Vec<u8>,
-    source_snapshot: Option<clause_package::CheckedCanonicalSourceAnalysisV1>,
+    source_snapshot: Option<std::sync::Arc<clause_package::CheckedCanonicalSourceAnalysisV1>>,
     default_occurrences: Vec<Vec<u8>>,
     handlers: BTreeMap<Vec<u8>, Vec<ExecutableCanonicalHandlerBindingV1>>,
     last_source_edit: Option<Vec<u8>>,
@@ -205,7 +205,7 @@ impl ResidentSourceWorkbenchV1 {
         if let Some((change, bytes)) = checkpoint {
             workbench.next_change = change.checked_sub(1)
                 .ok_or_else(|| ResidentSourceWorkbenchErrorV1("invalid checkpoint source root".into()))?;
-            workbench.install_source_inner(exact_source, None, Some(bytes), None)?;
+            workbench.install_source_inner(exact_source, None, Some(bytes), None, None)?;
         } else {
             workbench.install_source(exact_source)?;
         }
@@ -357,23 +357,15 @@ impl ResidentSourceWorkbenchV1 {
         if self.pending.is_some() {
             return Err(ResidentSourceWorkbenchErrorV1("settle hidden candidate before changed source edit".into()));
         }
-        let old_root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change));
         let new_root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change.checked_add(1)
             .ok_or_else(|| ResidentSourceWorkbenchErrorV1("source sequence exhausted".into()))?));
-        let analysis = self.source_snapshot.as_ref().expect("an installed workbench retains its source snapshot");
-        let (cst, plan) = (analysis.source(), analysis.plan());
-        let edit = clause_package::replace_canonical_scalar_effect_v1(&cst, &plan, selected, replacement, new_root)
-            .map_err(|error| debug_error("structured edit", error))?;
-        let witness = clause_runtime::ExecutableSourceEditV1 {
-            old_source: self.exact_source.clone(), old_root, new_root,
-            declared_frontend: self.declared_frontend.exact_source().to_vec(),
-            operation: clause_runtime::ExecutableSourceOperationV1::ScalarEffect {
-                handler: selected.handler, effect: selected.effect, field_path: selected.field_path.clone(),
-                expression: replacement.to_vec(),
-            }, old_cpp1: self.generation.cpp1.clone(), new_cpp1: vec![],
+        let operation = clause_runtime::ExecutableSourceOperationV1::ScalarEffect {
+            handler: selected.handler, effect: selected.effect, field_path: selected.field_path.clone(), expression: replacement.to_vec(),
         };
-        let next_analysis = analysis.advance(&edit).map_err(|error| debug_error("incremental source elaboration", error))?;
-        self.install_source_inner(edit.source().exact_source(), Some(witness), None, Some(next_analysis))?;
+        let prepared = self.boundary.prepare_scalar_edit(captured_handle, self.sequence, new_root, &operation)?;
+        let analysis = std::sync::Arc::clone(prepared.analysis());
+        let source = analysis.source().exact_source().to_vec();
+        self.install_source_inner(&source, None, None, Some(analysis), Some(prepared))?;
         while self.boundary.reclaim_retired() {}
         Ok(self.generation.clone())
     }
@@ -446,7 +438,7 @@ impl ResidentSourceWorkbenchV1 {
             new_cpp1: vec![],
         };
         let next_analysis = analysis.advance(&edit).map_err(|error| debug_error("incremental source elaboration", error))?;
-        self.install_source_inner(edit.source().exact_source(), Some(witness), None, Some(next_analysis))?;
+        self.install_source_inner(edit.source().exact_source(), Some(witness), None, Some(std::sync::Arc::new(next_analysis)), None)?;
         while self.boundary.reclaim_retired() {}
         Ok(self.generation.clone())
     }
@@ -731,7 +723,7 @@ impl ResidentSourceWorkbenchV1 {
         exact_source: &[u8],
         edit: Option<clause_runtime::ExecutableSourceEditV1>,
     ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
-        self.install_source_inner(exact_source, edit, None, None)
+        self.install_source_inner(exact_source, edit, None, None, None)
     }
 
     fn install_source_inner(
@@ -739,7 +731,8 @@ impl ResidentSourceWorkbenchV1 {
         exact_source: &[u8],
         mut edit: Option<clause_runtime::ExecutableSourceEditV1>,
         checkpoint: Option<&[u8]>,
-        analysis: Option<clause_package::CheckedCanonicalSourceAnalysisV1>,
+        analysis: Option<std::sync::Arc<clause_package::CheckedCanonicalSourceAnalysisV1>>,
+        prepared: Option<clause_runtime::PreparedWasmScalarEditV1>,
     ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
         let next_change = self.next_change.checked_add(1).ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("source change sequence exhausted".into())
@@ -751,8 +744,8 @@ impl ResidentSourceWorkbenchV1 {
                 let cst = self.read_source(exact_source).map_err(|error| debug_error("canonical source read", error))?;
                 let plan = plan_independent_canonical_source_allocations_v1(&cst, ProgramChangeOccurrenceId::from_bytes(sequence_id(next_change)))
                     .map_err(|error| debug_error("canonical source allocation", error))?;
-                clause_package::CheckedCanonicalSourceAnalysisV1::new(cst, plan, CanonicalSourceContextV1 { universe: scope.universe, semantics: scope.semantics })
-                    .map_err(|error| debug_error("canonical source elaboration", error))?
+                std::sync::Arc::new(clause_package::CheckedCanonicalSourceAnalysisV1::new(cst, plan, CanonicalSourceContextV1 { universe: scope.universe, semantics: scope.semantics })
+                    .map_err(|error| debug_error("canonical source elaboration", error))?)
             }
         };
         let cst = analysis.source();
@@ -781,13 +774,11 @@ impl ResidentSourceWorkbenchV1 {
             }
         }
         let template_input = physical_plan.input.clone();
-        let mut lowered = lower_canonical_executable_program_v1(
-            scope,
-            &compiled.state_cells,
-            &compiled.executable_handlers,
-            projection_roles,
-        )
-        .map_err(|error| boxed_error("generic canonical lowering", error))?;
+        let mut lowered = match &prepared {
+            Some(prepared) => prepared.lowered().clone(),
+            None => lower_canonical_executable_program_v1(scope, &compiled.state_cells, &compiled.executable_handlers, projection_roles)
+                .map_err(|error| boxed_error("generic canonical lowering", error))?,
+        };
         if let Some(checkpoint) = checkpoint {
             let recorded = clause_runtime::decode_wasm_session_open_v1(
                 clause_runtime::wasm_session_checkpoint_open_v1(checkpoint)?,
@@ -954,15 +945,17 @@ impl ResidentSourceWorkbenchV1 {
                 .map_err(|error| boxed_error("default external occurrence encode", error))?,
             );
         }
-        physical_plan
-            .project_referent_input_domains(scope)
-            .map_err(|error| boxed_error("referent input domain projection", error))?;
-        if !declarative_only {
-            physical_plan.bind_source_snapshot(scope, &compiled, cst.artifact(), allocation_plan.root())
-                .map_err(|error| boxed_error("checked source snapshot", error))?;
-        }
-        let cpp1 = encode_executable_physical_plan_v1(&physical_plan)
-            .map_err(|error| boxed_error("CPP1 encode", error))?;
+        let cpp1 = if let Some(prepared) = &prepared {
+            prepared.exact_cpp1().to_vec()
+        } else {
+            physical_plan.project_referent_input_domains(scope)
+                .map_err(|error| boxed_error("referent input domain projection", error))?;
+            if !declarative_only {
+                physical_plan.bind_source_snapshot(scope, &compiled, cst.artifact(), allocation_plan.root())
+                    .map_err(|error| boxed_error("checked source snapshot", error))?;
+            }
+            encode_executable_physical_plan_v1(&physical_plan).map_err(|error| boxed_error("CPP1 encode", error))?
+        };
         let open = WasmSessionOpenV1 {
             package_bytes: template.package_bytes.clone(),
             application: template.application,
@@ -985,16 +978,18 @@ impl ResidentSourceWorkbenchV1 {
         // The opened allocation only replaces a fixed-width, already-valid epoch.
         encode_wasm_process_request_v1(&cwr1)?;
         let exact_open = encode_wasm_session_open_v1(&open)?;
-        let source_edit = edit.as_mut().map(|edit| {
+        let source_edit = if let Some(prepared) = &prepared { Some(prepared.exact_transaction().to_vec()) } else { edit.as_mut().map(|edit| {
             edit.new_cpp1 = cpp1.clone();
             self.boundary.check_source_edit(self.generation.handle, self.sequence, edit)
                 .map_err(|error| boxed_error("source continuity check", error))?;
             clause_runtime::encode_executable_source_edit_v1(edit)
                 .map_err(|error| boxed_error("source edit encode", error))
-        }).transpose()?;
+        }).transpose()? };
         let preparation = clause_runtime::encode_executable_source_preparation_v1(exact_source, allocation_plan.root(), self.declared_frontend.exact_source())
             .map_err(|error| boxed_error("source preparation encode", error))?;
-        let opened = if let Some(checkpoint) = checkpoint {
+        let opened = if let Some(prepared) = prepared {
+            self.boundary.commit_scalar_edit(prepared)?
+        } else if let Some(checkpoint) = checkpoint {
             self.boundary.reopen_admitted(&exact_open, checkpoint)?
         } else if let Some(witness) = &source_edit {
             self.boundary.open_source_edit(self.generation.handle, self.sequence, &exact_open, witness)?

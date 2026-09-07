@@ -40,7 +40,7 @@ fn serve(source_path: &Path) -> ExitCode {
         }
     };
     let mut output = std::io::stdout().lock();
-    if let Err(error) = write_generation(&mut output, &workbench, started, false) {
+    if let Err(error) = write_generation(&mut output, &workbench, started, false, true) {
         eprintln!("resident schedule generation failed: {error}");
         return ExitCode::FAILURE;
     }
@@ -56,11 +56,19 @@ fn serve(source_path: &Path) -> ExitCode {
         let command = line.trim();
         match command {
             "quit" => return ExitCode::SUCCESS,
+            "prepare" => {
+                let result = workbench.source_preparation().map_err(|error| error.to_string())
+                    .and_then(|bytes| {
+                        writeln!(output, "preparation\t{}\t{}", workbench.generation().handle.generation, hex(&bytes))
+                            .and_then(|()| output.flush()).map_err(|error| error.to_string())
+                    });
+                if let Err(error) = result && write_error(&mut output, &error).is_err() { return ExitCode::FAILURE; }
+            },
             _ if command.starts_with("edit\t") => {
                 let started = Instant::now();
                 let result =
                     edit_scalar_effect(&mut workbench, source_path, command).and_then(|changed| {
-                        write_generation(&mut output, &workbench, started, changed)
+                        write_generation(&mut output, &workbench, started, changed, false)
                             .map_err(|error| error.to_string())
                     });
                 if let Err(error) = result
@@ -86,6 +94,7 @@ fn write_generation(
     workbench: &ResidentSourceWorkbenchV1,
     started: Instant,
     edited: bool,
+    include_preparation: bool,
 ) -> Result<(), Box<dyn Error>> {
     let task = referent(workbench, b"prototype")?;
     let root = referent(workbench, b"approval")?;
@@ -107,14 +116,14 @@ fn write_generation(
     .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
     writeln!(
         output,
-        "generation\t{}\t{}\t{}\t{}\t{}\t{}",
+        "generation\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         workbench.generation().handle.generation,
         started.elapsed().as_micros(),
         hex(&workbench.generation().cwr1),
         if edited {
             hex(workbench
                 .last_source_edit()
-                .ok_or("edited generation omitted CET1")?)
+                .ok_or("edited generation omitted checked transaction")?)
         } else {
             String::new()
         },
@@ -124,6 +133,7 @@ fn write_generation(
             .find(|(designation, _)| *designation == b"complete")
             .ok_or("schedule omitted completion handler")?
             .1,
+        if include_preparation { hex(&workbench.source_preparation()?) } else { String::new() },
     )?;
     output.flush()?;
     Ok(())
