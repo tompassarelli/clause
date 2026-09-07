@@ -82,6 +82,33 @@ mod tests {
     use ExecutableExpressionV1 as E;
 
     #[test]
+    fn sum_contributions_reuse_structure_with_fresh_values_for_each_match_and_query() {
+        let number = |value| ExecutableValueV1::number(value).unwrap();
+        let configuration = [ExecutableValueV1::RelationTable(ExecutableRelationTableV1 {
+            subject_domain: 7, value_kind: ExecutableRelationValueKindV1::Number,
+            value_domain: None, cardinality: ExecutableRelationCardinalityV1::One, total: false,
+            rows: Arc::new([1.0, 3.0].into_iter().enumerate().map(|(id, value)|
+                (ExecutableReferentV1::declared(7, id as u32), [number(value)].into()))
+                .collect::<BTreeMap<_, _>>().into()),
+        }).into()];
+        let repeated = E::Multiply(Box::new(E::Binding(1)), Box::new(E::Argument(0)));
+        let query = E::Sum { inputs: vec![E::Argument(0)],
+            predicates: vec![E::RelationMatch(0, Box::new(E::Binding(0)), Box::new(E::Binding(1)))],
+            value: Box::new(E::Add(Box::new(repeated.clone()), Box::new(repeated))) };
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
+            reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
+        let queries = std::cell::RefCell::new(relational::SumQueries::default());
+        let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
+        for input in [2.0, 5.0, 2.0] {
+            let expected = evaluate_with_reads(&query, &configuration, &[number(input)], context).unwrap();
+            assert_eq!(evaluate(&query, &configuration, &[number(input)], shared).unwrap(), number(input * 8.0));
+            let actual = evaluate_with_reads(&query, &configuration, &[number(input)], shared).unwrap();
+            assert_eq!(actual.value, expected.value);
+            assert_eq!(actual.reads, expected.reads);
+        }
+    }
+
+    #[test]
     fn lazy_scalar_reuse_preserves_changed_bindings_branch_errors_and_reads() {
         let number = |value| E::Constant(ExecutableValueV1::number(value).unwrap());
         let repeated = E::Multiply(Box::new(E::Binding(0)), Box::new(E::Argument(0)));

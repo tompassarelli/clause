@@ -211,6 +211,7 @@ pub(super) fn sum(
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumQuery);
     let query_reads = std::cell::RefCell::new(Vec::new());
     let query_context = EvaluationContextV1 { reads: context.reads.map(|_| &query_reads), ..context };
+    let plan = scalar_plan(value, query_context)?;
     let mut visits = 0;
     let mut total = 0.0;
     for (matched, accepted) in match_sum(predicates, configuration, &inputs,
@@ -221,8 +222,10 @@ pub(super) fn sum(
             }
         }
         if accepted {
-            let contribution = evaluate(value, configuration, &inputs,
-                EvaluationContextV1 { bindings: Some(&matched.bindings), ..query_context })?;
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
+            let memo = plan.as_ref().map(|plan| plan.memo());
+            let contribution = evaluate(plan.as_ref().map_or(value, |plan| plan.expression.as_ref()), configuration, &inputs,
+                EvaluationContextV1 { bindings: Some(&matched.bindings), scalar_memo: memo.as_ref(), ..query_context })?;
             total += contribution.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
             if !total.is_finite() {
                 return Err(ExecutableErrorV1::NumericDomain);
@@ -241,6 +244,24 @@ pub(super) fn sum(
         });
     }
     Ok(result)
+}
+
+fn scalar_plan(expression: &ExecutableExpressionV1, context: EvaluationContextV1)
+    -> Result<Option<Arc<scalar_reuse::ScalarPlan>>, ExecutableErrorV1> {
+    use ExecutableExpressionV1 as E;
+    if context.reads.is_some() || matches!(expression, E::Constant(_) | E::Binding(_) | E::Argument(_) | E::Slot(_)) {
+        return Ok(None);
+    }
+    let Some(queries) = context.sum_queries else { return Ok(None) };
+    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanLookup);
+    let mut queries = queries.borrow_mut();
+    if let Some(existing) = queries.scalar_plans.iter().find(|plan| plan.expression.as_ref() == expression) {
+        return Ok(Some(existing.clone()));
+    }
+    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanBuild);
+    let plan = Arc::new(scalar_reuse::ScalarPlan::new(expression)?);
+    queries.scalar_plans.push(plan.clone());
+    Ok(Some(plan))
 }
 
 fn match_sum(
@@ -659,17 +680,7 @@ fn match_rule_from(
             }
             active = next.into_values().collect();
         } else {
-            let plan = if !capture && let Some(queries) = context.sum_queries {
-                let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanLookup);
-                let mut queries = queries.borrow_mut();
-                let existing = queries.scalar_plans.iter().find(|plan| plan.expression.as_ref() == predicate).cloned();
-                Some(if let Some(existing) = existing { existing } else {
-                    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanBuild);
-                    let plan = Arc::new(scalar_reuse::ScalarPlan::new(predicate)?);
-                    queries.scalar_plans.push(plan.clone());
-                    plan
-                })
-            } else { None };
+            let plan = if capture { None } else { scalar_plan(predicate, context)? };
             let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
             let mut next = Vec::new();
             for mut matched in active {
