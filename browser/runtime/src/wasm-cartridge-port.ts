@@ -2056,6 +2056,11 @@ function parse_canonical_blob(
 }
 
 function ascii_text(bytes: CanonicalBytes, label: string): string {
+  if (typeof bytes === "string") {
+    if (bytes.length === 0 || bytes.length > 128) throw new Error(`${label} is outside its text bound`);
+    if (/[^\x20-\x7e]/.test(bytes)) throw new Error(`${label} is not canonical ASCII`);
+    return bytes;
+  }
   if (equivalent(bytes.length, 0) || bytes.length > 128) {
     (() => {
       throw new Error(concatenate(label, " is outside its text bound"));
@@ -3048,7 +3053,7 @@ export function explainSession(module: unknown, incomingSession: unknown, entry:
 export function sourceContinuity(module: unknown, incomingSession: unknown): ProjectedValue {
   const session = require_live_session(incomingSession);
   const bytes = diagnosticModule(module).clause_session_v1_source_continuity_bulk(session.handle.slot, session.handle.generation);
-  return realize_projection_node(decode_canonical_term([...bytes], source_continuity_max_bytes));
+  return realize_projection_node(decode_canonical_term(byteTextDecoder.decode(new Uint16Array(bytes)), source_continuity_max_bytes));
 }
 
 /** Read-only opaque CIQ1/CIQ2 request: all search and semantic evaluation occurs

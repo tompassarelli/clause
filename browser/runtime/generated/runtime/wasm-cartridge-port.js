@@ -1295,6 +1295,13 @@ function parse_canonical_blob(bytes, offset, label) {
     return { bytes: canonical_byte_range(bytes, header_end, end), next: end };
 }
 function ascii_text(bytes, label) {
+    if (typeof bytes === "string") {
+        if (bytes.length === 0 || bytes.length > 128)
+            throw new Error(`${label} is outside its text bound`);
+        if (/[^\x20-\x7e]/.test(bytes))
+            throw new Error(`${label} is not canonical ASCII`);
+        return bytes;
+    }
     if (equivalent(bytes.length, 0) || bytes.length > 128) {
         (() => {
             throw new Error(concatenate(label, " is outside its text bound"));
@@ -2089,7 +2096,7 @@ export function explainSession(module, incomingSession, entry) {
 export function sourceContinuity(module, incomingSession) {
     const session = require_live_session(incomingSession);
     const bytes = diagnosticModule(module).clause_session_v1_source_continuity_bulk(session.handle.slot, session.handle.generation);
-    return realize_projection_node(decode_canonical_term([...bytes], source_continuity_max_bytes));
+    return realize_projection_node(decode_canonical_term(byteTextDecoder.decode(new Uint16Array(bytes)), source_continuity_max_bytes));
 }
 /** Read-only opaque CIQ1/CIQ2 request: all search and semantic evaluation occurs
  * inside the live Wasm runtime against a retained actual event. */
