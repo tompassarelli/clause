@@ -3015,6 +3015,7 @@ export function interveneSession(module: unknown, incomingSession: unknown, quer
 }
 
 export { checked_referent as checkedProjectedReferent };
+export { decode_cse1_event as decodeSessionEvent };
 export interface InterventionCoordinate { readonly slot: number; readonly subject?: ProjectedReferent }
 export interface FiniteScalarChange extends InterventionCoordinate { readonly value: boolean | number }
 export type FiniteScalarDesired = boolean | (InterventionCoordinate & (

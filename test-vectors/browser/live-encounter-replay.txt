@@ -1,0 +1,15 @@
+# Each noncomment line has a zero-based input index. Time is explicit.
+tick 16
+key BeginEncounter down
+tick 16
+scalar PointerWorldX 2
+scalar PointerWorldZ 4
+key IssueMove down
+key Attack down
+tick 16
+tick 16
+key Heal down
+tick 16
+key Ward down
+tick 16
+tick 32
