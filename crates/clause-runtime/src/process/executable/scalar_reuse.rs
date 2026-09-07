@@ -3,7 +3,7 @@ use super::*;
 
 pub(super) struct ScalarPlan {
     pub expression: Box<ExecutableExpressionV1>,
-    nodes: Vec<(Node, bool)>,
+    nodes: Vec<(Node, bool, bool)>,
     root: usize,
 }
 
@@ -19,16 +19,18 @@ impl ScalarPlan {
     pub fn new(expression: &ExecutableExpressionV1) -> Result<Self, ExecutableErrorV1> {
         let mut nodes = Vec::new();
         let mut interned = BTreeMap::<Vec<u8>, usize>::new();
-        fn collect(expression: &ExecutableExpressionV1, nodes: &mut Vec<(Node, bool)>,
+        fn collect(expression: &ExecutableExpressionV1, nodes: &mut Vec<(Node, bool, bool)>,
             interned: &mut BTreeMap<Vec<u8>, usize>) -> Result<usize, ExecutableErrorV1> {
             use ExecutableExpressionV1 as E;
             let mut key = Vec::new();
             encode_expression(&mut key, expression)?;
             if let Some(index) = interned.get(&key) { return Ok(*index); }
             let mut reusable = true;
+            let mut input_only = true;
             let mut child = |expression: &E| -> Result<usize, ExecutableErrorV1> {
                 let index = collect(expression, nodes, interned)?;
                 reusable &= nodes[index].1;
+                input_only &= nodes[index].2;
                 Ok(index)
             };
             let node = match expression {
@@ -49,11 +51,11 @@ impl ScalarPlan {
                 E::Constant(_) => Node::Value(Box::new(expression.clone())),
                 E::Slot(index) => Node::Slot(*index),
                 E::Argument(index) => Node::Argument(*index),
-                E::Binding(index) => Node::Binding(*index),
-                _ => { reusable = false; Node::Value(Box::new(expression.clone())) },
+                E::Binding(index) => { input_only = false; Node::Binding(*index) },
+                _ => { reusable = false; input_only = false; Node::Value(Box::new(expression.clone())) },
             };
             let index = nodes.len();
-            nodes.push((node, reusable));
+            nodes.push((node, reusable, input_only));
             if reusable { interned.insert(key, index); }
             Ok(index)
         }
@@ -63,7 +65,8 @@ impl ScalarPlan {
 
     pub fn memo(&self) -> ScalarMemo<'_> {
         ScalarMemo { plan: self, values: std::cell::RefCell::new(vec![None; self.nodes.len()]),
-            other_values: std::cell::RefCell::new(Vec::new()) }
+            other_values: std::cell::RefCell::new(Vec::new()),
+            row_values: std::cell::RefCell::new(Vec::new()) }
     }
 }
 
@@ -71,6 +74,7 @@ pub(super) struct ScalarMemo<'a> {
     plan: &'a ScalarPlan,
     values: std::cell::RefCell<Vec<Option<ScalarValue>>>,
     other_values: std::cell::RefCell<Vec<ExecutableValueV1>>,
+    row_values: std::cell::RefCell<Vec<usize>>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -137,6 +141,10 @@ impl ScalarMemo<'_> {
         configuration: &[ExecutableSlotV1], arguments: &[ExecutableValueV1], context: EvaluationContextV1)
         -> Result<ExecutableValueV1, ExecutableErrorV1> {
         debug_assert!(std::ptr::eq(expression, self.plan.expression.as_ref()));
+        {
+            let mut values = self.values.borrow_mut();
+            for index in self.row_values.borrow_mut().drain(..) { values[index] = None; }
+        }
         Ok(self.expand(self.node(self.plan.root, configuration, arguments, EvaluationContextV1 { scalar_memo: None, ..context })?))
     }
 
@@ -183,7 +191,10 @@ impl ScalarMemo<'_> {
                 ScalarValue::number(value.clamp(lower, upper))?
             },
         };
-        if self.plan.nodes[index].1 { self.values.borrow_mut()[index] = Some(value); }
+        if self.plan.nodes[index].1 {
+            self.values.borrow_mut()[index] = Some(value);
+            if !self.plan.nodes[index].2 { self.row_values.borrow_mut().push(index); }
+        }
         Ok(value)
     }
 }
@@ -231,11 +242,11 @@ mod tests {
         assert!(!plan.nodes.is_empty());
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
             reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
+        let memo = plan.memo();
         for value in [3.0, 7.0] {
             let bindings = BTreeMap::from([(0, ExecutableValueV1::number(value).unwrap())]);
             let arguments = [ExecutableValueV1::number(2.0).unwrap(), ExecutableValueV1::Boolean(true)];
             let context = EvaluationContextV1 { bindings: Some(&bindings), ..context };
-            let memo = plan.memo();
             let reused = EvaluationContextV1 { scalar_memo: Some(&memo), ..context };
             let expected = evaluate(&expression, &[], &arguments, context).unwrap();
             assert_eq!(evaluate(&plan.expression, &[], &arguments, reused).unwrap(), expected);
