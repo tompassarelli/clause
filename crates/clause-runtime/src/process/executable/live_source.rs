@@ -639,6 +639,7 @@ pub struct CheckedExecutableSourcePreparationV1 {
     declared_frontend: Vec<u8>,
     scope: TermScope,
     pub(crate) exact_cpp1: Vec<u8>,
+    pub(crate) identity: ExecutablePhysicalPlanIdV1,
     pub(crate) plan: ExecutablePhysicalPlanV1,
     pub(crate) lowered: ExecutableCanonicalProgramV1,
 }
@@ -680,7 +681,7 @@ pub fn check_executable_source_preparation_v1(
     expected.project_referent_input_domains(scope)?;
     expected.bind_source_snapshot_with_states(scope, package, analysis.source().artifact(), root, &lowered.states)?;
     if expected != plan { return Err(ExecutableErrorV1::SourceContinuityRejected("prepared source does not realize exact bound CPP1")); }
-    Ok(CheckedExecutableSourcePreparationV1 { analysis: Arc::new(analysis), declared_frontend: declared_frontend.to_vec(), scope, exact_cpp1: exact_cpp1.to_vec(), plan, lowered })
+    Ok(CheckedExecutableSourcePreparationV1 { analysis: Arc::new(analysis), declared_frontend: declared_frontend.to_vec(), scope, exact_cpp1: exact_cpp1.to_vec(), identity: physical_plan_identity(exact_cpp1), plan, lowered })
 }
 
 pub fn check_executable_source_edit_v1(
@@ -888,9 +889,10 @@ fn derive_prepared_source_edit(
     if slots.len() != new_states.len() {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
+    let new_plan = physical_plan_identity(&exact_cpp1);
     Ok(CheckedExecutableSourceEditV1 {
-        old_plan: physical_plan_identity(&preparation.exact_cpp1),
-        new_plan: physical_plan_identity(&exact_cpp1),
+        old_plan: preparation.identity,
+        new_plan,
         continuity: ExecutableSourceContinuityV1 {
             old_snapshot: old.checked_package.constitution().snapshot(),
             new_snapshot: new.checked_package.constitution().snapshot(),
@@ -901,7 +903,7 @@ fn derive_prepared_source_edit(
         edit,
         preparation: Arc::new(CheckedExecutableSourcePreparationV1 {
             analysis: Arc::new(next_analysis), declared_frontend: preparation.declared_frontend.clone(), scope,
-            exact_cpp1, plan: expected_new, lowered: new_lowered,
+            exact_cpp1, identity: new_plan, plan: expected_new, lowered: new_lowered,
         }),
     })
 }

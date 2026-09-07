@@ -547,7 +547,10 @@ impl WasmPersistentSessionBoundaryV1 {
             return Err(WasmProcessStatusV1::ProcessRejected);
         }
         let mut open = decode_wasm_session_open_v1(&live.exact_open)?;
-        if super::physical_plan_identity(&open.physical_plan_bytes) != prepared.checked.old_plan { return Err(WasmProcessStatusV1::ProcessRejected); }
+        if open.physical_plan_bytes != prepared.previous.exact_cpp1
+            || prepared.checked.old_plan != prepared.previous.identity {
+            return Err(WasmProcessStatusV1::ProcessRejected);
+        }
         open.physical_plan_bytes = prepared.checked.preparation.exact_cpp1.clone();
         open.allocation = WasmSessionAllocationV1::New;
         self.open_inner(&encode_wasm_session_open_v1(&open)?, Some(&prepared.checked), None)
