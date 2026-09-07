@@ -237,7 +237,7 @@ pub(super) fn sum(
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
-    sum_with_shape(inputs, predicates, value, configuration, arguments, context, None, None)
+    sum_with_shape(inputs, predicates, value, configuration, arguments, context, None)
 }
 
 pub(super) fn sum_with_shape(
@@ -248,7 +248,6 @@ pub(super) fn sum_with_shape(
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
     shape: Option<&Arc<[u8]>>,
-    contribution: Option<&scalar_reuse::RetainedContribution>,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     let same_query = |previous: &SumQuery| {
         previous.captured_reads == context.reads.is_some()
@@ -272,12 +271,7 @@ pub(super) fn sum_with_shape(
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumQuery);
     let query_reads = std::cell::RefCell::new(Vec::new());
     let query_context = EvaluationContextV1 { reads: context.reads.map(|_| &query_reads), ..context };
-    let plan = if let Some(contribution) = contribution.filter(|_| query_context.reads.is_none()) {
-        Some(contribution.get_or_init(|| {
-            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanBuild);
-            scalar_reuse::ScalarPlan::new(value).map(Arc::new)
-        }).clone()?)
-    } else { scalar_plan(value, query_context)? };
+    let plan = scalar_plan(value, query_context)?;
     let memo = plan.as_ref().map(|plan| plan.memo());
     let mut visits = 0;
     let mut total = 0.0;
