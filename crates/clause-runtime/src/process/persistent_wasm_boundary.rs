@@ -265,7 +265,14 @@ pub enum WasmSessionEventKindV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WasmSessionProjectionV1 {
     pub observation: ObservationId,
-    pub exact_term_bytes: Vec<u8>,
+    pub term: Term,
+}
+
+impl WasmSessionProjectionV1 {
+    /// Serialize only at a byte-oriented boundary; native consumers retain the exact Term.
+    pub fn exact_term_bytes(&self) -> Vec<u8> {
+        canonical_term_bytes(&self.term).expect("checked projection Term remains canonical")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1096,10 +1103,13 @@ fn admit(
                 activation,
                 session: session.runtime_session(),
                 state_revision_count,
-                projection: projection.map(|projection| WasmSessionProjectionV1 {
-                    observation: projection.id,
-                    exact_term_bytes: canonical_term_bytes(&projection.term)
-                        .expect("checked projection Term remains canonical"),
+                projection: projection.map(|projection| {
+                    canonical_term_byte_len(&projection.term)
+                        .expect("checked projection Term remains canonical");
+                    WasmSessionProjectionV1 {
+                        observation: projection.id,
+                        term: projection.term,
+                    }
                 }),
             };
             if trace_retention == WasmSessionTraceRetentionV1::CurrentAdmission {
@@ -1615,7 +1625,7 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
             if let Some(projection) = projection {
                 bytes.push(1);
                 bytes.extend_from_slice(projection.observation.as_bytes());
-                put_blob(&mut bytes, &projection.exact_term_bytes)
+                put_blob(&mut bytes, &projection.exact_term_bytes())
                     .expect("checked projection Term fits the CSE1 event bound");
             } else {
                 bytes.push(0);
@@ -1858,7 +1868,8 @@ pub fn decode_wasm_session_event_v1(
                 0 => None,
                 1 => Some(WasmSessionProjectionV1 {
                     observation: ObservationId::from_bytes(d.identity()?),
-                    exact_term_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
+                    term: decode_canonical_term_bytes(d.blob(WASM_SESSION_EVENT_LIMIT_V1)?)
+                        .map_err(|_| WasmProcessStatusV1::MalformedRequest)?,
                 }),
                 _ => return Err(WasmProcessStatusV1::MalformedRequest),
             },

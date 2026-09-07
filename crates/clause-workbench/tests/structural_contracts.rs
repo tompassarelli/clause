@@ -16,7 +16,7 @@ fn field<'a>(term: &'a Term, key: &[u8]) -> &'a Term {
 fn inspect(workbench: &mut ResidentSourceWorkbenchV1) -> Term {
     let event = workbench.handler_occurrence(b"inspect", &[]).unwrap();
     workbench.run_occurrences_to_candidate(&[event]).unwrap();
-    decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes).unwrap()
+    decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes()).unwrap()
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn creation_infers_the_domain_and_checks_the_complete_new_participant() {
     let prior = V::Referent(durations.rows().keys().next().unwrap().clone());
     let add = workbench.handler_occurrence(b"add-task", &[prior.clone(), V::number(4.0).unwrap()]).unwrap();
     workbench.run_occurrences_to_candidate(&[add]).unwrap();
-    let after = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes).unwrap();
+    let after = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes()).unwrap();
     let durations = projected_relation_table_v1(field(field(&after, b"relations"), b"duration")).unwrap().unwrap();
     assert_eq!(durations.rows().len(), 4);
     assert!(durations.rows().values().flatten().any(|value| value.as_number() == Some(4.0)));

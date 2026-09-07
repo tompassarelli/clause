@@ -23,7 +23,7 @@ fn run(w: &mut ResidentSourceWorkbenchV1, action: Option<(&[u8], V)>) -> Term {
     };
     let event = w.handler_occurrence(name, &[value]).unwrap();
     w.run_occurrences_to_candidate(&[event]).unwrap();
-    decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap()
+    decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap()
 }
 
 fn referent(frame: &Term, name: &[u8]) -> V {

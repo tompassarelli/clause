@@ -41,7 +41,7 @@ fn focused_patterns_keep_correlated_bindings_and_withdrawal() {
     let inspect = workbench.handler_occurrence(b"inspect", &[]).unwrap();
     workbench.run_occurrences_to_candidate(&[inspect]).unwrap();
     let frame =
-        decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes)
+        decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes())
             .unwrap();
     let blockers = projected_relation_table_v1(field(field(&frame, b"relations"), b"blocker"))
         .unwrap()
@@ -62,7 +62,7 @@ fn focused_patterns_keep_correlated_bindings_and_withdrawal() {
             .unwrap();
         workbench.run_occurrences_to_candidate(&[resolve]).unwrap();
         let frame =
-            decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes)
+            decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes())
                 .unwrap();
         let remaining = projected_relation_table_v1(field(field(&frame, b"relations"), b"blocker"))
             .unwrap()
@@ -111,7 +111,7 @@ fn nested_focus_keeps_the_same_join() {
     let inspect = workbench.handler_occurrence(b"inspect", &[]).unwrap();
     workbench.run_occurrences_to_candidate(&[inspect]).unwrap();
     let frame =
-        decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes)
+        decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes())
             .unwrap();
     let blockers = projected_relation_table_v1(field(field(&frame, b"relations"), b"blocker"))
         .unwrap()
@@ -169,7 +169,7 @@ fn focused_scalar_updates_keep_editable_source_spans_and_live_state() {
     let consume = workbench.handler_occurrence(b"consume", &[]).unwrap();
     workbench.run_occurrences_to_candidate(&[consume]).unwrap();
     let frame =
-        decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes)
+        decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes())
             .unwrap();
     let charge = projected_relation_table_v1(field(field(&frame, b"relations"), b"charge"))
         .unwrap()

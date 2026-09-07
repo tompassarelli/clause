@@ -165,7 +165,7 @@ fn cross_subject_input_replaces_typed_declared_target() {
         })
         .unwrap();
     let initial = workbench.admit().unwrap();
-    let term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes).unwrap();
+    let term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes()).unwrap();
     let second = projected_referent_value_v1(projected_object_field(
         projected_object_field(&term, b"second"),
         b"$referent",
@@ -193,7 +193,7 @@ fn cross_subject_input_replaces_typed_declared_target() {
         .unwrap();
     assert_eq!(workbench.last_projection().unwrap(), &initial.projection);
     let admitted = workbench.admit().unwrap();
-    let term = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes).unwrap();
+    let term = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes()).unwrap();
     assert_eq!(
         projected_referent_value_v1(projected_object_field(
             projected_object_field(&term, b"player"),
@@ -219,7 +219,7 @@ fn explicit_contributions_reach_runtime_selected_account_once_per_contributor() 
             })
             .unwrap();
         let admitted = workbench.admit().unwrap();
-        decode_canonical_term_bytes(&admitted.projection.exact_term_bytes).unwrap()
+        decode_canonical_term_bytes(&admitted.projection.exact_term_bytes()).unwrap()
     };
     let term = tick(&mut workbench, 1, 100);
     let second = projected_referent_value_v1(projected_object_field(
@@ -352,7 +352,7 @@ fn overlapping_ordinary_replacements_reject_the_whole_step() {
             fixed_tick_milliseconds: 100,
         })
         .unwrap();
-    let term = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes)
+    let term = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes())
         .unwrap();
     assert_eq!(
         projected_number(projected_object_field(
@@ -405,7 +405,7 @@ fn actual_party_source_checks_target_range_selection_and_cooldown_before_aggrega
             })
             .unwrap();
         let initial = workbench.admit().unwrap();
-        let term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes).unwrap();
+        let term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes()).unwrap();
         let cinder = projected_referent_value_v1(projected_object_field(
             projected_object_field(&term, b"cinder"),
             b"$referent",
@@ -446,7 +446,7 @@ fn actual_party_source_checks_target_range_selection_and_cooldown_before_aggrega
             .unwrap();
         assert_eq!(workbench.last_projection().unwrap(), &initial.projection);
         let term =
-            decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes)
+            decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes())
                 .unwrap();
         assert_eq!(
             projected_number(projected_object_field(
@@ -474,7 +474,7 @@ fn actual_party_source_checks_target_range_selection_and_cooldown_before_aggrega
         })
         .unwrap();
     let initial = workbench.admit().unwrap();
-    let term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes).unwrap();
+    let term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes()).unwrap();
     let target = projected_referent_value_v1(projected_object_field(
         projected_object_field(&term, b"cinder"),
         b"$referent",
@@ -514,7 +514,7 @@ fn actual_party_source_checks_target_range_selection_and_cooldown_before_aggrega
             fixed_tick_milliseconds: 100,
         })
         .unwrap();
-    let term = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes)
+    let term = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes())
         .unwrap();
     assert_eq!(
         projected_number(projected_object_field(
@@ -608,7 +608,7 @@ fn typed_physical_input_selects_exact_occurrence_and_preserves_admission_and_gen
     };
     tick(&mut workbench, 1);
     let initial = workbench.admit().unwrap();
-    let term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes).unwrap();
+    let term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes()).unwrap();
     let first = projected_referent_value_v1(projected_object_field(
         projected_object_field(&term, b"first"),
         b"$referent",
@@ -656,7 +656,7 @@ fn typed_physical_input_selects_exact_occurrence_and_preserves_admission_and_gen
         "candidate is hidden until separate Admission"
     );
     let changed = workbench.admit().unwrap();
-    let term = decode_canonical_term_bytes(&changed.projection.exact_term_bytes).unwrap();
+    let term = decode_canonical_term_bytes(&changed.projection.exact_term_bytes()).unwrap();
     let item = |name| projected_object_field(&term, name);
     assert!(projected_boolean(projected_object_field(
         item(b"first"),
@@ -679,7 +679,7 @@ fn typed_physical_input_selects_exact_occurrence_and_preserves_admission_and_gen
         .unwrap();
     tick(&mut workbench, 3);
     let both = workbench.admit().unwrap();
-    let term = decode_canonical_term_bytes(&both.projection.exact_term_bytes).unwrap();
+    let term = decode_canonical_term_bytes(&both.projection.exact_term_bytes()).unwrap();
     assert_eq!(
         projected_number(projected_object_field(
             projected_object_field(&term, b"second"),
@@ -1646,7 +1646,7 @@ fn one_handler_occurrence_updates_every_independent_matching_referent() {
     let admitted = workbench
         .admit()
         .expect("Admission exposes the atomic multi-referent update");
-    let projection = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes)
+    let projection = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes())
         .expect("the admitted projection decodes");
     let ashen_key = projected_object_field(&projection, b"ashen-key");
     let cephorium_cache = projected_object_field(&projection, b"cephorium-cache");
@@ -1806,7 +1806,7 @@ fn source_edit_hot_reloads_in_one_workbench_without_admission_custody_leak() {
         .expect("separate changed-source Admission returns its frame");
     assert_eq!(changed_admission.state_revision_count, 2);
     assert_ne!(
-        changed_admission.projection.exact_term_bytes, base_admission.projection.exact_term_bytes,
+        changed_admission.projection.exact_term_bytes(), base_admission.projection.exact_term_bytes(),
         "the source edit changes the admitted rendered frame"
     );
 
@@ -1902,7 +1902,7 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
         .admit()
         .expect("separate Admission exposes the failed frame");
     assert_eq!(
-        objective_state(&failed.projection.exact_term_bytes),
+        objective_state(&failed.projection.exact_term_bytes()),
         b"failed"
     );
 
@@ -1918,7 +1918,7 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
         .expect("reset produces one hidden candidate");
     assert_eq!(reset_candidate.state_revision_count, 2);
     assert_eq!(
-        objective_state(&workbench.last_projection().unwrap().exact_term_bytes),
+        objective_state(&workbench.last_projection().unwrap().exact_term_bytes()),
         b"failed",
         "the admitted renderer remains on failure before reset Admission"
     );
@@ -1926,7 +1926,7 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
         .admit()
         .expect("separate Admission exposes the reset frame");
     assert_eq!(
-        objective_state(&reset.projection.exact_term_bytes),
+        objective_state(&reset.projection.exact_term_bytes()),
         b"playing"
     );
 
@@ -1938,7 +1938,7 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
         .run_occurrences_to_candidate(&completion)
         .expect("movement and collection produce hidden completion");
     assert_eq!(
-        objective_state(&workbench.last_projection().unwrap().exact_term_bytes),
+        objective_state(&workbench.last_projection().unwrap().exact_term_bytes()),
         b"playing",
         "completion is invisible before Admission"
     );
@@ -1946,7 +1946,7 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
         .admit()
         .expect("separate Admission exposes completion");
     assert_eq!(
-        objective_state(&completed.projection.exact_term_bytes),
+        objective_state(&completed.projection.exact_term_bytes()),
         b"completed"
     );
 
@@ -1958,7 +1958,7 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
         .run_occurrences_to_candidate(&launch)
         .expect("source-owned spring transition remains hidden");
     assert_eq!(
-        player_launch_state(&workbench.last_projection().unwrap().exact_term_bytes),
+        player_launch_state(&workbench.last_projection().unwrap().exact_term_bytes()),
         (0.0, true),
         "spring velocity and airborne state remain invisible before Admission"
     );
@@ -1966,7 +1966,7 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
         .admit()
         .expect("separate Admission exposes the source-owned spring transition");
     assert_eq!(
-        player_launch_state(&launched.projection.exact_term_bytes),
+        player_launch_state(&launched.projection.exact_term_bytes()),
         (12.0, false)
     );
 
@@ -1995,7 +1995,7 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
         .admit()
         .expect("changed source reaches separate Admission");
     assert_eq!(
-        objective_state(&changed.projection.exact_term_bytes),
+        objective_state(&changed.projection.exact_term_bytes()),
         b"playing",
         "the edited completion threshold defers the objective by one tick"
     );
@@ -2013,7 +2013,7 @@ fn ledger_uses_the_same_checked_resident_binding_path() {
         .admit()
         .expect("separate Admission exposes the deposited balance");
     assert_eq!(
-        ledger_balance(&deposited.projection.exact_term_bytes),
+        ledger_balance(&deposited.projection.exact_term_bytes()),
         125.0
     );
 
@@ -2033,7 +2033,7 @@ fn ledger_uses_the_same_checked_resident_binding_path() {
     let changed = workbench
         .admit()
         .expect("separate Admission exposes the edited balance");
-    assert_eq!(ledger_balance(&changed.projection.exact_term_bytes), 140.0);
+    assert_eq!(ledger_balance(&changed.projection.exact_term_bytes()), 140.0);
 }
 
 #[test]
@@ -2048,8 +2048,8 @@ fn source_only_state_and_bounded_automatic_handler_need_no_host_binding_edit() {
     let admitted = workbench
         .admit()
         .expect("separate Admission exposes the source-only state");
-    assert_eq!(pulse_count(&admitted.projection.exact_term_bytes), 1.0);
-    assert_eq!(pulse_echo(&admitted.projection.exact_term_bytes), 1.0);
+    assert_eq!(pulse_count(&admitted.projection.exact_term_bytes()), 1.0);
+    assert_eq!(pulse_echo(&admitted.projection.exact_term_bytes()), 1.0);
 }
 
 #[test]
@@ -2069,7 +2069,7 @@ fn runtime_selected_referent_uses_the_newly_admitted_binding() {
     let admitted = workbench
         .admit()
         .expect("separate Admission exposes the selected policy consequence");
-    let projection = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes)
+    let projection = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes())
         .expect("selected policy projection decodes");
     let root = projected_object_field(&projection, b"root-1");
     assert_eq!(
@@ -2141,7 +2141,7 @@ fn source_keyboard_binding_reaches_one_atomic_multi_assignment_candidate() {
         .admit()
         .expect("separate Admission exposes both burst assignments");
     assert_eq!(
-        player_planar_velocity(&admitted.projection.exact_term_bytes),
+        player_planar_velocity(&admitted.projection.exact_term_bytes()),
         (3.0, -2.0)
     );
 }
@@ -2204,7 +2204,7 @@ fn actor_neutral_hit_updates_two_state_cells_in_one_admitted_candidate() {
         .admit()
         .expect("separate Admission exposes the initial combat state");
     assert_eq!(
-        boar_combat_state(&initial.projection.exact_term_bytes),
+        boar_combat_state(&initial.projection.exact_term_bytes()),
         (100.0, 0.0)
     );
 
@@ -2215,7 +2215,7 @@ fn actor_neutral_hit_updates_two_state_cells_in_one_admitted_candidate() {
         .run_occurrences_to_candidate(&[admitted_hit])
         .expect("the actor-neutral hit produces one hidden candidate");
     assert_eq!(
-        boar_combat_state(&workbench.last_projection().unwrap().exact_term_bytes),
+        boar_combat_state(&workbench.last_projection().unwrap().exact_term_bytes()),
         (100.0, 0.0),
         "neither combat state cell is visible before Admission"
     );
@@ -2223,7 +2223,7 @@ fn actor_neutral_hit_updates_two_state_cells_in_one_admitted_candidate() {
         .admit()
         .expect("one Admission exposes both combat state changes");
     assert_eq!(
-        boar_combat_state(&admitted.projection.exact_term_bytes),
+        boar_combat_state(&admitted.projection.exact_term_bytes()),
         (92.0, 25.0)
     );
 
@@ -2234,7 +2234,7 @@ fn actor_neutral_hit_updates_two_state_cells_in_one_admitted_candidate() {
         .run_occurrences_to_candidate(&[finish_reaction])
         .expect("the general handler produces one hidden candidate");
     assert_eq!(
-        boar_combat_state(&workbench.last_projection().unwrap().exact_term_bytes),
+        boar_combat_state(&workbench.last_projection().unwrap().exact_term_bytes()),
         (92.0, 25.0),
         "the general-handler result is invisible before Admission"
     );
@@ -2242,7 +2242,7 @@ fn actor_neutral_hit_updates_two_state_cells_in_one_admitted_candidate() {
         .admit()
         .expect("one Admission exposes both general-handler assignments");
     assert_eq!(
-        boar_combat_state(&finished.projection.exact_term_bytes),
+        boar_combat_state(&finished.projection.exact_term_bytes()),
         (0.0, 0.0)
     );
 }
@@ -2264,7 +2264,7 @@ fn many_relation_retains_every_discovered_value_for_membership() {
     let initial = workbench
         .admit()
         .expect("probe reaches the initial admitted world");
-    let initial_term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes)
+    let initial_term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes())
         .expect("the initial projection decodes");
     let initial_root = projected_object_field(&initial_term, b"root");
     assert!(projected_object_has_field(initial_root, b"known"));
@@ -2284,7 +2284,7 @@ fn many_relation_retains_every_discovered_value_for_membership() {
     let before_duplicate = workbench
         .last_projection()
         .expect("the two-value set projects")
-        .exact_term_bytes
+        .exact_term_bytes()
         .clone();
     let duplicate = workbench
         .handler_occurrence(b"discover", &[symbol(b"alpha")])
@@ -2296,7 +2296,7 @@ fn many_relation_retains_every_discovered_value_for_membership() {
         .admit()
         .expect("duplicate discover reaches one admitted successor");
     assert_eq!(
-        after_duplicate.projection.exact_term_bytes, before_duplicate,
+        after_duplicate.projection.exact_term_bytes(), before_duplicate,
         "set insertion is idempotent in the exact projection"
     );
 
@@ -2309,7 +2309,7 @@ fn many_relation_retains_every_discovered_value_for_membership() {
     let selected = workbench
         .admit()
         .expect("selection reaches one admitted successor");
-    let term = decode_canonical_term_bytes(&selected.projection.exact_term_bytes)
+    let term = decode_canonical_term_bytes(&selected.projection.exact_term_bytes())
         .expect("the selected projection decodes");
     let root = projected_object_field(&term, b"root");
     let known = projected_symbol_set(projected_object_field(root, b"known"));
@@ -2338,7 +2338,7 @@ fn many_relation_retains_every_discovered_value_for_membership() {
         &reverse
             .last_projection()
             .expect("reverse insertion projects")
-            .exact_term_bytes,
+            .exact_term_bytes(),
     )
     .expect("the reverse projection decodes");
     let reverse_root = projected_object_field(&reverse_term, b"root");
@@ -2357,7 +2357,7 @@ fn many_relation_retains_every_discovered_value_for_membership() {
     let forgotten = workbench
         .admit()
         .expect("member withdrawal reaches one admitted successor");
-    let forgotten_term = decode_canonical_term_bytes(&forgotten.projection.exact_term_bytes)
+    let forgotten_term = decode_canonical_term_bytes(&forgotten.projection.exact_term_bytes())
         .expect("the removal projection decodes");
     let forgotten_root = projected_object_field(&forgotten_term, b"root");
     assert_eq!(
@@ -2383,7 +2383,7 @@ fn many_relation_retains_every_discovered_value_for_membership() {
     let unchanged = workbench
         .admit()
         .expect("the no-op candidate remains admissible");
-    let unchanged_term = decode_canonical_term_bytes(&unchanged.projection.exact_term_bytes)
+    let unchanged_term = decode_canonical_term_bytes(&unchanged.projection.exact_term_bytes())
         .expect("the no-op projection decodes");
     let unchanged_root = projected_object_field(&unchanged_term, b"root");
     assert_eq!(
@@ -2406,7 +2406,7 @@ fn optional_relation_inserts_and_removes_with_atomic_state_replacement() {
     let initial = workbench
         .admit()
         .expect("Admission establishes the prior world");
-    let initial_term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes)
+    let initial_term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes())
         .expect("the initial projection decodes");
     let initial_actor = projected_object_field(&initial_term, b"test-actor");
     assert_eq!(
@@ -2414,7 +2414,7 @@ fn optional_relation_inserts_and_removes_with_atomic_state_replacement() {
         b"ready"
     );
     assert!(!projected_object_has_field(initial_actor, b"anchor"));
-    let exact_prior = initial.projection.exact_term_bytes;
+    let exact_prior = initial.projection.exact_term_bytes();
 
     let materialize = workbench
         .handler_occurrence(b"materialize-anchor", &[])
@@ -2423,14 +2423,14 @@ fn optional_relation_inserts_and_removes_with_atomic_state_replacement() {
         .run_occurrences_to_candidate(&[materialize])
         .expect("replacement and insertion produce one Candidate");
     assert_eq!(
-        workbench.last_projection().unwrap().exact_term_bytes,
+        workbench.last_projection().unwrap().exact_term_bytes(),
         exact_prior,
         "neither replacement nor insertion is visible before Admission"
     );
     let inserted = workbench
         .admit()
         .expect("one Admission exposes replacement and insertion");
-    let inserted_term = decode_canonical_term_bytes(&inserted.projection.exact_term_bytes)
+    let inserted_term = decode_canonical_term_bytes(&inserted.projection.exact_term_bytes())
         .expect("the inserted projection decodes");
     let inserted_actor = projected_object_field(&inserted_term, b"test-actor");
     assert_eq!(
@@ -2441,7 +2441,7 @@ fn optional_relation_inserts_and_removes_with_atomic_state_replacement() {
     assert_eq!(projected_number(projected_object_field(anchor, b"x")), 2.0);
     assert_eq!(projected_number(projected_object_field(anchor, b"y")), 3.0);
     assert_eq!(projected_number(projected_object_field(anchor, b"z")), 4.0);
-    let exact_inserted = inserted.projection.exact_term_bytes;
+    let exact_inserted = inserted.projection.exact_term_bytes();
 
     let clear = workbench
         .handler_occurrence(b"clear-anchor", &[])
@@ -2450,14 +2450,14 @@ fn optional_relation_inserts_and_removes_with_atomic_state_replacement() {
         .run_occurrences_to_candidate(&[clear])
         .expect("replacement and removal produce one Candidate");
     assert_eq!(
-        workbench.last_projection().unwrap().exact_term_bytes,
+        workbench.last_projection().unwrap().exact_term_bytes(),
         exact_inserted,
         "neither replacement nor removal is visible before Admission"
     );
     let removed = workbench
         .admit()
         .expect("one Admission exposes replacement and removal");
-    let removed_term = decode_canonical_term_bytes(&removed.projection.exact_term_bytes)
+    let removed_term = decode_canonical_term_bytes(&removed.projection.exact_term_bytes())
         .expect("the removed projection decodes");
     let removed_actor = projected_object_field(&removed_term, b"test-actor");
     assert_eq!(
@@ -2480,7 +2480,7 @@ fn aggregate_binding_replaces_vec3_in_one_atomic_candidate() {
     let initial = workbench
         .admit()
         .expect("Admission establishes the prior world");
-    let exact_prior = initial.projection.exact_term_bytes;
+    let exact_prior = initial.projection.exact_term_bytes();
 
     let replace = workbench
         .handler_occurrence(b"replace-position-from-binding", &[])
@@ -2489,14 +2489,14 @@ fn aggregate_binding_replaces_vec3_in_one_atomic_candidate() {
         .run_occurrences_to_candidate(&[replace])
         .expect("the Vec3 replacement produces one Candidate");
     assert_eq!(
-        workbench.last_projection().unwrap().exact_term_bytes,
+        workbench.last_projection().unwrap().exact_term_bytes(),
         exact_prior,
         "the aggregate replacement remains hidden before Admission"
     );
     let replaced = workbench
         .admit()
         .expect("one Admission exposes all Vec3 components");
-    let replaced_term = decode_canonical_term_bytes(&replaced.projection.exact_term_bytes)
+    let replaced_term = decode_canonical_term_bytes(&replaced.projection.exact_term_bytes())
         .expect("the replaced projection decodes");
     let actor = projected_object_field(&replaced_term, b"test-actor");
     assert_eq!(
@@ -2527,7 +2527,7 @@ fn declared_scalar_laws_compose_without_formula_or_binder_spelling_dispatch() {
         let rectify = workbench.handler_occurrence(b"rectify", &[]).unwrap();
         workbench.run_occurrences_to_candidate(&[rectify]).unwrap();
         let admitted = workbench.admit().unwrap();
-        let term = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes).unwrap();
+        let term = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes()).unwrap();
         let meter = projected_object_field(&term, b"meter-1");
         assert_eq!(
             projected_number(projected_object_field(meter, b"reading")),
@@ -2548,7 +2548,7 @@ fn declared_scalar_laws_compose_without_formula_or_binder_spelling_dispatch() {
     workbench.run_occurrences_to_candidate(&[hit]).unwrap();
     let admitted = workbench.admit().unwrap();
     assert_eq!(
-        boar_blade_two_state(&admitted.projection.exact_term_bytes),
+        boar_blade_two_state(&admitted.projection.exact_term_bytes()),
         (86.0, 100.0, 10.4)
     );
 }
@@ -2598,7 +2598,7 @@ on invert ?meter
     let invert = workbench.handler_occurrence(b"invert", &[]).unwrap();
     workbench.run_occurrences_to_candidate(&[invert]).unwrap();
     let admitted = workbench.admit().unwrap();
-    let term = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes).unwrap();
+    let term = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes()).unwrap();
     assert_eq!(
         projected_number(projected_object_field(
             projected_object_field(&term, b"meter-1"),
@@ -2637,10 +2637,10 @@ fn scalar_law_result_feeds_one_atomic_multi_state_candidate() {
         .admit()
         .expect("Admission establishes the exact prior projection");
     assert_eq!(
-        boar_blade_two_state(&initial.projection.exact_term_bytes),
+        boar_blade_two_state(&initial.projection.exact_term_bytes()),
         (100.0, 100.0, 0.0)
     );
-    let exact_prior_projection = initial.projection.exact_term_bytes;
+    let exact_prior_projection = initial.projection.exact_term_bytes();
 
     let blade_two_hit = workbench
         .handler_occurrence(b"blade-two-hit", &[])
@@ -2652,7 +2652,7 @@ fn scalar_law_result_feeds_one_atomic_multi_state_candidate() {
         workbench
             .last_projection()
             .expect("the prior admitted projection remains visible")
-            .exact_term_bytes,
+            .exact_term_bytes(),
         exact_prior_projection,
         "the pending Candidate cannot expose any assignment"
     );
@@ -2661,7 +2661,7 @@ fn scalar_law_result_feeds_one_atomic_multi_state_candidate() {
         .admit()
         .expect("one Admission atomically exposes the dependent results");
     assert_eq!(
-        boar_blade_two_state(&admitted.projection.exact_term_bytes),
+        boar_blade_two_state(&admitted.projection.exact_term_bytes()),
         (86.0, 100.0, 10.4)
     );
 }
@@ -2754,7 +2754,7 @@ fn text_handler_state_projection_and_persistent_redirect_are_one_value_path() {
     let created = workbench
         .admit()
         .expect("Text creation reaches one admitted successor");
-    let created = decode_canonical_term_bytes(&created.projection.exact_term_bytes)
+    let created = decode_canonical_term_bytes(&created.projection.exact_term_bytes())
         .expect("the Text projection decodes");
     let north = projected_object_field(&created, b"north-main");
     assert_eq!(
@@ -2804,7 +2804,7 @@ fn text_handler_state_projection_and_persistent_redirect_are_one_value_path() {
     let redirected = workbench
         .admit()
         .expect("Text replacement reaches one admitted successor");
-    let redirected = decode_canonical_term_bytes(&redirected.projection.exact_term_bytes)
+    let redirected = decode_canonical_term_bytes(&redirected.projection.exact_term_bytes())
         .expect("the redirected projection decodes");
     let north = projected_object_field(&redirected, b"north-main");
     assert_eq!(
@@ -2840,7 +2840,7 @@ fn runtime_created_referent_keys_goal_rows_and_retains_redirect_history() {
     let created = workbench
         .admit()
         .expect("goal creation reaches one admitted successor");
-    let created = decode_canonical_term_bytes(&created.projection.exact_term_bytes)
+    let created = decode_canonical_term_bytes(&created.projection.exact_term_bytes())
         .expect("the keyed goal projection decodes");
     let relations = projected_object_field(&created, b"relations");
     let known = projected_relation_table_v1(projected_object_field(relations, b"known-goal"))
@@ -2892,7 +2892,7 @@ fn runtime_created_referent_keys_goal_rows_and_retains_redirect_history() {
     let redirected = workbench
         .admit()
         .expect("goal redirect reaches one admitted successor");
-    let redirected = decode_canonical_term_bytes(&redirected.projection.exact_term_bytes)
+    let redirected = decode_canonical_term_bytes(&redirected.projection.exact_term_bytes())
         .expect("the redirected keyed goal projection decodes");
     let relations = projected_object_field(&redirected, b"relations");
     let objective =

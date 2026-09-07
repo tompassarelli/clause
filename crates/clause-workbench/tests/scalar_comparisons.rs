@@ -17,7 +17,7 @@ fn field<'a>(term: &'a Term, key: &[u8]) -> &'a Term {
 fn measure(w: &mut ResidentSourceWorkbenchV1) -> bool {
     let occurrence = w.handler_occurrence(b"measure", &[]).unwrap();
     w.run_occurrences_to_candidate(&[occurrence]).unwrap();
-    let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+    let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap();
     let meter = field(&frame, b"meter");
     assert_eq!(field(meter, b"reading").as_atom().unwrap().canonical_payload(), 0_f64.to_bits().to_le_bytes());
     match field(meter, b"positive").as_atom().unwrap().canonical_payload() {

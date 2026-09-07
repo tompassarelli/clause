@@ -17,7 +17,7 @@ fn field<'a>(term: &'a Term, key: &[u8]) -> &'a Term {
 fn run(w: &mut ResidentSourceWorkbenchV1, name: &[u8]) -> f64 {
     let occurrence = w.handler_occurrence(name, &[]).unwrap();
     w.run_occurrences_to_candidate(&[occurrence]).unwrap();
-    let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+    let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap();
     let reading = field(field(&frame, b"meter"), b"reading");
     f64::from_bits(u64::from_le_bytes(reading.as_atom().unwrap().canonical_payload().try_into().unwrap()))
 }

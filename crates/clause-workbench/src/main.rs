@@ -162,7 +162,7 @@ fn project_text(source: &Path, handler: &[u8], destination: Option<&Path>) -> Ex
             return ExitCode::FAILURE;
         }
     };
-    let term = match decode_canonical_term_bytes(&admission.projection.exact_term_bytes) {
+    let term = match decode_canonical_term_bytes(&admission.projection.exact_term_bytes()) {
         Ok(term) => term,
         Err(error) => {
             eprintln!("project-text projection decode failed: {error}");
@@ -392,7 +392,7 @@ fn serve_source_loop(source: &Path) -> ExitCode {
                         hex(admission.predecessor.as_bytes()),
                         hex(admission.successor.as_bytes()),
                         admission.state_revision_count,
-                        hex(&admission.projection.exact_term_bytes),
+                        hex(&admission.projection.exact_term_bytes()),
                     )
                     .and_then(|()| output.flush())
                     .map_err(|error| error.to_string())
