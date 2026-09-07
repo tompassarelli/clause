@@ -93,6 +93,20 @@ fn scalar_handler_lowers_one_deterministic_rule_per_referent() {
 }
 
 #[test]
+fn grouped_vector_initials_share_input_state_lowering() {
+    let grouped = include_str!("../../../test-vectors/authoring/grouped-input-initial.clause");
+    let flat = grouped.replace("random\n  sample:\n    x: 0.25\n    y: 0.0\n    z: 0.75", "random sample Vec3 { x: 0.25, y: 0.0, z: 0.75 }");
+    let checked = compile_source(grouped, 49).expect("focused input state lowers");
+    let flat = compile_source(&flat, 49).expect("flat input state lowers");
+    assert_eq!(checked.state_cells, flat.state_cells);
+    assert_eq!(checked.executable_handlers, flat.executable_handlers);
+    let input = checked.input_handler.expect("input handler remains executable");
+    assert_eq!(input.initial_x, 0.25_f64.to_bits());
+    assert_eq!(input.initial_z, 0.75_f64.to_bits());
+    assert!(grouped[input.initial_assertion_origin.start as usize..input.initial_assertion_origin.end as usize].contains("sample:"));
+}
+
+#[test]
 fn grouped_scalar_initials_share_flat_state_lowering() {
     let fixture = include_str!("../../../test-vectors/authoring/grouped-scalar-initial.clause");
     for (domain, literal) in [("Text", "\"ready\""), ("F64", "2.0"), ("Bool", "true"), ("Status", "ready")] {

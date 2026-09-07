@@ -1618,6 +1618,19 @@ fn normalize_focused_state_assertions(cst: &mut CanonicalSourceCstV1) {
         _ => None,
     }).collect::<BTreeSet<_>>();
     for item in &mut cst.items {
+        if let CstKind::ShapeAssertion(assertion) = &item.kind
+            && assertion.shape == b"Vec3"
+            && let [x, y, z] = assertion.fields.as_slice()
+            && x.name == b"x" && y.name == b"y" && z.name == b"z"
+            && let (CanonicalScalarValueV1::Number(x), CanonicalScalarValueV1::Number(y), CanonicalScalarValueV1::Number(z)) = (&x.value, &y.value, &z.value)
+        {
+            item.kind = CstKind::VectorAssertion(VectorAssertionCst {
+                origin: assertion.origin,
+                subject: assertion.subject.clone(),
+                relation: assertion.relation.clone(),
+                x: *x, y: *y, z: *z,
+            });
+        }
         let CstKind::Application(application) = &item.kind else { continue };
         if !state_relations.contains(&application.role) { continue; }
         // Focus changes layout, not state meaning or the assertion's origin.

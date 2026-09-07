@@ -1,0 +1,24 @@
+F64
+RandomSource
+Vec3:
+  x: F64
+  y: F64
+  z: F64
+sample:
+  ?source shape RandomSource
+  ?value shape Vec3
+  ?source:
+    sample: ?value
+mode sample given source yields value: one
+random
+  sample:
+    x: 0.25
+    y: 0.0
+    z: 0.75
+on input ?source Vec3 { x: ?x, y: 0.0, z: ?z }
+  when
+    ?source sample ?prior
+  withdraw
+    ?source sample ?prior
+  include
+    ?source sample Vec3 { x: ?x, y: 0.0, z: ?z }
