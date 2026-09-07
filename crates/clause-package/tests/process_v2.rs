@@ -626,7 +626,7 @@ fn rejection_fixture() -> (
         predecessor: None,
         cause: StateRevisionCause::SessionStart(id!(SessionStartOccurrenceId, 36)),
         payload: term("world/base"),
-        canonical_state_snapshot: b"canonical base".to_vec().into_boxed_slice(),
+        canonical_state_snapshot: b"canonical base".to_vec().into(),
         policy,
         semantics: scope().semantics,
     };
@@ -1753,7 +1753,7 @@ fn build_core_package_from_snapshot(
         payload: term("world/admitted"),
         canonical_state_snapshot: canonical_term_bytes(&term("world/admitted"))
             .expect("successor State payload is canonical")
-            .into_boxed_slice(),
+            .into(),
         policy: context.policy,
         semantics: scope().semantics,
     };

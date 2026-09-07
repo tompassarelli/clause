@@ -757,7 +757,7 @@ pub struct StateRevision {
     pub predecessor: Option<StateRevisionId>,
     pub cause: StateRevisionCause,
     pub payload: Term,
-    pub canonical_state_snapshot: Box<[u8]>,
+    pub canonical_state_snapshot: crate::CanonicalBytes,
     pub policy: RuntimePolicyId,
     pub semantics: ClauseSemanticsId,
 }
@@ -1329,7 +1329,7 @@ impl ProcessCarrier {
                 predecessor: None,
                 cause: StateRevisionCause::SessionStart(session.start),
                 payload: view.payload.clone(),
-                canonical_state_snapshot: view.canonical_state_snapshot.clone(),
+                canonical_state_snapshot: view.canonical_state_snapshot.clone().into(),
                 policy: session.policy,
                 semantics: session.semantics,
             };
@@ -2533,9 +2533,9 @@ impl ProcessCarrier {
 
     fn validate_state_payload_binding(&self, state: &StateRevision) -> Result<(), ProcessError> {
         self.validate_runtime_term(&state.payload)?;
-        let canonical = crate::canonical::canonical_term_bytes(&state.payload)
+        let canonical = crate::canonical::canonical_term_shared_bytes(&state.payload)
             .map_err(ProcessError::Canonical)?;
-        if canonical.as_slice() != state.canonical_state_snapshot.as_ref() {
+        if canonical != state.canonical_state_snapshot {
             return Err(ProcessError::StatePayloadSnapshotMismatch(state.id));
         }
         Ok(())
@@ -4955,7 +4955,7 @@ fn derive_successor_state_id(state: &StateRevision) -> StateRevisionId {
         state.session,
         state.predecessor,
         cause,
-        &state.canonical_state_snapshot,
+        &state.canonical_state_snapshot.segments().iter().map(crate::AtomPayloadSegment::as_bytes).collect::<Vec<_>>(),
         state.policy,
     )
 }
