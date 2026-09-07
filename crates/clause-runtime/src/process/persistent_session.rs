@@ -158,6 +158,11 @@ impl PersistentProcessSessionV1 {
         Ok(self.runtime()?.checkpoint_admitted()?)
     }
 
+    /// The same admitted checkpoint, sharing immutable payload byte storage.
+    pub fn checkpoint_admitted_segments(&self) -> Result<Vec<clause_package::AtomPayloadSegment>, PersistentProcessSessionErrorV1> {
+        Ok(self.runtime()?.checkpoint_admitted_segments()?)
+    }
+
     /// Reopen an exact recorded frontier from a trusted local Store. No input,
     /// effect, judgment or Admission is executed by this physical restoration.
     pub fn reopen_admitted(

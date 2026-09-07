@@ -270,3 +270,29 @@ fn native_occurrence_above_wasm_command_buffer_preserves_exact_text_on_reopen() 
     let after = run(&mut reopened, b"redirect-goal", &[V::Referent(first.clone()), text("Continued")]);
     assert_eq!(table(&after, b"prior-goal-objective").rows()[&first].first(), Some(&text(&payload)));
 }
+
+#[test]
+fn segmented_checkpoint_reuses_unchanged_text_and_reopens_exactly() {
+    let payload = "persistent text ".repeat(32_768);
+    let mut w = ResidentSourceWorkbenchV1::open_continuous(SOURCE).unwrap();
+    let before = run(&mut w, b"create-goal", &[text("First"), text(&payload)]);
+    let first = known(&before)[0].clone();
+    let original = w.checkpoint_admitted_segments().unwrap();
+    let retained = original.iter().find(|segment| segment.as_bytes() == payload.as_bytes()).unwrap();
+    let original_bytes: Vec<u8> = original.iter().flat_map(|segment| segment.as_bytes().iter().copied()).collect();
+    assert_eq!(original_bytes, w.checkpoint_admitted().unwrap());
+    assert_eq!(ResidentSourceWorkbenchV1::reopen(SOURCE, &original_bytes).unwrap().project_current_world().unwrap(), before);
+    let occurrence = w.handler_occurrence(b"redirect-goal", &[V::Referent(first), text("Changed")]).unwrap();
+    w.run_occurrences_to_candidate(&[occurrence]).unwrap();
+    assert!(w.checkpoint_admitted_segments().is_err());
+    w.admit().unwrap();
+    let next = w.checkpoint_admitted_segments().unwrap();
+    assert!(next.iter().any(|segment| std::ptr::eq(segment.as_bytes(), retained.as_bytes())),
+        "unchanged historical text must retain its immutable allocation");
+    let next_bytes: Vec<u8> = next.iter().flat_map(|segment| segment.as_bytes().iter().copied()).collect();
+    assert_eq!(next_bytes, w.checkpoint_admitted().unwrap());
+    let after = w.project_current_world().unwrap();
+    assert_eq!(ResidentSourceWorkbenchV1::reopen(SOURCE, &next_bytes).unwrap().project_current_world().unwrap(), after);
+    // An older retained checkpoint remains exact after advancing the live world.
+    assert_eq!(ResidentSourceWorkbenchV1::reopen(SOURCE, &original_bytes).unwrap().project_current_world().unwrap(), before);
+}

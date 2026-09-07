@@ -5,6 +5,16 @@ impl ResidentSourceWorkbenchV1 {
     /// The caller owns atomic storage and trusted file selection. Pending local
     /// work must be admitted first; the checkpoint retains no completed trace.
     pub fn checkpoint_admitted(&self) -> Result<Vec<u8>, ResidentSourceWorkbenchErrorV1> {
+        Ok(self.boundary.checkpoint_admitted(self.generation.handle, &self.checkpoint_context()?)?)
+    }
+
+    /// Exact checkpoint bytes with shared immutable payload segments. The caller
+    /// must durably publish the complete sequence before releasing host effects.
+    pub fn checkpoint_admitted_segments(&self) -> Result<Vec<clause_package::AtomPayloadSegment>, ResidentSourceWorkbenchErrorV1> {
+        Ok(self.boundary.checkpoint_admitted_segments(self.generation.handle, &self.checkpoint_context()?)?)
+    }
+
+    fn checkpoint_context(&self) -> Result<Vec<u8>, ResidentSourceWorkbenchErrorV1> {
         if self.pending.is_some() {
             return Err(ResidentSourceWorkbenchErrorV1(
                 "admit the pending candidate before checkpointing".into(),
@@ -26,9 +36,7 @@ impl ResidentSourceWorkbenchV1 {
             context.extend_from_slice(&length.to_le_bytes());
             context.extend_from_slice(value);
         }
-        Ok(self
-            .boundary
-            .checkpoint_admitted(self.generation.handle, &context)?)
+        Ok(context)
     }
 
     /// Reopen a checkpoint selected from the same trusted local Store. The

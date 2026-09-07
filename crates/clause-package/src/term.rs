@@ -154,9 +154,7 @@ impl Atom {
         self.canonical_payload.bytes()
     }
 
-    pub(crate) fn payload_segments(&self) -> impl Iterator<Item = &[u8]> {
-        self.canonical_payload.segments.iter().map(AtomPayloadSegment::as_bytes)
-    }
+    pub(crate) fn shared_payload_segments(&self) -> &[AtomPayloadSegment] { &self.canonical_payload.segments }
 
     pub(crate) fn payload_len(&self) -> usize { self.canonical_payload.length }
 
