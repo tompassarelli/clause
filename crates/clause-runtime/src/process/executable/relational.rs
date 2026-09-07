@@ -926,7 +926,7 @@ mod match_ownership_tests {
         use ExecutableExpressionV1 as E;
         let bindings = BTreeMap::from([(3, ExecutableValueV1::text("bound text").unwrap())]);
         let context = EvaluationContextV1 { allocation_root: [17; IDENTITY_BYTES],
-            step_ordinal: 19, reads: None, bindings: Some(&bindings), relational_occurrence: None };
+            step_ordinal: 19, reads: None, sum_queries: None, bindings: Some(&bindings), relational_occurrence: None };
         let identity = LazyOccurrenceIdentity::new(context, 23, &bindings);
         let evaluation = EvaluationContextV1 { relational_occurrence: Some(&identity), ..context };
         let fresh = E::FreshReferent { domain: 29, binder: 31 };
