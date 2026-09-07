@@ -298,10 +298,17 @@ impl<'a> IntoIterator for &'a ExecutableValuesV1 {
     fn into_iter(self) -> Self::IntoIter { self.iter() }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 struct ExecutableRowsV1 {
     values: BTreeMap<ExecutableReferentV1, ExecutableValuesV1>,
     encoded: OnceLock<Result<Vec<AtomPayloadSegment>, ExecutableErrorV1>>,
+}
+impl Clone for ExecutableRowsV1 {
+    fn clone(&self) -> Self {
+        // Arc::make_mut clones this wrapper for a write. Its encoded rows are
+        // invalidated by that write, so only the semantic values are copied.
+        Self { values: self.values.clone(), encoded: OnceLock::new() }
+    }
 }
 impl From<BTreeMap<ExecutableReferentV1, ExecutableValuesV1>> for ExecutableRowsV1 {
     fn from(values: BTreeMap<ExecutableReferentV1, ExecutableValuesV1>) -> Self { Self { values, encoded: OnceLock::new() } }
@@ -6356,6 +6363,10 @@ mod shared_projection_tests {
         table.put(&subject, first.clone()).unwrap();
         roundtrip(&table);
         let retained = table.clone();
+        assert!(retained.rows.encoded.get().is_some());
+        let writable_rows = retained.rows.as_ref().clone();
+        assert_eq!(writable_rows.values, retained.rows.values);
+        assert!(writable_rows.encoded.get().is_none());
         table.put(&subject, first.clone()).unwrap();
         assert!(Arc::ptr_eq(&table.rows, &retained.rows));
         table.put(&subject, second.clone()).unwrap();
