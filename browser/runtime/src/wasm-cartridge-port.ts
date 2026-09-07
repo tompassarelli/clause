@@ -2183,20 +2183,30 @@ function realize_projected_atom(kind: string, payload: CanonicalBytes): Projecte
   throw new Error("projected scalar Atom is not realizable");
 }
 
-type ProjectedAtoms = Map<string, Map<string, ProjectedValue>>;
+interface CachedProjectedValue {
+  readonly end: number;
+  readonly depth: number;
+  readonly value: ProjectedValue;
+}
+interface CachedProjectedFrame {
+  readonly source: string;
+  readonly values: Map<number, CachedProjectedValue>;
+}
 
-// Only the last completely decoded frame is retained; its keys are bounded
-// by the same CSE1 byte limit as the frame. Reused values are deeply frozen.
-let previousProjectedAtoms: ProjectedAtoms = new Map();
+// Retain only one complete frame and its value spans. Reused values are
+// deeply frozen, and span equality includes every encoded structural check.
+let previousProjectedFrame: CachedProjectedFrame | undefined;
 
 class ProjectionCursor {
   offset = 2 * identity_bytes;
-  readonly atoms: ProjectedAtoms = new Map();
-  constructor(readonly bytes: CanonicalBytes, readonly previousAtoms?: ProjectedAtoms) {
+  readonly values = new Map<number, CachedProjectedValue>();
+  maximumDepth = 0;
+  constructor(readonly bytes: CanonicalBytes, readonly retainValues: boolean, readonly previousFrame?: CachedProjectedFrame) {
     require_range(bytes, 0, this.offset, "projected Term scope");
   }
   tag(depth: number): number {
     if (depth > cse1_projected_term_max_depth) throw new Error("projected Term exceeds its depth bound");
+    if (this.retainValues) this.maximumDepth = Math.max(this.maximumDepth, depth);
     require_range(this.bytes, this.offset, 1, "projected Term node");
     const tag = byte_at(this.bytes, this.offset++);
     if (tag > 1) throw new Error("projected Term node tag is invalid");
@@ -2214,17 +2224,33 @@ class ProjectionCursor {
     return this.atomPayload();
   }
   value(depth: number): ProjectedValue {
+    if (!this.retainValues || typeof this.bytes !== "string") return this.freshValue(depth);
+    const start = this.offset;
+    const frame = this.previousFrame;
+    const previous = frame?.values.get(start);
+    if (frame !== undefined && previous !== undefined &&
+        this.bytes.slice(start, previous.end) === frame.source.slice(start, previous.end)) {
+      const maximumDepth = depth + previous.depth;
+      if (maximumDepth > cse1_projected_term_max_depth) throw new Error("projected Term exceeds its depth bound");
+      this.maximumDepth = Math.max(this.maximumDepth, maximumDepth);
+      this.offset = previous.end;
+      this.values.set(start, previous);
+      return previous.value;
+    }
+    const enclosingDepth = this.maximumDepth;
+    this.maximumDepth = depth;
+    try {
+      const value = this.freshValue(depth);
+      this.values.set(start, { end: this.offset, depth: this.maximumDepth - depth, value });
+      return value;
+    } finally {
+      this.maximumDepth = Math.max(enclosingDepth, this.maximumDepth);
+    }
+  }
+  freshValue(depth: number): ProjectedValue {
     if (this.tag(depth) === 0) {
       const atom = this.atomPayload();
-      if (this.previousAtoms === undefined || typeof atom.payload !== "string") {
-        return realize_projected_atom(atom.kind, atom.payload);
-      }
-      let current = this.atoms.get(atom.kind);
-      if (current === undefined) { current = new Map(); this.atoms.set(atom.kind, current); }
-      let value = current.get(atom.payload) ?? this.previousAtoms.get(atom.kind)?.get(atom.payload);
-      if (value === undefined) value = realize_projected_atom(atom.kind, atom.payload);
-      current.set(atom.payload, value);
-      return value;
+      return realize_projected_atom(atom.kind, atom.payload);
     }
     let head = this.atom(depth + 1);
     if (head.kind === "clause/process-projected-set-v1") return this.set(head.payload, depth);
@@ -2280,16 +2306,16 @@ class ProjectionCursor {
   }
 }
 
-function decode_projected_value(bytes: unknown, maximumBytes: number, reuseAtoms = false): ProjectedValue {
+function decode_projected_value(bytes: unknown, maximumBytes: number, reuseValues = false): ProjectedValue {
   const envelope = workbench["workbench-byte-envelope-source"](bytes);
   const source = envelope === null ? bytes : envelope;
   if (!((typeof source === "string" && source.length <= maximumBytes) || exact_byte_array_p(source, maximumBytes))) {
     throw new Error("projected Term bytes are outside the CSE1 bound");
   }
-  const cursor = new ProjectionCursor(source, reuseAtoms ? previousProjectedAtoms : undefined);
+  const cursor = new ProjectionCursor(source, reuseValues, reuseValues ? previousProjectedFrame : undefined);
   const value = cursor.value(0);
   if (cursor.offset !== source.length) throw new Error("projected Term has trailing bytes");
-  if (reuseAtoms) previousProjectedAtoms = cursor.atoms;
+  if (reuseValues) previousProjectedFrame = typeof source === "string" ? { source, values: cursor.values } : undefined;
   return value;
 }
 

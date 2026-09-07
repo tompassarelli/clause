@@ -1808,9 +1808,17 @@ test.test("projection cursor preserves object field custody and rejects malforme
   expect(Object.hasOwn(projected, "__proto__")).toBe(true);
   expect(Object.isFrozen(projected)).toBe(true);
   expect(projected).toEqual(JSON.parse('{"__proto__":"ordinary","constructor":"data"}'));
+  const binary = (bytes: readonly number[]) => bytes.map(byte => String.fromCharCode(byte)).join("");
+  const reused = wasm["decode-projected-term-frame"](binary(frame(valid)));
+  expect(wasm["decode-projected-term-frame"](binary(frame(valid)))).toBe(reused);
+  expect(() => wasm["decode-projected-term-frame"](binary(frame(valid)) + "x")).toThrow("trailing bytes");
+  const changed = field("__proto__", text("updated!"), field("constructor", text("data"), end));
+  expect(wasm["decode-projected-term-frame"](binary(frame(changed))))
+    .toEqual(JSON.parse('{"__proto__":"updated!","constructor":"data"}'));
   expect(() => wasm["decode-projected-term-frame"](frame(field("x", text("a"), field("x", text("b"), end))))).toThrow("duplicated");
   expect(() => wasm["decode-projected-term-frame"](frame(field("x", text("a"), projected_atom_node("clause/js-array-end-v1", []))))).toThrow("invalid terminator");
   expect(() => wasm["decode-projected-term-frame"](frame(valid).concat(0))).toThrow("trailing bytes");
   const malformed = frame(valid); malformed[malformed.length - 1] = 1;
   expect(() => wasm["decode-projected-term-frame"](malformed)).toThrow("equality contract");
+  expect(() => wasm["decode-projected-term-frame"](binary(malformed))).toThrow("equality contract");
 });
