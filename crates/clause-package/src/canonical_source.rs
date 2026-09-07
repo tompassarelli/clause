@@ -23,7 +23,7 @@ mod callable;
 mod value_type;
 mod foreign;
 pub use value_type::CanonicalValueTypeV1;
-pub use foreign::{CanonicalForeignBindingV1, CanonicalForeignOperationV1, CanonicalForeignFailureV1};
+pub use foreign::{CanonicalForeignEvaluationV1, CanonicalForeignBindingV1, CanonicalForeignOperationV1, CanonicalForeignFailureV1};
 pub use callable::{CanonicalCallableV1, CanonicalCallableArgumentV1, CanonicalCallableModeV1, check_canonical_callable_v1};
 mod scalar_laws;
 use scalar_laws::*;
@@ -78,6 +78,7 @@ pub enum CanonicalSourceProductionV1 {
     Capability,
     CallableDefinition,
     CallableExport,
+    ForeignType,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -742,6 +743,7 @@ impl CanonicalSourceCstV1 {
                         name: &role.name, domain: &role.domain, origin: role.origin,
                     }).collect(),
                 ),
+                CstKind::ForeignType { designation, .. } => (CanonicalSourceProductionV1::ForeignType, designation.as_slice(), Vec::new()),
                 CstKind::Shape { designation, fields } => (
                     CanonicalSourceProductionV1::Shape,
                     designation.as_slice(),
@@ -988,6 +990,7 @@ struct CstItem {
 
 #[derive(Clone, Debug)]
 enum CstKind {
+    ForeignType { designation: Vec<u8>, module: String, name: String },
     Referent {
         designation: Vec<u8>,
         declaration: bool,
@@ -1937,6 +1940,13 @@ fn allocation_requests(
                         domain: AllocationDomain::Capability,
                     },
                 ]);
+            }
+            CstKind::ForeignType { designation, .. } => {
+                requested.push(AllocationRequest {
+                    producer: semantic_producer(CanonicalSourceProductionV1::ForeignType, designation),
+                    slot: head_slot(CanonicalSourceProductionV1::ForeignType),
+                    domain: AllocationDomain::Formation,
+                });
             }
             CstKind::Shape {
                 designation,
@@ -6239,6 +6249,13 @@ pub fn elaborate_canonical_source_package_v1(
                 });
                 emissions.push(emission(plan, producer, slot, item.origin));
             }
+            CstKind::ForeignType { designation, .. } => {
+                let producer = semantic_producer(CanonicalSourceProductionV1::ForeignType, designation);
+                let slot = head_slot(CanonicalSourceProductionV1::ForeignType);
+                formations.push(source_formation(scope, formation_id(plan, &producer, &slot)?,
+                    cst.source_slice(item.origin).expect("owned origin"), item.origin, "foreign-type")?);
+                emissions.push(emission(plan, producer, slot, item.origin));
+            }
             CstKind::Shape {
                 designation,
                 fields,
@@ -9864,6 +9881,27 @@ fn parse_declaration(
         .filter(|line| !line.text.trim().is_empty())
         .copied()
         .collect::<Vec<_>>();
+    if lines.iter().any(|line| line.text.trim().starts_with("foreign:")) {
+        let mut module = None;
+        let mut name = None;
+        for line in &lines {
+            let origin = line_origin(artifact, *line);
+            let (key, value) = line.text.trim().split_once(": ")
+                .ok_or(CanonicalSourceErrorV1::InvalidRelationChild { origin })?;
+            let value = parse_text_literal(value).ok_or(CanonicalSourceErrorV1::InvalidRelationChild { origin })?;
+            match key {
+                "foreign" if module.is_none() => module = Some(value),
+                "type" if name.is_none() => name = Some(value),
+                _ => return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin }),
+            }
+        }
+        let origin = block_origin(artifact, block);
+        return Ok(CstItem { origin, kind: CstKind::ForeignType {
+            designation,
+            module: module.ok_or(CanonicalSourceErrorV1::InvalidRelationChild { origin })?,
+            name: name.ok_or(CanonicalSourceErrorV1::InvalidRelationChild { origin })?,
+        }});
+    }
     let mut roles = Vec::new();
     let mut fields = Vec::new();
     let mut reading = None;
@@ -9886,7 +9924,7 @@ fn parse_declaration(
             })?;
             let name = denotation_designation_bytes(
                 std::str::from_utf8(&edge.relation).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?, origin)?;
-            let domain = application_designation_bytes(
+            let domain = value_type::designation(
                 std::str::from_utf8(edge.object.source(origin)?).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?, origin)?;
             fields.push(ShapeField {
                 name,
@@ -10925,7 +10963,7 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
             } => Some((designation, *declaration, !*declaration)),
             CstKind::Denotation(denotation) => Some((&denotation.name, false, false)),
             CstKind::Application(application) => Some((&application.subject, false, true)),
-            CstKind::Capability { designation } | CstKind::Shape { designation, .. } => {
+            CstKind::ForeignType { designation, .. } | CstKind::Capability { designation } | CstKind::Shape { designation, .. } => {
                 Some((designation, false, false))
             }
             CstKind::Relation(relation) if relation.contract_origin.is_none() => Some((&relation.designation, false, false)),

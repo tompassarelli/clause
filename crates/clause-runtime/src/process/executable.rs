@@ -1178,6 +1178,9 @@ pub struct ExecutableCallableV1 {
 
 pub fn lower_canonical_callable_v1(callable: &CanonicalCallableV1) -> Result<ExecutableCallableV1, ExecutableErrorV1> {
     check_canonical_callable_v1(callable).map_err(|_| ExecutableErrorV1::TypeMismatch)?;
+    if callable.result_kind.contains_delayed() || callable.arguments.iter().any(|a| a.value_kind.contains_delayed()) {
+        return Err(ExecutableErrorV1::UnboundForeign);
+    }
     Ok(ExecutableCallableV1 {
         arguments: callable.arguments.iter().map(|a| a.value_kind.clone()).collect(),
         result: callable.result_kind.clone(),
@@ -1240,7 +1243,10 @@ fn lower_canonical_expression(
         CanonicalExecutableExpressionV1::SequenceDrop(a, b) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::SequenceDrop(a, b) }
         CanonicalExecutableExpressionV1::Field(a, field) => ExecutableExpressionV1::Field(Box::new(lower_canonical_expression(a, slots, depth + 1)?), field.clone()),
         CanonicalExecutableExpressionV1::Require(a, b, c) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::Require(a, b, Box::new(lower_canonical_expression(c, slots, depth + 1)?)) }
-        CanonicalExecutableExpressionV1::Foreign { binding, arguments } => ExecutableExpressionV1::Foreign { binding: binding.clone(), arguments: arguments.iter().map(|v| lower_canonical_expression(v, slots, depth + 1)).collect::<Result<_, _>>()? },
+        CanonicalExecutableExpressionV1::Foreign { binding, arguments } => {
+            if binding.evaluation != clause_package::CanonicalForeignEvaluationV1::Attempt { return Err(ExecutableErrorV1::UnboundForeign); }
+            ExecutableExpressionV1::Foreign { binding: binding.clone(), arguments: arguments.iter().map(|v| lower_canonical_expression(v, slots, depth + 1)).collect::<Result<_, _>>()? }
+        },
         CanonicalExecutableExpressionV1::Conditional(condition, yes, no) => {
             let (yes, no) = pair(yes, no)?;
             ExecutableExpressionV1::Conditional(Box::new(

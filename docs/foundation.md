@@ -297,6 +297,13 @@ intent -> effect Authorization -> capability -> attempt
        -> optional receipt and observations -> optional later Admission
 ```
 
+A foreign contract may explicitly select delayed target construction instead of
+an attempt. Construction is a pure value operation and preserves the eventual
+value contract and target identity. It grants no authorization, performs no
+foreign access, and does not force the represented target value. Ordinary strict
+bindings still construct their arguments once. Delay cannot be erased when using
+a value, mixed across targets, or substituted for a runtime effect contract.
+
 Authorization judges permission; capability proves access to a boundary or
 resource. Neither proves that an attempt occurred or succeeded. A receipt
 reports an outcome; it does not make the intended proposition true. Failure to

@@ -79,6 +79,7 @@ fn scalar_type(kind: CanonicalScalarValueKindV1) -> Result<ValueType> {
 }
 fn callable_type(kind: &CanonicalValueTypeV1) -> Result<ValueType> {
     match kind {
+        CanonicalValueTypeV1::Delayed { .. } | CanonicalValueTypeV1::OpaqueForeign { .. } => unsupported("JavaScript does not execute delayed target construction"),
         CanonicalValueTypeV1::Scalar(kind) => scalar_type(*kind),
         CanonicalValueTypeV1::Sequence(element) => Ok(ValueType::Sequence(Box::new(callable_type(element)?))),
         CanonicalValueTypeV1::Record(fields) => Ok(ValueType::Record(fields.iter().map(|(k,v)| Ok((k.clone(), callable_type(v)?))).collect::<Result<_>>()?)),
@@ -215,6 +216,9 @@ impl Lowerer<'_> {
                 (format!("({condition}?{value}:fail({message}))"),kind)
             }
             E::Foreign { binding, arguments } => {
+                if binding.evaluation != CanonicalForeignEvaluationV1::Attempt {
+                    return unsupported("JavaScript does not execute delayed target construction");
+                }
                 binding.check().map_err(|e| JavaScriptLoweringErrorV1(e.into()))?;
                 let values=arguments.iter().zip(&binding.arguments).map(|(value,kind)| self.expression(value,Some(callable_type(kind)?)).map(|v| v.0)).collect::<Result<Vec<_>>>()?;
                 let member=format!("{}[{}]",foreign_name(&binding.module),quote(&binding.member));

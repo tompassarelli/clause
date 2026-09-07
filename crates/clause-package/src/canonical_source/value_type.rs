@@ -5,6 +5,8 @@ use super::*;
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CanonicalValueTypeV1 {
     Scalar(CanonicalScalarValueKindV1),
+    Delayed { target: String, value: Box<Self> },
+    OpaqueForeign { module: String, name: String },
     Sequence(Box<Self>),
     Record(BTreeMap<Vec<u8>, Self>),
 }
@@ -17,7 +19,7 @@ impl From<CanonicalScalarValueKindV1> for CanonicalValueTypeV1 {
 
 impl CanonicalValueTypeV1 {
     pub fn check(&self) -> Result<(), &'static str> {
-        fn check(kind: &CanonicalValueTypeV1, depth: usize) -> Result<(), &'static str> {
+        fn check(kind: &CanonicalValueTypeV1, depth: usize, delayed: bool) -> Result<(), &'static str> {
             if depth >= 64 {
                 return Err("value type depth limit");
             }
@@ -26,19 +28,47 @@ impl CanonicalValueTypeV1 {
                     CanonicalScalarValueKindV1::Sequence | CanonicalScalarValueKindV1::Record,
                 ) => Err("composite value requires its recursive contract"),
                 CanonicalValueTypeV1::Scalar(_) => Ok(()),
-                CanonicalValueTypeV1::Sequence(element) => check(element, depth + 1),
+                CanonicalValueTypeV1::Delayed { target, value } => {
+                    if delayed || target.is_empty() || target.contains('\0') || !value.in_target(target) {
+                        return Err("invalid delayed target contract");
+                    }
+                    check(value, depth + 1, true)
+                }
+                CanonicalValueTypeV1::OpaqueForeign { module, name } => {
+                    if !delayed || module.is_empty() || name.is_empty() || module.contains('\0') || name.contains('\0') {
+                        return Err("opaque foreign types require a delayed contract and exact external identity");
+                    }
+                    Ok(())
+                }
+                CanonicalValueTypeV1::Sequence(element) => check(element, depth + 1, delayed),
                 CanonicalValueTypeV1::Record(fields) => {
                     for (name, field) in fields {
                         if name.is_empty() || std::str::from_utf8(name).is_err() {
                             return Err("invalid record field designation");
                         }
-                        check(field, depth + 1)?;
+                        check(field, depth + 1, delayed)?;
                     }
                     Ok(())
                 }
             }
         }
-        check(self, 0)
+        check(self, 0, false)
+    }
+    pub fn contains_delayed(&self) -> bool {
+        match self {
+            Self::Delayed { .. } | Self::OpaqueForeign { .. } => true,
+            Self::Sequence(value) => value.contains_delayed(),
+            Self::Record(fields) => fields.values().any(Self::contains_delayed),
+            Self::Scalar(_) => false,
+        }
+    }
+    pub fn in_target(&self, target: &str) -> bool {
+        match self {
+            Self::Delayed { target: actual, value } => actual == target && value.in_target(target),
+            Self::Sequence(value) => value.in_target(target),
+            Self::Record(fields) => fields.values().all(|value| value.in_target(target)),
+            _ => true,
+        }
     }
     pub fn accepts(&self, value: &CanonicalScalarValueV1) -> bool {
         use CanonicalScalarValueKindV1 as K;
@@ -79,6 +109,17 @@ pub(super) fn resolve(
     if let Some(kind) = scalar {
         return Ok(kind.into());
     }
+    if let Some(body) = name.strip_prefix(b"Delayed<").and_then(|s| s.strip_suffix(b">")) {
+        let comma = body.iter().position(|b| *b == b',').ok_or("delayed contract needs target and value")?;
+        let target = std::str::from_utf8(&body[..comma]).map_err(|_| "invalid target")?.trim().to_owned();
+        let value = std::str::from_utf8(&body[comma+1..]).map_err(|_| "invalid delayed value")?.trim();
+        return Ok(CanonicalValueTypeV1::Delayed { target, value: Box::new(resolve(value.as_bytes(), items, active)?) });
+    }
+    if let Some(kind) = items.iter().find_map(|item| match &item.kind {
+        CstKind::ForeignType { designation, module, name: foreign_name } if designation == name =>
+            Some(CanonicalValueTypeV1::OpaqueForeign { module: module.clone(), name: foreign_name.clone() }),
+        _ => None,
+    }) { return Ok(kind); }
     if let Some(element) = name
         .strip_prefix(b"Sequence<")
         .and_then(|s| s.strip_suffix(b">"))
@@ -110,4 +151,18 @@ pub(super) fn resolve(
     }
     active.remove(name);
     Ok(CanonicalValueTypeV1::Record(resolved))
+}
+
+/// The declaration grammar uses the same recursive value contracts as callables.
+pub(super) fn designation(source: &str, origin: CanonicalSourceOriginV1) -> Result<Vec<u8>, CanonicalSourceErrorV1> {
+    if let Some(inner) = source.strip_prefix("Sequence<").and_then(|s| s.strip_suffix('>')) {
+        designation(inner, origin)?;
+    } else if let Some(inner) = source.strip_prefix("Delayed<").and_then(|s| s.strip_suffix('>')) {
+        let (target, value) = inner.split_once(',').ok_or(CanonicalSourceErrorV1::InvalidApplication { origin })?;
+        application_designation_bytes(target.trim(), origin)?;
+        designation(value.trim(), origin)?;
+    } else {
+        application_designation_bytes(source, origin)?;
+    }
+    Ok(source.as_bytes().to_vec())
 }

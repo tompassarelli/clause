@@ -358,12 +358,47 @@ foreign write-output(?fd: F64, ?message: Text): F64
 `get` reads a member without arguments; `call` invokes it with the declared
 arguments. Module and member names are inert foreign identifiers. The explicit
 `throw` contract permits an attempt to fail; it promises neither success nor
-rollback. Ordinary callables reject foreign operations and calls to procedures.
+rollback. Ordinary callables reject foreign attempts and calls to procedures.
 `procedure` selects an effect-permitting direction. Source checking retains
 unresolved native foreign obligations; invoking one without a binding rejects.
 JavaScript lowering binds the exact declared member and checks values crossing
 that boundary. Exported declarations describe the same checked public types;
 they do not import or emulate the TypeScript type system.
+
+A foreign declaration with `construction: "nix"` instead constructs a delayed
+expression for that target. It performs no foreign attempt. Its written result
+is the eventual value contract; the construction declaration derives the checked
+`Delayed<nix,T>` result. Delayed values cannot be used as ordinary values or
+compared during construction, and different targets cannot cross a construction
+boundary. Call, record, sequence, and strict lexical binding syntax are unchanged.
+A strict binding constructs its value once; it does not force the eventual Nix
+value. The `throw` contract now describes failure at target evaluation.
+
+Foreign opaque values identify the external type, rather than pretending it is
+a Clause scalar or structural record:
+
+```clause
+Package:
+  foreign: "nixpkgs"
+  type: "Package"
+
+foreign btop(): Package
+  construction: "nix"
+  get: "btop"
+  from: "pkgs"
+  failure: throw
+```
+
+An opaque foreign contract is admitted only inside a delayed type. A parameter
+that independently requires a delayed Boolean spells `Delayed<nix,Bool>`.
+Ordinary runtime foreign declarations continue to default to attempts and cannot
+carry these delayed values. Native and JavaScript refinements reject construction
+until they implement it. `compile-nix SOURCE.clause ENTRY OUTPUT.nix` constructs
+one exported, argument-free entry using only checked common expressions; reached
+foreign module roots become the Nix function's arguments. This bounded renderer
+supports scalar constants, records, sequences, fields, strict bindings, checked
+foreign construction, equality of ordinary values, concatenation, and static
+conditional/require expressions. Other expressions reject explicitly.
 
 A procedure body sequences its expression lines and returns the last value.
 Each preceding expression evaluates exactly once before the next one. A wrapped

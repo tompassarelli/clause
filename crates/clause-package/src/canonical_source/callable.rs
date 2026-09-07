@@ -119,7 +119,7 @@ pub(super) fn read(
     let exported = head.starts_with("export ");
     let head = head.strip_prefix("export ").unwrap_or(head);
     let foreign = head.starts_with("foreign ");
-    let mode = if foreign || head.starts_with("procedure ") {
+    let mut mode = if foreign || head.starts_with("procedure ") {
         CanonicalCallableModeV1::Procedure
     } else {
         CanonicalCallableModeV1::Function
@@ -155,13 +155,13 @@ pub(super) fn read(
     let (parameters, result) = signature
         .split_once("):")
         .ok_or_else(|| error("expected a result type"))?;
-    let result_kind =
+    let mut result_kind =
         value_type::resolve(result.trim().as_bytes(), declarations, &mut BTreeSet::new())
             .map_err(error)?;
     let mut arguments = Vec::new();
     let mut roles = Vec::new();
     let mut names = BTreeSet::new();
-    for parameter in parameters.split(',').filter(|s| !s.trim().is_empty()) {
+    for parameter in split_parameters(parameters).ok_or_else(|| error("invalid parameter contract"))? {
         let (name, domain) = parameter
             .trim()
             .split_once(':')
@@ -202,9 +202,15 @@ pub(super) fn read(
         ..origin
     };
     let body = if foreign {
-        let (operation, failure, module, member) = foreign::read_abi(&block[1..])
+        let (evaluation, operation, failure, module, member) = foreign::read_abi(&block[1..])
             .ok_or_else(|| error("invalid foreign ABI declaration"))?;
+        if let CanonicalForeignEvaluationV1::Construct { target } = &evaluation {
+            mode = CanonicalCallableModeV1::Function;
+            result_kind = CanonicalValueTypeV1::Delayed { target: target.clone(), value: Box::new(result_kind) };
+            roles.last_mut().expect("callable result role").domain = format!("Delayed<{target},{}>", result.trim()).into_bytes();
+        }
         let binding = CanonicalForeignBindingV1 {
+            evaluation,
             operation,
             failure,
             module,
@@ -753,6 +759,7 @@ pub fn check_canonical_callable_v1(
         use CanonicalScalarValueKindV1 as K;
         match kind {
             CanonicalValueTypeV1::Scalar(K::Text | K::Number | K::Boolean) => true,
+            CanonicalValueTypeV1::Delayed { .. } => kind.check().is_ok(),
             CanonicalValueTypeV1::Sequence(element) => supported(element),
             CanonicalValueTypeV1::Record(fields) => fields.values().all(supported),
             _ => false,
@@ -881,7 +888,7 @@ fn expression_kind(
             binding,
             arguments: actual,
         } => {
-            if mode != CanonicalCallableModeV1::Procedure {
+            if mode != CanonicalCallableModeV1::Procedure && binding.evaluation == CanonicalForeignEvaluationV1::Attempt {
                 return Err("foreign effects are forbidden in a pure callable");
             }
             binding.check()?;
@@ -925,7 +932,9 @@ fn expression_kind(
             K::Number.into()
         }
         E::Equal(a, b) => {
-            require(b, &recur(a)?)?;
+            let kind = recur(a)?;
+            if kind.contains_delayed() { return Err("delayed values cannot be compared during construction"); }
+            require(b, &kind)?;
             K::Boolean.into()
         }
         E::Conditional(a, b, c) => {
@@ -936,4 +945,21 @@ fn expression_kind(
         }
         _ => return Err("unsupported callable expression or state access"),
     })
+}
+
+fn split_parameters(source: &str) -> Option<Vec<&str>> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0;
+    for (index, byte) in source.bytes().enumerate() {
+        match byte {
+            b'<' => depth += 1,
+            b'>' => depth = depth.checked_sub(1)?,
+            b',' if depth == 0 => { parts.push(source[start..index].trim()); start = index + 1; }
+            _ => {}
+        }
+    }
+    if depth != 0 { return None; }
+    if !source[start..].trim().is_empty() { parts.push(source[start..].trim()); }
+    Some(parts)
 }

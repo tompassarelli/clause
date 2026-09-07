@@ -1,5 +1,5 @@
 use std::fmt;
-use crate::{CanonicalForeignBindingV1, CanonicalForeignOperationV1, CanonicalForeignFailureV1, CanonicalValueTypeV1, CanonicalScalarValueKindV1};
+use crate::{CanonicalForeignEvaluationV1, CanonicalForeignBindingV1, CanonicalForeignOperationV1, CanonicalForeignFailureV1, CanonicalValueTypeV1, CanonicalScalarValueKindV1};
 
 use crate::authority::{
     JudgmentAuthorityScope, RevisionJudgmentAuthorityGrant, RevisionStateAdmissionGrant,
@@ -1389,6 +1389,10 @@ impl Wire for CanonicalForeignBindingV1 {
         encoder.blob("foreign member", self.member.as_bytes())?;
         encoder.u8(match self.operation { CanonicalForeignOperationV1::Call => 0, CanonicalForeignOperationV1::Get => 1 });
         encoder.u8(match self.failure { CanonicalForeignFailureV1::Throw => 0 });
+        match &self.evaluation {
+            CanonicalForeignEvaluationV1::Attempt => encoder.u8(0),
+            CanonicalForeignEvaluationV1::Construct { target } => { encoder.u8(1); encoder.blob("construction target", target.as_bytes())?; }
+        }
         self.arguments.encode(encoder)?;
         self.result.encode(encoder)
     }
@@ -1399,7 +1403,12 @@ impl Wire for CanonicalForeignBindingV1 {
         let member=String::from_utf8(cursor.blob()?).map_err(|_| invalid("foreign member must be UTF-8"))?;
         let operation=match cursor.u8()? { 0 => CanonicalForeignOperationV1::Call, 1 => CanonicalForeignOperationV1::Get, found => return Err(unknown_tag(offset,"foreign operation",found)) };
         let failure=match cursor.u8()? { 0 => CanonicalForeignFailureV1::Throw, found => return Err(unknown_tag(offset,"foreign failure",found)) };
-        let binding=Self { module,member,operation,failure,arguments: Vec::decode(cursor)?, result: CanonicalValueTypeV1::decode(cursor)? };
+        let evaluation=match cursor.u8()? {
+            0 => CanonicalForeignEvaluationV1::Attempt,
+            1 => CanonicalForeignEvaluationV1::Construct { target: String::from_utf8(cursor.blob()?).map_err(|_| invalid("invalid construction target"))? },
+            found => return Err(unknown_tag(offset,"foreign evaluation",found)),
+        };
+        let binding=Self { evaluation,module,member,operation,failure,arguments: Vec::decode(cursor)?, result: CanonicalValueTypeV1::decode(cursor)? };
         binding.check().map_err(invalid)?;
         Ok(binding)
     }
@@ -1417,6 +1426,8 @@ impl Wire for CanonicalValueTypeV1 {
                     K::Referent => 4, K::RelationTable => 5,
                     K::Sequence | K::Record => return Err(CanonicalEncodeError::InvalidForeignContract("composite kind needs recursive type")),
                 }),
+                T::Delayed { target, value } => { encoder.u8(8); encoder.blob("delayed target",target.as_bytes())?; encode(value,encoder)?; }
+                T::OpaqueForeign { module, name } => { encoder.u8(9); encoder.blob("foreign type module",module.as_bytes())?; encoder.blob("foreign type name",name.as_bytes())?; }
                 T::Sequence(element) => { encoder.u8(6); encode(element,encoder)?; }
                 T::Record(fields) => {
                     encoder.u8(7);
@@ -1440,6 +1451,14 @@ impl Wire for CanonicalValueTypeV1 {
                 0 => K::Number.into(), 1 => K::Boolean.into(), 2 => K::Symbol.into(),
                 3 => K::Text.into(), 4 => K::Referent.into(), 5 => K::RelationTable.into(),
                 6 => T::Sequence(Box::new(decode(cursor,depth+1)?)),
+                8 => T::Delayed {
+                    target: String::from_utf8(cursor.blob()?).map_err(|_| CanonicalDecodeError::InvalidForeignContract { offset, reason: "invalid target" })?,
+                    value: Box::new(decode(cursor,depth+1)?),
+                },
+                9 => T::OpaqueForeign {
+                    module: String::from_utf8(cursor.blob()?).map_err(|_| CanonicalDecodeError::InvalidForeignContract { offset, reason: "invalid module" })?,
+                    name: String::from_utf8(cursor.blob()?).map_err(|_| CanonicalDecodeError::InvalidForeignContract { offset, reason: "invalid type name" })?,
+                },
                 7 => {
                     let count=cursor.u32()?;
                     if count > MAX_LIST_ITEMS { return Err(CanonicalDecodeError::ListTooLong { offset,count }); }
@@ -1540,6 +1559,7 @@ mod foreign_mode_contract_tests {
         assert_eq!(ModeContractV2::decode(&mut Cursor::new(&empty)).unwrap(),value);
         assert!(value.is_function());
         value.foreign_accesses.push(CanonicalForeignBindingV1 {
+            evaluation: CanonicalForeignEvaluationV1::Attempt,
             module: "node:process".into(),member: "argv".into(),
             operation: CanonicalForeignOperationV1::Get,failure: CanonicalForeignFailureV1::Throw,
             arguments: vec![],result: CanonicalValueTypeV1::Sequence(Box::new(CanonicalScalarValueKindV1::Text.into())),
@@ -1555,6 +1575,14 @@ mod foreign_mode_contract_tests {
         let record=bytes(&value);
         assert_ne!(record,encoded);
         assert_eq!(ModeContractV2::decode(&mut Cursor::new(&record)).unwrap(),value);
+        value.foreign_accesses[0].evaluation = CanonicalForeignEvaluationV1::Construct { target: "nix".into() };
+        value.foreign_accesses[0].result = CanonicalValueTypeV1::Delayed {
+            target: "nix".into(), value: Box::new(CanonicalValueTypeV1::OpaqueForeign { module: "nixpkgs".into(), name: "Package".into() }),
+        };
+        let construction = bytes(&value);
+        assert_ne!(construction, record);
+        assert_eq!(ModeContractV2::decode(&mut Cursor::new(&construction)).unwrap(), value);
+        assert!(value.is_pure());
         let mut empty_tag=vec![2,0,0,0,0]; empty_tag.extend(empty);
         assert!(ModeContractV2::decode(&mut Cursor::new(&empty_tag)).is_err());
         assert!(ModeContractV2::decode(&mut Cursor::new(&[3])).is_err());

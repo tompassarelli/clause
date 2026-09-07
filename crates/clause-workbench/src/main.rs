@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 mod text_command;
 mod javascript_command;
+mod nix_callable_command;
 
 use clause_package::{
     CanonicalSourceProductionV1, Term, decode_canonical_term_bytes, project_nix_flake_v1,
@@ -18,11 +19,12 @@ use clause_workbench::{
     render_authoring_card_v1,
 };
 
-const USAGE: &str = "usage:\n  clause-workbench\n  clause-workbench source-loop SOURCE.clause\n  clause-workbench authoring-card [OUTPUT]\n  clause-workbench check-source FILE.clause\n  clause-workbench compile-source FILE.clause [OUTPUT]\n  clause-workbench compile-js FILE.clause OUTPUT.js\n  clause-workbench project-text SOURCE.clause HANDLER [OUTPUT]\n  clause-workbench project-nix SOURCE.clause [OUTPUT]";
+const USAGE: &str = "usage:\n  clause-workbench\n  clause-workbench source-loop SOURCE.clause\n  clause-workbench authoring-card [OUTPUT]\n  clause-workbench check-source FILE.clause\n  clause-workbench compile-source FILE.clause [OUTPUT]\n  clause-workbench compile-nix FILE.clause ENTRY OUTPUT.nix\n  clause-workbench compile-js FILE.clause OUTPUT.js\n  clause-workbench project-text SOURCE.clause HANDLER [OUTPUT]\n  clause-workbench project-nix SOURCE.clause [OUTPUT]";
 
 fn main() -> ExitCode {
     let mut arguments = std::env::args_os().skip(1);
     match arguments.next().as_deref() {
+        Some(command) if command == OsStr::new("compile-nix") => nix_callable_command::run(arguments.collect()),
         Some(command) if command == OsStr::new("compile-js") => {
             javascript_command::run(arguments.collect())
         }

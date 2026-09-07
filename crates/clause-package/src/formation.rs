@@ -252,7 +252,8 @@ pub struct ModeContractV2 {
 impl ModeContractV2 {
     #[must_use]
     pub fn is_pure(&self) -> bool {
-        self.state_delta_domain.is_none() && self.effect_intents.is_empty() && self.foreign_accesses.is_empty()
+        self.state_delta_domain.is_none() && self.effect_intents.is_empty()
+            && self.foreign_accesses.iter().all(|access| matches!(access.evaluation, crate::CanonicalForeignEvaluationV1::Construct { .. }))
     }
 
     #[must_use]
