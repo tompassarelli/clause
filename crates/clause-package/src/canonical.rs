@@ -897,7 +897,8 @@ fn encode_term(
         TermValueRef::Atom(atom) => {
             encoder.u8(0);
             encoder.blob("atom kind", atom.kind())?;
-            encoder.blob("atom canonical payload", atom.canonical_payload())?;
+            encoder.u32(u32::try_from(atom.payload_len()).map_err(|_| CanonicalEncodeError::LengthExceedsU32 { field: "atom canonical payload", length: atom.payload_len() })?);
+            for segment in atom.payload_segments() { encoder.fixed(segment); }
             atom.equality_contract().encode(encoder)?;
         }
         TermValueRef::Triple(triple) => {
@@ -924,7 +925,8 @@ fn encode_term_value(
         TermValueRef::Atom(atom) => {
             encoder.u8(0);
             encoder.blob("atom kind", atom.kind())?;
-            encoder.blob("atom canonical payload", atom.canonical_payload())?;
+            encoder.u32(u32::try_from(atom.payload_len()).map_err(|_| CanonicalEncodeError::LengthExceedsU32 { field: "atom canonical payload", length: atom.payload_len() })?);
+            for segment in atom.payload_segments() { encoder.fixed(segment); }
             atom.equality_contract().encode(encoder)?;
         }
         TermValueRef::Triple(triple) => {

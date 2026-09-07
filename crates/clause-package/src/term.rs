@@ -1,5 +1,6 @@
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::hash::{Hash, Hasher};
 
 use crate::{ClauseSemanticsId, UniverseId};
 
@@ -25,11 +26,83 @@ pub enum EqualityContract {
     ExactOctetsV1,
 }
 
+/// An immutable portion of an exact Atom payload. Segment boundaries have no
+/// semantic or canonical-wire significance.
+#[derive(Clone, Debug)]
+pub enum AtomPayloadSegment {
+    Bytes(Arc<[u8]>),
+    Text(Arc<str>),
+}
+
+impl AtomPayloadSegment {
+    pub fn as_bytes(&self) -> &[u8] {
+        match self { Self::Bytes(value) => value, Self::Text(value) => value.as_bytes() }
+    }
+}
+
+#[derive(Clone)]
+struct AtomPayload {
+    segments: Arc<[AtomPayloadSegment]>,
+    length: usize,
+    contiguous: Arc<OnceLock<Vec<u8>>>,
+}
+
+impl AtomPayload {
+    fn new(segments: Vec<AtomPayloadSegment>) -> Result<Self, TermError> {
+        let mut length = 0_usize;
+        for segment in &segments {
+            length = length.checked_add(segment.as_bytes().len()).ok_or(TermError::FieldTooLarge {
+                field: "canonical payload", length: usize::MAX,
+            })?;
+            if length > MAX_ATOM_FIELD_BYTES {
+                return Err(TermError::FieldTooLarge { field: "canonical payload", length });
+            }
+        }
+        Ok(Self { segments: segments.into(), length, contiguous: Arc::new(OnceLock::new()) })
+    }
+
+    fn bytes(&self) -> &[u8] {
+        if let [segment] = self.segments.as_ref() { return segment.as_bytes(); }
+        self.contiguous.get_or_init(|| {
+            let mut bytes = Vec::with_capacity(self.length);
+            for segment in self.segments.iter() { bytes.extend_from_slice(segment.as_bytes()); }
+            bytes
+        })
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &u8> {
+        self.segments.iter().flat_map(|segment| segment.as_bytes())
+    }
+}
+
+impl PartialEq for AtomPayload {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.segments, &other.segments)
+            || (self.length == other.length && self.iter().eq(other.iter()))
+    }
+}
+impl Eq for AtomPayload {}
+impl PartialOrd for AtomPayload {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
+}
+impl Ord for AtomPayload {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if Arc::ptr_eq(&self.segments, &other.segments) { std::cmp::Ordering::Equal }
+        else { self.iter().cmp(other.iter()) }
+    }
+}
+impl Hash for AtomPayload {
+    fn hash<H: Hasher>(&self, state: &mut H) { self.bytes().hash(state); }
+}
+impl fmt::Debug for AtomPayload {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result { self.bytes().fmt(formatter) }
+}
+
 /// One contextually opaque Atom under a fixed equality contract.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Atom {
     kind: Vec<u8>,
-    canonical_payload: Vec<u8>,
+    canonical_payload: AtomPayload,
     equality_contract: EqualityContract,
 }
 
@@ -41,7 +114,7 @@ impl Atom {
     ) -> Result<Self, TermError> {
         let atom = Self {
             kind: kind.into(),
-            canonical_payload: canonical_payload.into(),
+            canonical_payload: AtomPayload::new(vec![AtomPayloadSegment::Bytes(canonical_payload.into().into())])?,
             equality_contract,
         };
         atom.validate()?;
@@ -62,7 +135,7 @@ impl Atom {
         }
         for (field, length) in [
             ("kind", self.kind.len()),
-            ("canonical payload", self.canonical_payload.len()),
+            ("canonical payload", self.canonical_payload.length),
         ] {
             if length > MAX_ATOM_FIELD_BYTES {
                 return Err(TermError::FieldTooLarge { field, length });
@@ -78,8 +151,14 @@ impl Atom {
 
     #[must_use]
     pub fn canonical_payload(&self) -> &[u8] {
-        &self.canonical_payload
+        self.canonical_payload.bytes()
     }
+
+    pub(crate) fn payload_segments(&self) -> impl Iterator<Item = &[u8]> {
+        self.canonical_payload.segments.iter().map(AtomPayloadSegment::as_bytes)
+    }
+
+    pub(crate) fn payload_len(&self) -> usize { self.canonical_payload.length }
 
     #[must_use]
     pub const fn equality_contract(&self) -> EqualityContract {
@@ -180,6 +259,18 @@ impl Term {
             )?)),
             complexity: TermComplexity::ATOM,
         })
+    }
+
+    /// Construct the same exact Atom while sharing immutable payload segments.
+    pub fn atom_segments(
+        scope: TermScope,
+        kind: impl Into<Vec<u8>>,
+        segments: Vec<AtomPayloadSegment>,
+        equality_contract: EqualityContract,
+    ) -> Result<Self, TermError> {
+        let atom = Atom { kind: kind.into(), canonical_payload: AtomPayload::new(segments)?, equality_contract };
+        atom.validate()?;
+        Ok(Self { scope, value: Arc::new(TermValue::Atom(atom)), complexity: TermComplexity::ATOM })
     }
 
     pub fn triple(slots: [Term; 3]) -> Result<Self, TermError> {
@@ -321,6 +412,31 @@ mod tests {
             slots[2].as_atom().expect("Atom slot").canonical_payload(),
             b"right"
         );
+    }
+
+    #[test]
+    fn segmented_atoms_preserve_exact_identity_order_hash_and_encoding_without_flattening() {
+        let shared: Arc<str> = Arc::from("世界");
+        let segmented = Term::atom_segments(scope(1, 2), b"test".to_vec(), vec![
+            AtomPayloadSegment::Bytes(Arc::from(b"a".as_slice())),
+            AtomPayloadSegment::Text(shared.clone()),
+            AtomPayloadSegment::Bytes(Arc::from(b"z".as_slice())),
+        ], EqualityContract::ExactOctetsV1).unwrap();
+        let contiguous = Term::atom(scope(1, 2), b"test".to_vec(), "a世界z".as_bytes().to_vec(), EqualityContract::ExactOctetsV1).unwrap();
+        assert_eq!(Arc::strong_count(&shared), 2);
+        assert_eq!(segmented, contiguous);
+        assert_eq!(segmented.cmp(&contiguous), std::cmp::Ordering::Equal);
+        assert_eq!(crate::canonical_term_bytes(&segmented).unwrap(), crate::canonical_term_bytes(&contiguous).unwrap());
+        assert!(segmented.as_atom().unwrap().canonical_payload.contiguous.get().is_none());
+        let hash = |term: &Term| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            term.hash(&mut hasher); hasher.finish()
+        };
+        assert_eq!(hash(&segmented), hash(&contiguous));
+        assert_eq!(segmented.as_atom().unwrap().canonical_payload(), "a世界z".as_bytes());
+        let part: Arc<[u8]> = vec![0; MAX_ATOM_FIELD_BYTES].into();
+        assert!(Term::atom_segments(scope(1, 2), b"test".to_vec(), vec![AtomPayloadSegment::Bytes(part.clone())], EqualityContract::ExactOctetsV1).is_ok());
+        assert!(matches!(Term::atom_segments(scope(1, 2), b"test".to_vec(), vec![AtomPayloadSegment::Bytes(part), AtomPayloadSegment::Bytes(Arc::from(b"x".as_slice()))], EqualityContract::ExactOctetsV1), Err(TermError::FieldTooLarge { .. })));
     }
 
     #[test]
