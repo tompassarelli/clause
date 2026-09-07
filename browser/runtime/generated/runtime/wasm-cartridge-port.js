@@ -109,7 +109,7 @@ function decode_hex_transport(source, label, maximumBytes, maximumSourceUnits) {
                             ? (() => {
                                 throw new Error(`${label} hex transport is empty`);
                             })()
-                            : Object.freeze(bytes);
+                            : retain_decoded_bytes(bytes);
                 }
                 else {
                     const code = source.charCodeAt(index);
@@ -263,6 +263,15 @@ function cwo1observation_values(r) {
 // Only arrays copied and frozen by this adapter enter this set. A caller's
 // frozen array can still contain accessors whose values change between reads.
 const validated_frozen_bytes = new WeakSet();
+// Packed storage is private; every Wasm call receives its own mutable copy.
+const decoded_byte_storage = new WeakMap();
+function retain_decoded_bytes(bytes) {
+    const packed = new Uint8Array(bytes);
+    const frozen = Object.freeze(bytes);
+    validated_frozen_bytes.add(frozen);
+    decoded_byte_storage.set(frozen, packed);
+    return frozen;
+}
 function exact_byte_array_p(bytes, maximum) {
     const profile = enterSourceTransferPhase("byte-validation");
     try {
@@ -386,6 +395,9 @@ function canonical_byte_range(bytes, start, end) {
         : frozen_byte_range(bytes, start, end);
 }
 function exact_bytes_to_binary_text(bytes) {
+    const packed = decoded_byte_storage.get(bytes);
+    if (packed !== undefined)
+        return byteTextDecoder.decode(new Uint16Array(packed));
     const validated = validated_frozen_bytes.has(bytes);
     const chunks = [];
     const chunk_size = 4096;
@@ -406,8 +418,10 @@ function binary_text_p(value, maximum) {
     return typeof value === "string" && value.length > 0 && value.length <= maximum && !/[^\u0000-\u00ff]/.test(value);
 }
 function typed_bytes(bytes) {
-    if (typeof bytes !== "string")
-        return new Uint8Array(bytes);
+    if (typeof bytes !== "string") {
+        const packed = decoded_byte_storage.get(bytes);
+        return packed === undefined ? new Uint8Array(bytes) : packed.slice();
+    }
     const result = new Uint8Array(bytes.length);
     for (let index = 0; index < bytes.length; index += 1)
         result[index] = bytes.charCodeAt(index);
@@ -2022,7 +2036,7 @@ export function prepareSourceSession(module, incomingSession, preparation) {
         throw new Error("Wasm runtime lacks checked source preparation API");
     if (!exact_byte_array_p(preparation, cet1_max_bytes))
         throw new Error("source preparation exceeds bound");
-    const status = module.clause_session_v1_prepare_source(session.handle.slot, session.handle.generation, BigInt(session.sequence.value), new Uint8Array(preparation));
+    const status = module.clause_session_v1_prepare_source(session.handle.slot, session.handle.generation, BigInt(session.sequence.value), typed_bytes(preparation));
     if (status !== 0)
         throw new Error(`checked source preparation rejected: ${process_status(status)}`);
 }
@@ -2040,7 +2054,7 @@ export function editSourceSession(module, incomingSession, generation, request, 
         if (!observeSourceTransferPhase("witness-validation", () => exact_byte_array_p(witness, cet1_max_bytes)))
             throw new Error("source edit witness exceeds bound");
         const cartridge = parse_persistent_cartridge_bang(request);
-        const status = observeSourceTransferPhase("bulk-call", () => module.clause_session_v1_source_edit_bulk(previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(cartridge.openBytes)), observeSourceTransferPhase("typed-array-construction", () => new Uint8Array(witness))));
+        const status = observeSourceTransferPhase("bulk-call", () => module.clause_session_v1_source_edit_bulk(previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(cartridge.openBytes)), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(witness))));
         if (status !== 0)
             throw new Error(`checked source edit rejected: ${process_status(status)}`);
         const eventBytes = observeSourceTransferPhase("event-array-construction", () => [...observeSourceTransferPhase("event-bulk", () => module.clause_session_v1_event_bulk())]);

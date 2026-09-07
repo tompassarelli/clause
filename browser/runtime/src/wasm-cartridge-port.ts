@@ -446,7 +446,7 @@ function decode_hex_transport(
               ? (() => {
                   throw new Error(`${label} hex transport is empty`);
                 })()
-              : Object.freeze(bytes);
+              : retain_decoded_bytes(bytes);
         } else {
           const code = source.charCodeAt(index);
           const nibble = lowercase_hex_nibble(code);
@@ -652,6 +652,16 @@ function cwo1observation_values(
 // Only arrays copied and frozen by this adapter enter this set. A caller's
 // frozen array can still contain accessors whose values change between reads.
 const validated_frozen_bytes = new WeakSet<ExactBytes>();
+// Packed storage is private; every Wasm call receives its own mutable copy.
+const decoded_byte_storage = new WeakMap<ExactBytes, Uint8Array<ArrayBuffer>>();
+
+function retain_decoded_bytes(bytes: number[]): ExactBytes {
+  const packed = new Uint8Array(bytes);
+  const frozen = Object.freeze(bytes);
+  validated_frozen_bytes.add(frozen);
+  decoded_byte_storage.set(frozen, packed);
+  return frozen;
+}
 
 function exact_byte_array_p(
   bytes: unknown,
@@ -809,6 +819,8 @@ function canonical_byte_range(
 }
 
 function exact_bytes_to_binary_text(bytes: ExactBytes): string {
+  const packed = decoded_byte_storage.get(bytes);
+  if (packed !== undefined) return byteTextDecoder.decode(new Uint16Array(packed));
   const validated = validated_frozen_bytes.has(bytes);
   const chunks: string[] = [];
   const chunk_size = 4096;
@@ -830,7 +842,10 @@ function binary_text_p(value: unknown, maximum: number): value is string {
 }
 
 function typed_bytes(bytes: CanonicalBytes): Uint8Array<ArrayBuffer> {
-  if (typeof bytes !== "string") return new Uint8Array(bytes);
+  if (typeof bytes !== "string") {
+    const packed = decoded_byte_storage.get(bytes);
+    return packed === undefined ? new Uint8Array(bytes) : packed.slice();
+  }
   const result = new Uint8Array(bytes.length);
   for (let index = 0; index < bytes.length; index += 1) result[index] = bytes.charCodeAt(index);
   return result;
@@ -2959,7 +2974,7 @@ export function prepareSourceSession(module: unknown, incomingSession: unknown, 
   if (!isSourcePreparationModule(module)) throw new Error("Wasm runtime lacks checked source preparation API");
   if (!exact_byte_array_p(preparation, cet1_max_bytes)) throw new Error("source preparation exceeds bound");
   const status = module.clause_session_v1_prepare_source(
-    session.handle.slot, session.handle.generation, BigInt(session.sequence.value), new Uint8Array(preparation),
+    session.handle.slot, session.handle.generation, BigInt(session.sequence.value), typed_bytes(preparation),
   );
   if (status !== 0) throw new Error(`checked source preparation rejected: ${process_status(status)}`);
 }
@@ -2986,7 +3001,7 @@ export function editSourceSession(
     const status = observeSourceTransferPhase("bulk-call", () => module.clause_session_v1_source_edit_bulk(
       previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value),
       observeSourceTransferPhase("typed-array-construction", () => typed_bytes(cartridge.openBytes)),
-      observeSourceTransferPhase("typed-array-construction", () => new Uint8Array(witness)),
+      observeSourceTransferPhase("typed-array-construction", () => typed_bytes(witness)),
     ));
     if (status !== 0) throw new Error(`checked source edit rejected: ${process_status(status)}`);
     const eventBytes = observeSourceTransferPhase("event-array-construction", () =>
