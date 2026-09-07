@@ -7454,11 +7454,6 @@ impl StepEvaluator<'_> {
         evaluation: EvaluationContextV1,
         mut trace: Option<&mut ExecutableEvaluationTraceV1>,
     ) -> Result<(Vec<ExecutableSlotV1>, bool), ExecutableErrorV1> {
-        // Predicates and effects share this preparation's immutable closed pre-state.
-        let mut queries = relational::SumQueries::default();
-        if let Some(plans) = self.scalar_plans { queries.scalar_plans = plans.clone(); }
-        let sum_queries = std::cell::RefCell::new(queries);
-        let evaluation = EvaluationContextV1 { sum_queries: Some(&sum_queries), ..evaluation };
         let mut selected = Vec::new();
         let mut selected_targets = BTreeMap::<u16, u8>::new();
         let mut join_visits = 0;
@@ -7480,7 +7475,7 @@ impl StepEvaluator<'_> {
                     .all(|slot| configuration[usize::from(*slot)].value().is_none());
             let matches = if structural_match {
                 let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RuleMatching);
-                relational::match_with_shared_prefix(
+                relational::match_rule(
                     &rule.predicates,
                     configuration,
                     &occurrence.arguments,
@@ -7558,11 +7553,17 @@ impl StepEvaluator<'_> {
         let mut row_effects = relational::RowEffects::default();
         let effect_evaluation_profile =
             source_profile_scope_v1(SourceProfilePhaseV1::EffectEvaluation);
+        // All effects read this preparation's immutable, closed pre-state.
+        // The context below never reaches closure of the staged next state.
+        let mut queries = relational::SumQueries::default();
+        if let Some(plans) = self.scalar_plans { queries.scalar_plans = plans.clone(); }
+        let sum_queries = std::cell::RefCell::new(queries);
         let mut effect_plans = BTreeMap::new();
         for (rule_index, rule, bindings, trace_index) in &selected {
             let identity = relational::LazyOccurrenceIdentity::new(evaluation, *rule_index, bindings);
             let evaluation = EvaluationContextV1 {
                 bindings: Some(bindings),
+                sum_queries: Some(&sum_queries),
                 relational_occurrence: (!bindings.is_empty()).then_some(&identity),
                 ..evaluation
             };
