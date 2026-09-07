@@ -592,13 +592,42 @@ impl WasmPersistentSessionBoundaryV1 {
         let command = decode_wasm_session_command_v1(bytes)?;
         let live = self
             .live
-            .as_mut()
+            .as_ref()
             .ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
         if command.handle.slot != SLOT || self.generation != Some(command.handle.generation) {
             return self.fail(WasmProcessStatusV1::StaleSessionHandle);
         }
         if bytes.len() > usize::try_from(live.limits.command_bytes).unwrap_or(usize::MAX) {
             return self.fail(WasmProcessStatusV1::RequestOutOfBounds);
+        }
+        self.execute_command(command)
+    }
+
+    /// Execute an in-process occurrence under the runtime's occurrence bound.
+    /// Serialized Wasm commands retain their independently negotiated byte
+    /// ceiling; both paths share all session and transition checks.
+    pub fn native_occurrence(
+        &mut self,
+        handle: WasmSessionHandleV1,
+        expected_sequence: u64,
+        occurrence: Vec<u8>,
+        emit_candidate: bool,
+    ) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+        if occurrence.len() > super::EXECUTABLE_OCCURRENCE_LIMIT_V1 {
+            return self.fail(WasmProcessStatusV1::RequestOutOfBounds);
+        }
+        self.execute_command(WasmSessionCommandV1 {
+            handle,
+            expected_sequence,
+            operation: if emit_candidate { WasmSessionOperationV1::Candidate(occurrence) }
+                else { WasmSessionOperationV1::Input(occurrence) },
+        })
+    }
+
+    fn execute_command(&mut self, command: WasmSessionCommandV1) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+        let live = self.live.as_mut().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
+        if command.handle.slot != SLOT || self.generation != Some(command.handle.generation) {
+            return self.fail(WasmProcessStatusV1::StaleSessionHandle);
         }
         if command.expected_sequence != live.sequence {
             return self.fail(WasmProcessStatusV1::SequenceRejected);

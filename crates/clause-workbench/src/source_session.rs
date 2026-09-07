@@ -546,7 +546,7 @@ impl ResidentSourceWorkbenchV1 {
             ResidentSourceWorkbenchErrorV1("resident run has no occurrence sequence".into())
         })?;
         for (index, occurrence) in prefix.iter().enumerate() {
-            let event = self.command(WasmSessionOperationV1::Input(occurrence.clone()))?;
+            let event = self.occurrence(occurrence.clone(), false)?;
             if !matches!(event, WasmSessionEventKindV1::InputAccepted { .. }) {
                 let entry = decode_executable_occurrence_v1(occurrence)
                     .map(|occurrence| occurrence.entry.to_string())
@@ -569,7 +569,7 @@ impl ResidentSourceWorkbenchV1 {
                 )));
             }
         }
-        let event = self.command(WasmSessionOperationV1::Candidate(last.clone()))?;
+        let event = self.occurrence(last.clone(), true)?;
         let WasmSessionEventKindV1::CandidateAccepted {
             candidate,
             base,
@@ -1025,6 +1025,12 @@ impl ResidentSourceWorkbenchV1 {
         self.last_projection = None;
         self.last_source_edit = source_edit;
         Ok(())
+    }
+
+    fn occurrence(&mut self, occurrence: Vec<u8>, emit_candidate: bool) -> Result<WasmSessionEventKindV1, ResidentSourceWorkbenchErrorV1> {
+        let event = self.boundary.native_occurrence(self.generation.handle, self.sequence, occurrence, emit_candidate)?;
+        self.sequence = event.accepted_sequence;
+        Ok(event.kind)
     }
 
     fn command(
@@ -1499,6 +1505,19 @@ mod command_window_tests {
     use super::*;
 
     const SOURCE: &[u8] = include_bytes!("../../../test-vectors/authoring/scalar-comparison.clause");
+
+    #[test]
+    fn native_occurrences_preserve_handle_sequence_and_resource_checks() {
+        let mut w = ResidentSourceWorkbenchV1::open_continuous(SOURCE).unwrap();
+        let occurrence = w.handler_occurrence(b"measure", &[]).unwrap();
+        let before = w.checkpoint_admitted().unwrap();
+        let handle = w.generation.handle;
+        let stale = WasmSessionHandleV1 { generation: handle.generation + 1, ..handle };
+        assert_eq!(w.boundary.native_occurrence(stale, w.sequence, occurrence.clone(), false), Err(WasmProcessStatusV1::StaleSessionHandle));
+        assert_eq!(w.boundary.native_occurrence(handle, w.sequence + 1, occurrence, false), Err(WasmProcessStatusV1::SequenceRejected));
+        assert_eq!(w.boundary.native_occurrence(handle, w.sequence, vec![0; clause_runtime::EXECUTABLE_OCCURRENCE_LIMIT_V1 + 1], false), Err(WasmProcessStatusV1::RequestOutOfBounds));
+        assert_eq!(w.checkpoint_admitted().unwrap(), before);
+    }
 
     #[test]
     fn renewal_requires_a_new_admission_and_keeps_the_window_bounded() {

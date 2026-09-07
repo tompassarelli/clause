@@ -234,6 +234,8 @@ impl std::error::Error for CanonicalDecodeError {
 
 struct Encoder {
     bytes: Vec<u8>,
+    length: usize,
+    count_only: bool,
     byte_limit_exceeded: bool,
 }
 
@@ -241,8 +243,14 @@ impl Encoder {
     fn new() -> Self {
         Self {
             bytes: Vec::new(),
+            length: 0,
+            count_only: false,
             byte_limit_exceeded: false,
         }
+    }
+
+    fn counting() -> Self {
+        Self { count_only: true, ..Self::new() }
     }
 
     fn u8(&mut self, value: u8) {
@@ -261,7 +269,7 @@ impl Encoder {
         if self.byte_limit_exceeded {
             return;
         }
-        let Some(length) = self.bytes.len().checked_add(value.len()) else {
+        let Some(length) = self.length.checked_add(value.len()) else {
             self.byte_limit_exceeded = true;
             return;
         };
@@ -269,7 +277,10 @@ impl Encoder {
             self.byte_limit_exceeded = true;
             return;
         }
-        self.bytes.extend_from_slice(value);
+        self.length = length;
+        if !self.count_only {
+            self.bytes.extend_from_slice(value);
+        }
     }
 
     fn blob(&mut self, field: &'static str, value: &[u8]) -> Result<(), CanonicalEncodeError> {
@@ -284,12 +295,17 @@ impl Encoder {
     }
 
     fn finish(self) -> Result<Vec<u8>, CanonicalEncodeError> {
+        self.finish_size()?;
+        Ok(self.bytes)
+    }
+
+    fn finish_size(&self) -> Result<usize, CanonicalEncodeError> {
         if self.byte_limit_exceeded {
             Err(CanonicalEncodeError::EncodedBytesTooLong {
                 maximum: MAX_CANONICAL_BYTES,
             })
         } else {
-            Ok(self.bytes)
+            Ok(self.length)
         }
     }
 }
@@ -2793,11 +2809,11 @@ pub fn decode_canonical_term_bytes(bytes: &[u8]) -> Result<Term, CanonicalDecode
     Ok(term)
 }
 
-/// Canonical list payload used only to price cumulative live ingress. It is
-/// not a restart format and carries no identity or authority.
-pub(crate) fn canonical_process_record_bytes(
+/// Price cumulative live ingress with the canonical encoder without retaining
+/// its output. Validation and byte limits are identical to materialized encoding.
+pub(crate) fn canonical_process_record_size(
     records: &[ProcessRecordV2],
-) -> Result<Vec<u8>, CanonicalEncodeError> {
+) -> Result<usize, CanonicalEncodeError> {
     if records.len() > MAX_LIST_ITEMS as usize {
         return Err(CanonicalEncodeError::ListTooLong {
             count: records.len(),
@@ -2812,12 +2828,12 @@ pub(crate) fn canonical_process_record_bytes(
             field: "process record batch",
             length: records.len(),
         })?;
-    let mut encoder = Encoder::new();
+    let mut encoder = Encoder::counting();
     encoder.u32(count);
     for record in records {
         record.encode(&mut encoder)?;
     }
-    encoder.finish()
+    encoder.finish_size()
 }
 
 pub(crate) fn encode_application_shape_preimage_v2(
@@ -3118,5 +3134,30 @@ fn ensure_by_key<T, K: Ord>(
         Ok(())
     } else {
         Err(CanonicalEncodeError::NonCanonicalOrder(field))
+    }
+}
+
+#[cfg(test)]
+mod ingress_size_tests {
+    use super::*;
+
+    #[test]
+    fn ingress_size_matches_materialized_corpus_encoding_and_preserves_ceiling() {
+        let hex = include_str!("../../../test-vectors/process-v2/positive/process-v2-core.hex").split_whitespace().collect::<String>();
+        let bytes = (0..hex.len()).step_by(2).map(|offset| u8::from_str_radix(&hex[offset..offset + 2], 16).unwrap()).collect::<Vec<_>>();
+        let package = decode_process_package(&bytes).unwrap();
+        let records = &package.candidate().records;
+        let mut encoded = Encoder::new();
+        encoded.u32(records.len() as u32);
+        for record in records { record.encode(&mut encoded).unwrap(); }
+        assert_eq!(canonical_process_record_size(records).unwrap(), encoded.finish().unwrap().len());
+        let block = vec![0; crate::MAX_ATOM_FIELD_BYTES];
+        for count_only in [false, true] {
+            let mut encoder = if count_only { Encoder::counting() } else { Encoder::new() };
+            for _ in 0..MAX_CANONICAL_BYTES / block.len() { encoder.fixed(&block); }
+            assert_eq!(encoder.finish_size().unwrap(), MAX_CANONICAL_BYTES);
+            encoder.u8(0);
+            assert!(matches!(encoder.finish_size(), Err(CanonicalEncodeError::EncodedBytesTooLong { .. })));
+        }
     }
 }

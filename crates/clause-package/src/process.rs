@@ -1365,11 +1365,10 @@ impl ProcessCarrier {
         authority: &AuthorityStore,
     ) -> Result<(), ProcessIngressError> {
         let cardinality = self.preflight_ingress_cardinality(records)?;
-        let ingress_bytes = crate::canonical::canonical_process_record_bytes(records)
+        let ingress_bytes = crate::canonical::canonical_process_record_size(records)
             .map_err(|cause| ProcessIngressError::Batch {
                 cause: Box::new(ProcessError::Canonical(cause)),
-            })?
-            .len();
+            })?;
         self.apply_prepared_ingress(records, cardinality, ingress_bytes, authority)
     }
 

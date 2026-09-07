@@ -250,3 +250,23 @@ fn aggregate_checkpoint_uses_boundary_capacity_and_reopens() {
     assert_eq!(reopened.project_current_world().unwrap(), before);
     assert_eq!(reopened.checkpoint_admitted().unwrap(), checkpoint);
 }
+
+#[test]
+fn native_occurrence_above_wasm_command_buffer_preserves_exact_text_on_reopen() {
+    let payload = "x".repeat(clause_runtime::WASM_SESSION_COMMAND_LIMIT_V1 + 289);
+    let mut w = ResidentSourceWorkbenchV1::open_continuous(SOURCE).unwrap();
+    let occurrence = w.handler_occurrence(b"create-goal", &[text("Large"), text(&payload)]).unwrap();
+    assert_eq!(clause_runtime::encode_wasm_session_command_v1(&clause_runtime::WasmSessionCommandV1 {
+        handle: w.generation().handle, expected_sequence: 0,
+        operation: clause_runtime::WasmSessionOperationV1::Candidate(occurrence),
+    }), Err(clause_runtime::WasmProcessStatusV1::RequestOutOfBounds));
+    let before = run(&mut w, b"create-goal", &[text("Large"), text(&payload)]);
+    let first = known(&before)[0].clone();
+    assert_eq!(table(&before, b"goal-objective").rows()[&first].first(), Some(&text(&payload)));
+    let bytes = w.checkpoint_admitted().unwrap();
+    let mut reopened = ResidentSourceWorkbenchV1::reopen(SOURCE, &bytes).unwrap();
+    assert_eq!(reopened.checkpoint_admitted().unwrap(), bytes);
+    assert_eq!(reopened.project_current_world().unwrap(), before);
+    let after = run(&mut reopened, b"redirect-goal", &[V::Referent(first.clone()), text("Continued")]);
+    assert_eq!(table(&after, b"prior-goal-objective").rows()[&first].first(), Some(&text(&payload)));
+}

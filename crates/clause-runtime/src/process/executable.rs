@@ -13,6 +13,8 @@ const ALLOCATION_EPOCH_MAGIC_V1: &[u8; 4] = b"RAE1";
 const CONFIGURATION_KIND: &[u8] = b"clause/process-configuration-v1";
 const OCCURRENCE_KIND: &[u8] = b"clause/process-occurrence-v1";
 const OCCURRENCE_MAGIC: &[u8; 4] = b"CXO1";
+// The occurrence Atom contains the same bytes without the transport magic.
+pub const EXECUTABLE_OCCURRENCE_LIMIT_V1: usize = MAX_ATOM_FIELD_BYTES + OCCURRENCE_MAGIC.len();
 const PROJECTION_ROLE_KIND: &[u8] = b"clause/process-projection-role-v1";
 const PROJECTED_NUMBER_KIND: &[u8] = b"clause/process-projected-f64-v1";
 const PROJECTED_BOOLEAN_KIND: &[u8] = b"clause/process-projected-bool-v1";
@@ -762,6 +764,9 @@ pub fn encode_executable_occurrence_v1(
     bytes.extend_from_slice(OCCURRENCE_MAGIC);
     bytes.extend_from_slice(&occurrence.entry.to_le_bytes());
     encode_values(&mut bytes, &occurrence.arguments)?;
+    if bytes.len() > EXECUTABLE_OCCURRENCE_LIMIT_V1 {
+        return Err(ExecutableErrorV1::ResourceLimit);
+    }
     Ok(bytes)
 }
 
@@ -771,6 +776,9 @@ pub fn encode_executable_occurrence_v1(
 pub fn decode_executable_occurrence_v1(
     bytes: &[u8],
 ) -> Result<ExecutableOccurrenceV1, ExecutableErrorV1> {
+    if bytes.len() > EXECUTABLE_OCCURRENCE_LIMIT_V1 {
+        return Err(ExecutableErrorV1::ResourceLimit);
+    }
     let mut decoder = Decoder::new(bytes);
     if decoder.take(OCCURRENCE_MAGIC.len())? != OCCURRENCE_MAGIC {
         return Err(ExecutableErrorV1::MalformedOccurrence);
