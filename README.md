@@ -1,15 +1,25 @@
 # Clause
 
-Clause is a general-purpose relational language under development.
+Clause is a general-purpose relational language under development for programs
+whose rules must drive both behavior and answers about that behavior. In the
+scheduling example, task prerequisites determine what is blocked, what can
+complete, and what changes when an obstruction is removed. The application
+need not maintain a second dependency model to answer those questions.
 
-Its [design discipline](docs/foundation.md#design-discipline): author each
-independent semantic fact once.
-Checking, execution, queries, explanations, and editing must use that same
-meaning. Physical implementations may specialize it, not redefine it.
+Clause combines typed relationships, derivation laws, atomic change proposals,
+and separate admission of those changes. Its
+[design discipline](docs/foundation.md#design-discipline) is to author each
+independent semantic fact once: checking, execution, queries, explanations,
+and editing must consume that same meaning.
 
-The [authoring card](docs/authoring-card.md) describes executable source;
-the [roadmap](docs/roadmap.md) records unfinished work. Design examples are
-not implementation claims.
+Start with the [runnable scheduling walkthrough](docs/language-tour.md#run-the-scheduling-example),
+then read the rest of the [language tour](docs/language-tour.md). Use the
+[authoring card](docs/authoring-card.md) for checked source examples, the
+[foundation](docs/foundation.md) for the distinctions behind them, and the
+[syntax](docs/syntax.md) when writing source. Read the
+[architecture](docs/architecture.md) when working on the implementation.
+The [roadmap](docs/roadmap.md) separates demonstrated capabilities from
+remaining work; Clause is not yet a supported language or toolchain.
 
 ## Governing distinctions
 
@@ -26,24 +36,12 @@ not implementation claims.
 
 The [semantic foundation](docs/foundation.md) defines these distinctions.
 
-## A Clause transition
+## Examples
 
-Collecting a coin changes its state only when it is active and owned by the actor:
-
-```clause
-on collect ?actor
-  when
-    ?coin state active
-    ?coin owner ?actor
-  withdraw
-    ?coin state active
-  include
-    ?coin state collected
-```
-
-The conditions read one pre-state. Removal and addition form one proposed
-change; admitting it is a separate operation. Two collection events remain
-distinct even if their values are equal.
+- [Scheduling walkthrough](docs/language-tour.md#run-the-scheduling-example):
+  task dependencies, derived blockers, and checked changes.
+- [Jump Arena](https://github.com/tompassarelli/jump-arena): a standalone
+  browser game with its own source and pinned Clause dependency.
 
 ## Documentation
 
@@ -60,7 +58,15 @@ distinct even if their values are equal.
 
 ## Development
 
-Broad implementation checks:
+From an owned Clause worktree, run the focused example first:
+
+```sh
+nix develop --command cargo test -p clause-workbench --locked -j 2 --test scheduling scheduling_controls_use_checked_dependencies_and_preserve_identity -- --exact
+```
+
+The [walkthrough](docs/language-tour.md#run-the-scheduling-example) explains its
+source and assertions. Existing [live-source commands](docs/live-source-semantics.md#reproduce-the-bounded-gates)
+cover the larger native/Wasm journey. Broad implementation checks, when needed:
 
 ```sh
 (cd lean && lake build && lake env leanchecker --fresh ClauseCore)

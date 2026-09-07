@@ -55,12 +55,23 @@ Triple positions have no inherent subject, operator, object, argument,
 control, or truth meaning. A declared reading and checked formation give a
 Term contextual meaning; structure alone does not.
 
-The core terms are distinct:
+Interpretation, truth-apt content, assessment, and their occurrences are distinct:
 
-- A **ClauseJudgment** interprets a neutral Term under an exact context,
-  stance, and reading. It is neither execution nor a governed Judgment.
-- A **FormationJudgment** establishes that a Term has a type under an exact
-  interpretation. It proves neither truth, authority, nor executability.
+| Term | Meaning | Boundary |
+| --- | --- | --- |
+| **ClauseJudgment** | Interprets a neutral Term under an exact context, stance, and reading. | Neither execution nor a governed Judgment. |
+| **FormationJudgment** | Establishes that a Term has a type under an exact interpretation. | Proves neither truth, authority, nor executability. |
+| **Proposition** | Closed truth-apt content. | Representing it does not assert it. |
+| **AssertionOccurrence** | One identified act placing proposition content under an assertive stance. | Distinguishes the act from its content. |
+| **Judgment** | Immutable assessed content. | Distinct from its issuance. |
+| **JudgmentOccurrence** | Identified issuance of a Judgment by an authority under a policy. | Records the issuance, not merely equal assessed content. |
+| **Authorization** | A Judgment permitting one exact action and scope. | Representing earlier content does not confer permission. |
+
+None follows merely from representing the preceding item. These are not all
+proofs or stages in one automatic pipeline.
+
+Formation and running retain their own distinctions:
+
 - An **ApplicationForm** is a checked, closed configuration containing one
   exact RelationSchema, one exact Operator, complete named-role bindings, the
   exact eligible Mode set, and context requirements.
@@ -77,13 +88,6 @@ An ApplicationForm may have no executable Mode and remain useful for
 inspection or transformation. Forming an Application asserts, authorizes,
 admits, and executes nothing. Activating equal Applications twice produces two
 Activation occurrences.
-
-A **Proposition** is closed truth-apt content. An **AssertionOccurrence** is
-one identified act placing proposition content under an assertive stance. A
-**Judgment** is immutable assessed content; a **JudgmentOccurrence** is its
-identified issuance by an authority under a policy. An **Authorization** is a
-Judgment permitting one exact action and scope. None follows merely from
-representing the preceding item.
 
 ## Values, roles, relations, and modes
 
@@ -143,6 +147,10 @@ Clause is open-world by default. Failure to find, derive, observe, or admit a
 value does not establish its negation. Closed-world reasoning requires an
 explicit finite scope and rule. Exhausting a search budget establishes neither
 absence nor falsehood.
+
+This constrains what an outcome establishes, not the return type of every
+query. A Mode's result and failure contract must distinguish a completed
+answer from exhaustion; it need not encode exhaustion as a third Boolean.
 
 For a finite positive basis with extensional roots `E` and authorized rules
 `R`, derived values are the least fixed point of:
