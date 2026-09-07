@@ -299,6 +299,7 @@ pub struct WasmPersistentSessionBoundaryV1 {
     request: Vec<u8>,
     event: Vec<u8>,
     status: WasmProcessStatusV1,
+    checkpoint_digests: std::sync::Mutex<checkpoint::NativeCheckpointDigests>,
 }
 
 impl Default for WasmPersistentSessionBoundaryV1 {
@@ -311,6 +312,7 @@ impl Default for WasmPersistentSessionBoundaryV1 {
             request: Vec::with_capacity(WASM_SESSION_COMMAND_LIMIT_V1),
             event: Vec::with_capacity(WASM_SESSION_EVENT_LIMIT_V1),
             status: WasmProcessStatusV1::Ready,
+            checkpoint_digests: Default::default(),
         }
     }
 }
