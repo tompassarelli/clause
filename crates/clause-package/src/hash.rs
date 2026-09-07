@@ -168,21 +168,48 @@ pub(crate) fn derive_state_revision_id(
     canonical_state_snapshot: &[&[u8]],
     policy: RuntimePolicyId,
 ) -> StateRevisionId {
+    let length = canonical_state_snapshot.iter().map(|part| part.len() as u64).sum::<u64>();
+    let (prefix, suffix) = state_revision_frame(semantics, session, predecessor, cause, length, policy);
+    let mut hasher = Sha256::new();
+    hasher.update(&prefix);
+    for part in canonical_state_snapshot { hasher.update(part); }
+    hasher.update(&suffix);
+    StateRevisionId::from_bytes(hasher.finalize().into())
+}
+
+pub(crate) fn derive_shared_state_revision_id(
+    semantics: ClauseSemanticsId,
+    session: RuntimeSessionId,
+    predecessor: Option<StateRevisionId>,
+    cause: StateRevisionCausePreimage,
+    canonical_state_snapshot: &crate::CanonicalBytes,
+    policy: RuntimePolicyId,
+) -> StateRevisionId {
+    let (prefix, suffix) = state_revision_frame(semantics, session, predecessor, cause, canonical_state_snapshot.len() as u64, policy);
+    StateRevisionId::from_bytes(canonical_state_snapshot.sha256_framed(&prefix, &suffix))
+}
+
+fn state_revision_frame(
+    semantics: ClauseSemanticsId,
+    session: RuntimeSessionId,
+    predecessor: Option<StateRevisionId>,
+    cause: StateRevisionCausePreimage,
+    snapshot_length: u64,
+    policy: RuntimePolicyId,
+) -> (Vec<u8>, Vec<u8>) {
     let predecessor = encode_predecessor_or_root(predecessor.as_ref().map(|id| id.as_bytes()));
     let cause = encode_state_revision_cause(cause);
-    let mut hasher = Sha256::new();
-    hasher.update((STATE_REVISION_DOMAIN.len() as u32).to_be_bytes());
-    hasher.update(STATE_REVISION_DOMAIN.as_bytes());
+    let mut prefix = Vec::new();
+    prefix.extend_from_slice(&(STATE_REVISION_DOMAIN.len() as u32).to_be_bytes());
+    prefix.extend_from_slice(STATE_REVISION_DOMAIN.as_bytes());
     for component in [semantics.as_bytes().as_slice(), session.as_bytes().as_slice(), &predecessor, &cause] {
-        hasher.update((component.len() as u64).to_be_bytes());
-        hasher.update(component);
+        prefix.extend_from_slice(&(component.len() as u64).to_be_bytes());
+        prefix.extend_from_slice(component);
     }
-    let length = canonical_state_snapshot.iter().map(|part| part.len() as u64).sum::<u64>();
-    hasher.update(length.to_be_bytes());
-    for part in canonical_state_snapshot { hasher.update(part); }
-    hasher.update((policy.as_bytes().len() as u64).to_be_bytes());
-    hasher.update(policy.as_bytes());
-    StateRevisionId::from_bytes(hasher.finalize().into())
+    prefix.extend_from_slice(&snapshot_length.to_be_bytes());
+    let mut suffix = (policy.as_bytes().len() as u64).to_be_bytes().to_vec();
+    suffix.extend_from_slice(policy.as_bytes());
+    (prefix, suffix)
 }
 
 /// Derives the exact checked package-byte binding in domain

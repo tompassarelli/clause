@@ -239,16 +239,29 @@ impl std::error::Error for CanonicalDecodeError {
 pub struct CanonicalBytes {
     segments: std::sync::Arc<[crate::AtomPayloadSegment]>,
     length: usize,
+    framed_digest: std::sync::Arc<std::sync::OnceLock<(Vec<u8>, Vec<u8>, [u8; 32])>>,
 }
 
 impl CanonicalBytes {
     pub fn segments(&self) -> &[crate::AtomPayloadSegment] { &self.segments }
     pub fn len(&self) -> usize { self.length }
     pub fn is_empty(&self) -> bool { self.length == 0 }
+    pub(crate) fn sha256_framed(&self, prefix: &[u8], suffix: &[u8]) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let compute = || {
+            let mut hash = Sha256::new();
+            hash.update(prefix);
+            for segment in self.segments() { hash.update(segment.as_bytes()); }
+            hash.update(suffix);
+            hash.finalize().into()
+        };
+        let (prior_prefix, prior_suffix, digest) = self.framed_digest.get_or_init(|| (prefix.to_vec(), suffix.to_vec(), compute()));
+        if prior_prefix == prefix && prior_suffix == suffix { *digest } else { compute() }
+    }
 }
 impl From<Vec<u8>> for CanonicalBytes {
     fn from(value: Vec<u8>) -> Self {
-        Self { length: value.len(), segments: vec![crate::AtomPayloadSegment::Bytes(value.into())].into() }
+        Self { length: value.len(), segments: vec![crate::AtomPayloadSegment::Bytes(value.into())].into(), framed_digest: Default::default() }
     }
 }
 impl From<Box<[u8]>> for CanonicalBytes {
@@ -261,6 +274,26 @@ impl PartialEq for CanonicalBytes {
     }
 }
 impl Eq for CanonicalBytes {}
+
+#[cfg(test)]
+mod framed_digest_tests {
+    use super::*;
+    use sha2::{Digest, Sha256};
+
+    #[test]
+    fn retained_digest_binds_both_frames_and_exact_payload() {
+        let bytes = CanonicalBytes::from(b"snapshot".to_vec());
+        for (prefix, suffix) in [(b"before".as_slice(), b"after".as_slice()), (b"changed", b"after"), (b"before", b"changed")] {
+            let expected: [u8; 32] = Sha256::digest([prefix, b"snapshot", suffix].concat()).into();
+            assert_eq!(bytes.sha256_framed(prefix, suffix), expected);
+            assert_eq!(bytes.clone().sha256_framed(prefix, suffix), expected);
+        }
+        let changed = CanonicalBytes::from(b"different snapshot".to_vec());
+        assert_ne!(bytes.sha256_framed(b"before", b"after"), changed.sha256_framed(b"before", b"after"));
+        assert_eq!(bytes, CanonicalBytes::from(b"snapshot".to_vec()));
+        assert!(std::sync::Arc::ptr_eq(&bytes.framed_digest, &bytes.clone().framed_digest));
+    }
+}
 
 struct Encoder {
     bytes: Vec<u8>,
@@ -2864,7 +2897,7 @@ pub fn canonical_term_shared_bytes(term: &Term) -> Result<CanonicalBytes, Canoni
     let mut encoder = Encoder { segments: Some(Vec::new()), ..Encoder::new() };
     term.encode(&mut encoder)?;
     let length = encoder.finish_size()?;
-    Ok(CanonicalBytes { length, segments: encoder.finish_segments()?.into() })
+    Ok(CanonicalBytes { length, segments: encoder.finish_segments()?.into(), framed_digest: Default::default() })
 }
 
 /// Check the same canonical representation and byte ceiling without copying payloads.
