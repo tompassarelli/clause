@@ -1,11 +1,14 @@
 //! Lazy reuse of equal scalar subexpressions within one fixed substitution.
 use super::*;
 
+const MAX_BATCH_CELLS: usize = 65_536;
+
 pub(super) struct ScalarPlan {
     pub expression: Box<ExecutableExpressionV1>,
     nodes: Vec<(Node, bool, bool)>,
     root: usize,
     instructions: Vec<Instruction>,
+    pub batch_width: usize,
 }
 
 enum Node {
@@ -163,7 +166,13 @@ impl ScalarPlan {
         }
         let mut instructions = Vec::new();
         emit_scalar_instructions(root, &nodes, &mut instructions);
-        Ok(Self { expression: Box::new(expression.clone()), nodes, root, instructions })
+        let pure = nodes.iter().all(|(node, _, _)| match node {
+            Node::Sum { .. } => false,
+            Node::Value(expression) => matches!(expression.as_ref(), ExecutableExpressionV1::Constant(_)),
+            _ => true,
+        });
+        let batch_width = if pure { (MAX_BATCH_CELLS / nodes.len()).min(64) } else { 0 };
+        Ok(Self { expression: Box::new(expression.clone()), nodes, root, instructions, batch_width })
     }
 
     pub fn memo(&self) -> ScalarMemo<'_> {
@@ -244,6 +253,67 @@ impl ScalarMemo<'_> {
             },
             _ => left == right,
         }
+    }
+
+    // These nodes only read immutable values. Errors stay in their cells until
+    // a selected parent consumes them, preserving lazy branch/error semantics.
+    pub fn evaluate_batch(&self, configuration: &[ExecutableSlotV1], arguments: &[ExecutableValueV1],
+        bindings: &[&BTreeMap<u16, ExecutableValueV1>])
+        -> Vec<Result<ExecutableValueV1, ExecutableErrorV1>> {
+        assert!(bindings.len() <= self.plan.batch_width && !bindings.is_empty());
+        let mut columns: Vec<Vec<Result<ScalarValue, ExecutableErrorV1>>> = Vec::with_capacity(self.plan.nodes.len());
+        macro_rules! eval { ($index:expr, $row:expr) => { columns[$index][$row].clone() }; }
+        macro_rules! numeric { ($index:expr, $row:expr) => { eval!($index, $row)?.as_number() }; }
+        for (node, _, input_only) in &self.plan.nodes {
+            let count = if *input_only { 1 } else { bindings.len() };
+            macro_rules! rows { ($row:ident, $body:expr) => {{
+                (0..count).map(|$row| (|| -> Result<ScalarValue, ExecutableErrorV1> { $body })()).collect::<Vec<_>>()
+            }}; }
+            let mut column = match *node {
+                Node::Number(bits) => vec![Ok(ScalarValue::Number(bits))],
+                Node::Boolean(value) => vec![Ok(ScalarValue::Boolean(value))],
+                Node::Value(ref expression) => {
+                    let ExecutableExpressionV1::Constant(value) = expression.as_ref() else { unreachable!() };
+                    vec![Ok(self.retain(value))]
+                }
+                Node::Slot(slot) => vec![configuration.get(usize::from(slot)).ok_or(ExecutableErrorV1::UnknownSlot(slot))
+                    .and_then(|slot| slot.value().ok_or(ExecutableErrorV1::MissingState)).map(|value| self.retain(value))],
+                Node::Argument(argument) => vec![arguments.get(usize::from(argument))
+                    .ok_or(ExecutableErrorV1::UnknownArgument(argument)).map(|value| self.retain(value))],
+                Node::Binding(binding) => rows!(row, Ok(self.retain(bindings[row].get(&binding)
+                    .ok_or(ExecutableErrorV1::MalformedProgram)?))),
+                Node::Add(a, b) => rows!(row, ScalarValue::number(numeric!(a, row)? + numeric!(b, row)?)),
+                Node::Subtract(a, b) => rows!(row, ScalarValue::number(numeric!(a, row)? - numeric!(b, row)?)),
+                Node::Multiply(a, b) => rows!(row, ScalarValue::number(numeric!(a, row)? * numeric!(b, row)?)),
+                Node::Divide(a, b) => rows!(row, {
+                    let denominator = numeric!(b, row)?;
+                    if denominator == 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
+                    ScalarValue::number(numeric!(a, row)? / denominator)
+                }),
+                Node::GreaterThan(a, b) => rows!(row, Ok(ScalarValue::Boolean(numeric!(a, row)? > numeric!(b, row)?))),
+                Node::LessThanOrEqual(a, b) => rows!(row, Ok(ScalarValue::Boolean(numeric!(a, row)? <= numeric!(b, row)?))),
+                Node::Equal(a, b) => rows!(row, Ok(ScalarValue::Boolean(self.equal(eval!(a, row)?, eval!(b, row)?)))),
+                Node::And(a, b) => rows!(row, Ok(ScalarValue::Boolean(eval!(a, row)?.as_boolean()? && eval!(b, row)?.as_boolean()?))),
+                Node::Not(a) => rows!(row, Ok(ScalarValue::Boolean(!eval!(a, row)?.as_boolean()?))),
+                Node::SquareRoot(a) => rows!(row, {
+                    let value = numeric!(a, row)?;
+                    if value < 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
+                    ScalarValue::number(value.sqrt())
+                }),
+                Node::Conditional(a, b, c) => rows!(row, eval!(if eval!(a, row)?.as_boolean()? { b } else { c }, row)),
+                Node::Clamp(a, b, c) => rows!(row, {
+                    let value = numeric!(a, row)?;
+                    let lower = numeric!(b, row)?;
+                    let upper = numeric!(c, row)?;
+                    if lower > upper { return Err(ExecutableErrorV1::NumericDomain); }
+                    ScalarValue::number(value.clamp(lower, upper))
+                }),
+                Node::Sum { .. } => unreachable!(),
+            };
+            if *input_only { column.resize(bindings.len(), column[0].clone()); }
+            columns.push(column);
+        }
+        columns.swap_remove(self.plan.root).into_iter().map(|value| value.map(|value| self.expand(value))).collect()
     }
 
     pub fn evaluate(&self, expression: &ExecutableExpressionV1,
@@ -370,7 +440,36 @@ mod tests {
             let memo = plan.memo();
             assert_eq!(evaluate(&plan.expression, &[], &[], EvaluationContextV1 { scalar_memo: Some(&memo), ..context }),
                 evaluate(&expression, &[], &[], context));
+            let bindings = BTreeMap::new();
+            assert_eq!(memo.evaluate_batch(&[], &[], &[&bindings, &bindings]),
+                vec![evaluate(&expression, &[], &[], context); 2]);
         }
+    }
+
+    #[test]
+    fn pure_batches_preserve_each_rows_selected_error_and_lazy_branch() {
+        let number = |value| ExecutableValueV1::number(value).unwrap();
+        let expression = E::Conditional(Box::new(E::Binding(0)),
+            Box::new(E::Divide(Box::new(E::Constant(number(1.0))), Box::new(E::Binding(1)))),
+            Box::new(E::Constant(number(4.0))));
+        let rows = [
+            BTreeMap::from([(0, ExecutableValueV1::Boolean(false)), (1, number(0.0))]),
+            BTreeMap::from([(0, ExecutableValueV1::Boolean(true)), (1, number(2.0))]),
+            BTreeMap::from([(0, ExecutableValueV1::Boolean(true)), (1, number(0.0))]),
+            BTreeMap::from([(0, ExecutableValueV1::Boolean(false))]),
+            BTreeMap::new(),
+        ];
+        let plan = ScalarPlan::new(&expression).unwrap();
+        let memo = plan.memo();
+        let expected = rows.iter().map(|bindings| evaluate(&expression, &[], &[], EvaluationContextV1 {
+            allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None, sum_queries: None,
+            scalar_memo: None, bindings: Some(bindings), relational_occurrence: None,
+        })).collect::<Vec<_>>();
+        assert_eq!(memo.evaluate_batch(&[], &[], &rows.iter().collect::<Vec<_>>()), expected);
+        assert_eq!(expected, vec![Ok(number(4.0)), Ok(number(0.5)), Err(ExecutableErrorV1::NumericDomain),
+            Ok(number(4.0)), Err(ExecutableErrorV1::MalformedProgram)]);
+        let allocating = ScalarPlan::new(&E::FreshReferent { domain: 1, binder: 1 }).unwrap();
+        assert_eq!(allocating.batch_width, 0);
     }
 
     #[test]
