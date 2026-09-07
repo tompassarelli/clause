@@ -8,9 +8,11 @@ pub(super) struct ScalarPlan {
     instructions: Vec<Instruction>,
 }
 
+pub(super) type RetainedContribution = std::sync::OnceLock<Result<Arc<ScalarPlan>, ExecutableErrorV1>>;
+
 enum Node {
     Value(Box<ExecutableExpressionV1>),
-    Sum { expression: Box<ExecutableExpressionV1>, shape: Arc<[u8]> },
+    Sum { expression: Box<ExecutableExpressionV1>, shape: Arc<[u8]>, contribution: RetainedContribution },
     Number(u64), Boolean(bool), Slot(u16), Argument(u16), Binding(u16),
     Add(usize, usize), Subtract(usize, usize), Multiply(usize, usize), Divide(usize, usize),
     GreaterThan(usize, usize), LessThanOrEqual(usize, usize), Equal(usize, usize), And(usize, usize),
@@ -134,7 +136,7 @@ impl ScalarPlan {
                     encode_expression(&mut shape, &E::Sum {
                         inputs: Vec::new(), predicates: predicates.clone(), value: value.clone(),
                     })?;
-                    Node::Sum { expression: Box::new(expression.clone()), shape: shape.into() }
+                    Node::Sum { expression: Box::new(expression.clone()), shape: shape.into(), contribution: RetainedContribution::new() }
                 },
                 _ => { reusable = false; input_only = false; Node::Value(Box::new(expression.clone())) },
             };
@@ -296,13 +298,13 @@ impl ScalarMemo<'_> {
         macro_rules! boolean_value { ($index:expr) => { eval!($index)?.as_boolean() }; }
         let value = match self.plan.nodes[index].0 {
             Node::Value(ref expression) => self.retain(&evaluate_uncached(expression, evaluation.configuration, evaluation.arguments, evaluation.context)?),
-            Node::Sum { ref expression, ref shape } => {
+            Node::Sum { ref expression, ref shape, ref contribution } => {
                 let ExecutableExpressionV1::Sum { inputs, predicates, value } = expression.as_ref() else {
                     return Err(ExecutableErrorV1::MalformedProgram);
                 };
                 let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumEvaluation);
                 self.retain(&relational::sum_with_shape(inputs, predicates, value,
-                    evaluation.configuration, evaluation.arguments, evaluation.context, Some(shape))?)
+                    evaluation.configuration, evaluation.arguments, evaluation.context, Some(shape), Some(contribution))?)
             },
             Node::Number(bits) => ScalarValue::Number(bits),
             Node::Boolean(value) => ScalarValue::Boolean(value),
@@ -430,6 +432,11 @@ mod tests {
         assert_eq!(evaluate(&distinct.expression, &configuration, &[number(2.0)],
             EvaluationContextV1 { scalar_memo: Some(&distinct_memo), ..shared }).unwrap(), number(6.0));
         for input in [2.0, 5.0, 2.0] {
+            let fresh_queries = std::cell::RefCell::new(relational::SumQueries::default());
+            let fresh_memo = first.memo();
+            assert_eq!(evaluate(&first.expression, &configuration, &[number(input)],
+                EvaluationContextV1 { scalar_memo: Some(&fresh_memo), sum_queries: Some(&fresh_queries), ..context }).unwrap(),
+                number(input * 16.0));
             let expected = evaluate_with_reads(&query, &configuration, &[number(input)], context).unwrap();
             assert_eq!(evaluate(&query, &configuration, &[number(input)], shared).unwrap(), number(input * 8.0));
             let actual = evaluate_with_reads(&query, &configuration, &[number(input)], shared).unwrap();
