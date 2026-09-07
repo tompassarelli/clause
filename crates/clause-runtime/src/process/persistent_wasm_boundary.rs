@@ -3,7 +3,7 @@
 use clause_package::*;
 
 mod checkpoint;
-pub use checkpoint::wasm_session_checkpoint_context_v1;
+pub use checkpoint::{wasm_session_checkpoint_context_v1, wasm_session_checkpoint_open_v1};
 
 use super::wasm_boundary::{
     Decoder, MAX_EVIDENCE_BYTES, decode_wasm_authority_input_v1, encode_wasm_authority_input_v1,

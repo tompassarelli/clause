@@ -55,6 +55,13 @@ pub fn wasm_session_checkpoint_context_v1(bytes: &[u8]) -> Result<&[u8], WasmPro
     Ok(decode(bytes)?.context)
 }
 
+/// Read the exact admitted opening recipe after checking the checkpoint's
+/// corruption digest. Callers must still check the package, source binding,
+/// and runtime frontier; this accessor grants no authority to import it.
+pub fn wasm_session_checkpoint_open_v1(bytes: &[u8]) -> Result<&[u8], WasmProcessStatusV1> {
+    Ok(decode(bytes)?.exact_open)
+}
+
 impl WasmPersistentSessionBoundaryV1 {
     /// Export an idle admitted frontier from this exact live handle. `context`
     /// is opaque caller metadata, covered by the same corruption digest.

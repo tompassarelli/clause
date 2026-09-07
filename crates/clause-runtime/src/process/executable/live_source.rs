@@ -363,6 +363,101 @@ pub(super) fn diagnostic_index_field(term: &Term, index: u16) -> Option<&Term> {
     )
 }
 
+/// Reconstruct a retained recipe's dispatch layout for the same exact checked
+/// source snapshot. The compiler's rule-emission metadata binds every rule to
+/// its handler; neither equal rule text nor physical ordinals create identity.
+/// Every emitted instruction must match. This preserves an admitted schedule
+/// while reopening; a source edit separately selects its successor schedule.
+pub fn replay_canonical_executable_entry_layout_v1(
+    scope: TermScope,
+    package: &clause_package::CanonicalSourcePackageSliceV1,
+    artifact: clause_package::CanonicalSourceArtifactIdV1,
+    lowered: &mut ExecutableCanonicalProgramV1,
+    recorded: &ExecutablePhysicalPlanV1,
+) -> Result<(), ExecutableErrorV1> {
+    let rejected =
+        || ExecutableErrorV1::SourceContinuityRejected("recorded source dispatch layout");
+    if recorded.source_metadata.as_ref()
+        != Some(&source_metadata(
+            scope,
+            package,
+            artifact,
+            &lowered.program,
+        )?)
+        || recorded.program.initial_configuration != lowered.program.initial_configuration
+        || recorded.program.rules.len() < lowered.program.rules.len()
+    {
+        return Err(rejected());
+    }
+    let mut handlers = package.executable_handlers.iter().collect::<Vec<_>>();
+    handlers.sort_by_key(|handler| handler.id);
+    let mut cursor = 0;
+    let mut entries = BTreeMap::new();
+    let mut external_entries = BTreeMap::new();
+    for handler in handlers {
+        let end = cursor + handler.rules.len();
+        let recorded_rules = recorded
+            .program
+            .rules
+            .get(cursor..end)
+            .ok_or_else(rejected)?;
+        let entry = recorded_rules.first().ok_or_else(rejected)?.entry;
+        let group = (
+            handler.trigger,
+            &handler.designation,
+            (!matches!(
+                handler.trigger,
+                CanonicalHandlerTriggerV1::External | CanonicalHandlerTriggerV1::FixedTickRoot
+            ))
+            .then_some(handler.id),
+        );
+        if entries
+            .insert(entry, group)
+            .is_some_and(|prior| prior != group)
+            || recorded_rules.iter().any(|rule| rule.entry != entry)
+        {
+            return Err(rejected());
+        }
+        if handler.trigger == CanonicalHandlerTriggerV1::External
+            && external_entries
+                .insert(&handler.designation, entry)
+                .is_some_and(|prior| prior != entry)
+        {
+            return Err(rejected());
+        }
+        for (expected, recorded) in lowered.program.rules[cursor..end]
+            .iter_mut()
+            .zip(recorded_rules)
+        {
+            expected.entry = entry;
+            if expected != recorded {
+                return Err(rejected());
+            }
+        }
+        let binding = lowered
+            .handlers
+            .iter_mut()
+            .find(|binding| binding.handler == handler.id)
+            .ok_or_else(rejected)?;
+        if binding.invocation_entry == binding.entry {
+            binding.invocation_entry = entry;
+        }
+        binding.entry = entry;
+        cursor = end;
+    }
+    // Synthesized named invocation recipes are checked in full as well, and
+    // cannot alias a retained scheduled entry.
+    if lowered.program.rules[cursor..]
+        .iter()
+        .any(|rule| entries.contains_key(&rule.entry))
+        || lowered.program.rules[cursor..]
+            != recorded.program.rules[cursor..lowered.program.rules.len()]
+    {
+        return Err(rejected());
+    }
+    Ok(())
+}
+
 pub fn encode_executable_source_edit_v1(
     edit: &ExecutableSourceEditV1,
 ) -> Result<Vec<u8>, ExecutableErrorV1> {
@@ -620,12 +715,13 @@ pub fn check_executable_source_edit_v1(
         .iter()
         .map(|binding| binding.role)
         .collect::<Vec<_>>();
-    let old_lowered = lower_canonical_executable_program_v1(
+    let mut old_lowered = lower_canonical_executable_program_v1(
         scope,
         &old.state_cells,
         &old.executable_handlers,
         &roles,
     )?;
+    replay_canonical_executable_entry_layout_v1(scope, &old, old_cst.artifact(), &mut old_lowered, &old_plan)?;
     let new_lowered = lower_canonical_executable_program_v1(
         scope,
         &new.state_cells,
@@ -720,6 +816,7 @@ pub fn check_executable_source_edit_v1(
                 .find(|binding| binding.entry == *entry)
                 .map(|binding| (binding.trigger, binding.handler))
         });
+        input.tick.entries.dedup();
     }
     expected_old.project_referent_input_domains(scope)?;
     expected_new.project_referent_input_domains(scope)?;

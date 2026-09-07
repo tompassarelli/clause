@@ -779,13 +779,23 @@ impl ResidentSourceWorkbenchV1 {
             }
         }
         let template_input = physical_plan.input.clone();
-        let lowered = lower_canonical_executable_program_v1(
+        let mut lowered = lower_canonical_executable_program_v1(
             scope,
             &compiled.state_cells,
             &compiled.executable_handlers,
             projection_roles,
         )
         .map_err(|error| boxed_error("generic canonical lowering", error))?;
+        if let Some(checkpoint) = checkpoint {
+            let recorded = clause_runtime::decode_wasm_session_open_v1(
+                clause_runtime::wasm_session_checkpoint_open_v1(checkpoint)?,
+            )?;
+            let recorded_plan = decode_executable_physical_plan_v1(&recorded.physical_plan_bytes)
+                .map_err(|error| boxed_error("recorded CPP1", error))?;
+            clause_runtime::replay_canonical_executable_entry_layout_v1(
+                scope, &compiled, cst.artifact(), &mut lowered, &recorded_plan,
+            ).map_err(|error| boxed_error("recorded source dispatch layout", error))?;
+        }
         let semantic_handlers = compiled
             .executable_handlers
             .iter()

@@ -271,3 +271,95 @@ fn checked_structural_edit_stops_existing_cooling_and_retreat_oscillation() {
         assert!(if retreat { withdrawing } else { cooling });
     }
 }
+
+#[test]
+#[ignore = "requires an explicitly selected local checkpoint; private world bytes are never embedded"]
+fn selected_saved_checkpoint_reopens_preserves_progress_and_accepts_rule_repair() {
+    let path = std::env::var_os("CLAUSE_CHECKPOINT_FIXTURE").expect("selected save path");
+    let bytes = std::fs::read(&path).unwrap();
+    assert_eq!(&bytes[..8], b"GWCP0001");
+    let source_end = 32 + u64::from_le_bytes(bytes[8..16].try_into().unwrap()) as usize;
+    let source = &bytes[32..source_end];
+    let checkpoint = &bytes[source_end..];
+    let mut revision = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
+    let mut boundary = clause_runtime::WasmPersistentSessionBoundaryV1::new();
+    let opened = boundary
+        .reopen_admitted(
+            clause_runtime::wasm_session_checkpoint_open_v1(checkpoint).unwrap(),
+            checkpoint,
+        )
+        .unwrap();
+    let recorded_world = boundary
+        .current_accepted_projection_term(opened.handle)
+        .unwrap();
+    let mut w = ResidentSourceWorkbenchV1::reopen(source, checkpoint).unwrap();
+    assert_eq!(w.project_current_world().unwrap(), recorded_world);
+    assert_eq!(w.checkpoint_admitted().unwrap(), checkpoint);
+    let edits = repair(&w);
+    w.replace_source_items(w.generation().handle, &edits)
+        .unwrap();
+    let after = w.project_current_world().unwrap();
+    for (subject, role) in [
+        ("workshop", "stock"),
+        ("workshop", "cargo"),
+        ("workshop", "position"),
+        ("workshop", "reserve"),
+        ("workshop", "heat"),
+        ("workshop", "phase"),
+        ("lance", "health"),
+        ("drive", "health"),
+        ("cooler", "health"),
+        ("legs", "part-health"),
+        ("torso", "part-health"),
+        ("head", "part-health"),
+        ("left-arm", "part-health"),
+        ("right-arm", "part-health"),
+        ("back", "part-health"),
+    ] {
+        assert_eq!(
+            value(&recorded_world, subject, role),
+            value(&after, subject, role),
+            "{subject}.{role}"
+        );
+    }
+    let witness =
+        clause_runtime::decode_executable_source_edit_v1(w.last_source_edit().unwrap()).unwrap();
+    let checked = clause_runtime::check_executable_source_edit_v1(&witness, after.scope()).unwrap();
+    let old =
+        clause_runtime::projected_referent_value_v1(value(&recorded_world, "lance", "attached-to"))
+            .unwrap()
+            .unwrap();
+    let new = clause_runtime::projected_referent_value_v1(value(&after, "lance", "attached-to"))
+        .unwrap()
+        .unwrap();
+    let clause_runtime::ExecutableReferentIdentityV1::Declared(old_id) = old.identity() else {
+        panic!("declared attachment")
+    };
+    let clause_runtime::ExecutableReferentIdentityV1::Declared(new_id) = new.identity() else {
+        panic!("declared attachment")
+    };
+    for (old, new) in [(old.domain(), new.domain()), (*old_id, *new_id)] {
+        assert_eq!(
+            checked.continuity().identities.get(
+                &clause_package::CanonicalAllocatedIdentityV1::Formation(
+                    clause_package::FormationLocalId::new(old)
+                )
+            ),
+            Some(&clause_package::CanonicalAllocatedIdentityV1::Formation(
+                clause_package::FormationLocalId::new(new)
+            ))
+        );
+    }
+    let saved = w.checkpoint_admitted().unwrap();
+    let mut reopened = ResidentSourceWorkbenchV1::reopen(w.exact_source(), &saved).unwrap();
+    assert_eq!(reopened.project_current_world().unwrap(), after);
+    tick(&mut reopened, &mut revision);
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    eprintln!(
+        "preserved saved progress: stock={} cargo={} lance={} legs={}",
+        number(&after, "workshop", "stock"),
+        number(&after, "workshop", "cargo"),
+        number(&after, "lance", "health"),
+        number(&after, "legs", "part-health")
+    );
+}
