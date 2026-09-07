@@ -186,6 +186,17 @@ test.test("cartridge byte custody rejects malformed octets and skipped-blob boun
         port.acceptPackage(wasm["->ExactProcessRequest"](source), result => expect(result._tag).toBe("PackageRejected"));
     }
 });
+test.test("byte validation rechecks caller-owned frozen accessors and each length bound", () => {
+    let value = 7;
+    const bytes = [0];
+    Object.defineProperty(bytes, 0, { get: () => value });
+    Object.freeze(bytes);
+    expect(wasm["exact-byte-array?"](bytes, 1)).toBe(true);
+    value = 256;
+    expect(wasm["exact-byte-array?"](bytes, 1)).toBe(false);
+    value = 7;
+    expect(wasm["exact-byte-array?"](bytes, 0)).toBe(false);
+});
 function put_identities_bang(bytes, tags) {
     tags.forEach((tag) => {
         identity(tag).forEach((byte) => {

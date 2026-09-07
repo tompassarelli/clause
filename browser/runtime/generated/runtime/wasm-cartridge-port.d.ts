@@ -29,7 +29,7 @@ interface Cse1EventBase {
 }
 type AdmissionProjection = null | Readonly<{
     observationId: ExactBytes;
-    termBytes: ExactBytes;
+    termBytes: CanonicalBytes;
 }>;
 export type Cse1Event = (Cse1EventBase & Readonly<{
     kind: "opened";
@@ -180,7 +180,7 @@ declare function process_status(status: unknown): number;
 declare function byte_at(bytes: CanonicalBytes, index: number): number;
 declare function little_u16(bytes: CanonicalBytes, offset: number): number;
 declare function little_u32(bytes: CanonicalBytes, offset: number): number;
-declare function little_safe_u64(bytes: ExactBytes, offset: number): number;
+declare function little_safe_u64(bytes: CanonicalBytes, offset: number): number;
 declare function append_u32_bang(bytes: number[], value: number): number;
 declare function append_u64_bang(bytes: number[], value: number): number;
 declare function append_blob_bang(bytes: number[], value: ExactBytes): void;

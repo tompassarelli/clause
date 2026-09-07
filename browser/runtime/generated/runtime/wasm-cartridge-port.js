@@ -259,16 +259,19 @@ function cwo1observation_stateRevisionId(r) {
 function cwo1observation_values(r) {
     return r.values;
 }
+// Only arrays copied and frozen by this adapter enter this set. A caller's
+// frozen array can still contain accessors whose values change between reads.
+const validated_frozen_bytes = new WeakSet();
 function exact_byte_array_p(bytes, maximum) {
     const profile = enterSourceTransferPhase("byte-validation");
     try {
         return (Array.isArray(bytes) &&
             bytes.length >= 1 &&
             bytes.length <= maximum &&
-            bytes.every((byte) => typeof byte === "number" &&
+            (validated_frozen_bytes.has(bytes) || bytes.every((byte) => typeof byte === "number" &&
                 Number.isInteger(byte) &&
                 byte >= 0 &&
-                byte <= 255));
+                byte <= 255)));
     }
     finally {
         leaveSourceTransferPhase(profile);
@@ -356,7 +359,12 @@ function frozen_byte_range(bytes, start, end) {
             let index = start;
             while (true) {
                 if (index === end) {
-                    return Object.freeze(result);
+                    const frozen = Object.freeze(result);
+                    if (typeof bytes !== "string" && validated_frozen_bytes.has(bytes) &&
+                        Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && end <= bytes.length) {
+                        validated_frozen_bytes.add(frozen);
+                    }
+                    return frozen;
                 }
                 else {
                     result.push(byte_at(bytes, index));
@@ -377,6 +385,7 @@ function canonical_byte_range(bytes, start, end) {
         : frozen_byte_range(bytes, start, end);
 }
 function exact_bytes_to_binary_text(bytes) {
+    const validated = validated_frozen_bytes.has(bytes);
     const chunks = [];
     const chunk_size = 4096;
     for (let start = 0; start < bytes.length; start += chunk_size) {
@@ -384,7 +393,7 @@ function exact_bytes_to_binary_text(bytes) {
         let chunk = "";
         for (let index = start; index < end; index += 1) {
             const byte = byte_at(bytes, index);
-            if (!Number.isInteger(byte) || byte < 0 || byte > 255)
+            if (!validated && (!Number.isInteger(byte) || byte < 0 || byte > 255))
                 throw new Error("cartridge byte is not an exact octet");
             chunk += String.fromCharCode(byte);
         }
@@ -651,18 +660,21 @@ function dispatch_session_request(module, request, operation) {
                 throw new Error(concatenate("persistent session ", operation, " rejected with status ", status));
             })();
         }
-        const event = Array.from(api.event());
+        const event = api.event();
         const length = event.length;
         if (length < 21 || length > cse1_max_bytes) {
             (() => {
                 throw new Error("CSE1 event length is out of bounds");
             })();
         }
-        return exact_byte_array_p(event, cse1_max_bytes)
-            ? Object.freeze(event)
-            : (() => {
-                throw new Error("CSE1 bulk event byte is out of bounds");
-            })();
+        if (!(event instanceof Uint8Array)) {
+            throw new Error("CSE1 bulk event byte is out of bounds");
+        }
+        const chunks = [];
+        for (let start = 0; start < event.length; start += 4096) {
+            chunks.push(String.fromCharCode(...event.subarray(start, start + 4096)));
+        }
+        return chunks.join("");
     }
     else {
         return (() => {
@@ -671,7 +683,7 @@ function dispatch_session_request(module, request, operation) {
     }
 }
 function decode_cse1_event(bytes) {
-    if (exact_byte_array_p(bytes, cse1_max_bytes)) {
+    if (exact_byte_array_p(bytes, cse1_max_bytes) || binary_text_p(bytes, cse1_max_bytes)) {
         if (bytes.length < 21 ||
             !equivalent(frozen_byte_range(bytes, 0, 4), [67, 83, 69, 49])) {
             (() => {
@@ -769,8 +781,8 @@ function decode_cse1_event(bytes) {
                                 : equivalent(projection_tag, 1)
                                     ? (() => {
                                         const observation_offset = prefix_end + 1;
-                                        const term_record = parse_blob(bytes, observation_offset + identity_bytes, cse1_max_bytes, "CSE1 projected Term");
-                                        if (!equivalent(term_record.next, bytes.length)) {
+                                        const term_end = blob_end(bytes, observation_offset + identity_bytes, cse1_max_bytes, "CSE1 projected Term");
+                                        if (!equivalent(term_end, bytes.length)) {
                                             (() => {
                                                 throw new Error("CSE1 Admission projection has trailing bytes");
                                             })();
@@ -789,7 +801,7 @@ function decode_cse1_event(bytes) {
                                             sessionId: identity_at(213),
                                             projection: {
                                                 observationId: identity_at(observation_offset),
-                                                termBytes: term_record.bytes,
+                                                termBytes: canonical_byte_range(bytes, observation_offset + identity_bytes + 4, term_end),
                                             },
                                         };
                                     })()
@@ -1943,7 +1955,7 @@ function create_wasm_cartridge_port_bang(module, policy) {
                     throw new Error("Admission produced no package-declared frame Observation");
                 })();
             }
-            const frame = workbench["create-workbench-byte-envelope"](policy, exact_bytes_to_binary_text(projection.termBytes));
+            const frame = workbench["create-workbench-byte-envelope"](policy, typeof projection.termBytes === "string" ? projection.termBytes : exact_bytes_to_binary_text(projection.termBytes));
             return complete(workbench["->AdmissionAccepted"](session, event.successor, frame));
         }
         catch (_catch_3) {

@@ -184,7 +184,7 @@ interface Cse1EventBase {
 
 type AdmissionProjection = null | Readonly<{
   observationId: ExactBytes;
-  termBytes: ExactBytes;
+  termBytes: CanonicalBytes;
 }>;
 
 export type Cse1Event =
@@ -719,7 +719,7 @@ function big_u32(bytes: CanonicalBytes, offset: number): number {
   );
 }
 
-function little_safe_u64(bytes: ExactBytes, offset: number): number {
+function little_safe_u64(bytes: CanonicalBytes, offset: number): number {
   const low = little_u32(bytes, offset);
   const high = little_u32(bytes, offset + 4);
   return high > 2097151
@@ -1186,7 +1186,7 @@ function dispatch_session_request(
   module: unknown,
   request: unknown,
   operation: "open" | "command",
-): ExactBytes {
+): CanonicalBytes {
   const maximum = operation === "open"
     ? session_open_max_bytes
     : session_command_max_bytes;
@@ -1210,19 +1210,21 @@ function dispatch_session_request(
         );
       })();
     }
-    const event = Array.from(api.event());
+    const event = api.event();
     const length = event.length;
     if (length < 21 || length > cse1_max_bytes) {
       (() => {
         throw new Error("CSE1 event length is out of bounds");
       })();
     }
-    if (!exact_byte_array_p(event, cse1_max_bytes)) {
+    if (!(event instanceof Uint8Array)) {
       throw new Error("CSE1 bulk event byte is out of bounds");
     }
-    const frozen = Object.freeze(event);
-    validated_frozen_bytes.add(frozen);
-    return frozen;
+    const chunks: string[] = [];
+    for (let start = 0; start < event.length; start += 4096) {
+      chunks.push(String.fromCharCode(...event.subarray(start, start + 4096)));
+    }
+    return chunks.join("");
   } else {
     return (() => {
       throw new Error(
@@ -1233,7 +1235,7 @@ function dispatch_session_request(
 }
 
 function decode_cse1_event(bytes: unknown): Cse1Event {
-  if (exact_byte_array_p(bytes, cse1_max_bytes)) {
+  if (exact_byte_array_p(bytes, cse1_max_bytes) || binary_text_p(bytes, cse1_max_bytes)) {
     if (
       bytes.length < 21 ||
       !equivalent(frozen_byte_range(bytes, 0, 4), [67, 83, 69, 49])
@@ -1343,13 +1345,13 @@ function decode_cse1_event(bytes: unknown): Cse1Event {
                   : equivalent(projection_tag, 1)
                     ? (() => {
                         const observation_offset = prefix_end + 1;
-                        const term_record = parse_blob(
+                        const term_end = blob_end(
                           bytes,
                           observation_offset + identity_bytes,
                           cse1_max_bytes,
                           "CSE1 projected Term",
                         );
-                        if (!equivalent(term_record.next, bytes.length)) {
+                        if (!equivalent(term_end, bytes.length)) {
                           (() => {
                             throw new Error(
                               "CSE1 Admission projection has trailing bytes",
@@ -1370,7 +1372,7 @@ function decode_cse1_event(bytes: unknown): Cse1Event {
                           sessionId: identity_at(213),
                           projection: {
                             observationId: identity_at(observation_offset),
-                            termBytes: term_record.bytes,
+                            termBytes: canonical_byte_range(bytes, observation_offset + identity_bytes + 4, term_end),
                           },
                         };
                       })()
@@ -2870,7 +2872,7 @@ function create_wasm_cartridge_port_bang(
           }
           const frame = workbench["create-workbench-byte-envelope"](
             policy,
-            exact_bytes_to_binary_text(projection.termBytes),
+            typeof projection.termBytes === "string" ? projection.termBytes : exact_bytes_to_binary_text(projection.termBytes),
           );
           return complete(
             workbench["->AdmissionAccepted"](session, event.successor, frame),
