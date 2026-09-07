@@ -234,6 +234,7 @@ impl std::error::Error for CanonicalDecodeError {
 
 struct Encoder {
     bytes: Vec<u8>,
+    segments: Option<Vec<crate::AtomPayloadSegment>>,
     length: usize,
     count_only: bool,
     byte_limit_exceeded: bool,
@@ -243,6 +244,7 @@ impl Encoder {
     fn new() -> Self {
         Self {
             bytes: Vec::new(),
+            segments: None,
             length: 0,
             count_only: false,
             byte_limit_exceeded: false,
@@ -281,6 +283,31 @@ impl Encoder {
         if !self.count_only {
             self.bytes.extend_from_slice(value);
         }
+    }
+
+    fn shared(&mut self, value: &crate::AtomPayloadSegment) {
+        if self.segments.is_none() || value.as_bytes().len() <= 128 {
+            self.fixed(value.as_bytes());
+            return;
+        }
+        // The count-only path applies exactly the ordinary encoder's byte cap.
+        self.count_only = true;
+        self.fixed(value.as_bytes());
+        self.count_only = false;
+        let segments = self.segments.as_mut().expect("segmented encoder");
+        if !self.bytes.is_empty() {
+            segments.push(crate::AtomPayloadSegment::Bytes(std::mem::take(&mut self.bytes).into()));
+        }
+        segments.push(value.clone());
+    }
+
+    fn finish_segments(mut self) -> Result<Vec<crate::AtomPayloadSegment>, CanonicalEncodeError> {
+        self.finish_size()?;
+        let mut segments = self.segments.take().expect("segmented encoder");
+        if !self.bytes.is_empty() {
+            segments.push(crate::AtomPayloadSegment::Bytes(self.bytes.into()));
+        }
+        Ok(segments)
     }
 
     fn blob(&mut self, field: &'static str, value: &[u8]) -> Result<(), CanonicalEncodeError> {
@@ -898,7 +925,7 @@ fn encode_term(
             encoder.u8(0);
             encoder.blob("atom kind", atom.kind())?;
             encoder.u32(u32::try_from(atom.payload_len()).map_err(|_| CanonicalEncodeError::LengthExceedsU32 { field: "atom canonical payload", length: atom.payload_len() })?);
-            for segment in atom.payload_segments() { encoder.fixed(segment); }
+            for segment in atom.shared_payload_segments() { encoder.shared(segment); }
             atom.equality_contract().encode(encoder)?;
         }
         TermValueRef::Triple(triple) => {
@@ -926,7 +953,7 @@ fn encode_term_value(
             encoder.u8(0);
             encoder.blob("atom kind", atom.kind())?;
             encoder.u32(u32::try_from(atom.payload_len()).map_err(|_| CanonicalEncodeError::LengthExceedsU32 { field: "atom canonical payload", length: atom.payload_len() })?);
-            for segment in atom.payload_segments() { encoder.fixed(segment); }
+            for segment in atom.shared_payload_segments() { encoder.shared(segment); }
             atom.equality_contract().encode(encoder)?;
         }
         TermValueRef::Triple(triple) => {
@@ -2565,6 +2592,14 @@ wire_struct!(RecordedAdmittedFrontierV1 {
 /// Canonical bytes of a recorded frontier, not new Admission authority.
 pub fn encode_recorded_admitted_frontier_v1(value: &RecordedAdmittedFrontierV1) -> Result<Vec<u8>, CanonicalEncodeError> {
     encode_wire(value)
+}
+
+/// The same canonical frontier bytes, retaining immutable Atom payload storage.
+/// Segment boundaries do not change canonical spelling or resource limits.
+pub fn encode_recorded_admitted_frontier_segments_v1(value: &RecordedAdmittedFrontierV1) -> Result<Vec<crate::AtomPayloadSegment>, CanonicalEncodeError> {
+    let mut encoder = Encoder { segments: Some(Vec::new()), ..Encoder::new() };
+    value.encode(&mut encoder)?;
+    encoder.finish_segments()
 }
 
 pub fn decode_recorded_admitted_frontier_v1(bytes: &[u8]) -> Result<RecordedAdmittedFrontierV1, CanonicalDecodeError> {

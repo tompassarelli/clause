@@ -25,7 +25,7 @@ pub use canonical::{
     RevisionSuccessorGrantPreimageV2, canonical_term_bytes, canonical_term_byte_len, check_process_package,
     decode_canonical_term_bytes, decode_process_package, derive_program_snapshot_id,
     encode_process_package,
-    encode_recorded_admitted_frontier_v1, decode_recorded_admitted_frontier_v1,
+    encode_recorded_admitted_frontier_segments_v1, encode_recorded_admitted_frontier_v1, decode_recorded_admitted_frontier_v1,
 };
 pub use canonical_source::*;
 pub use formation::*;
