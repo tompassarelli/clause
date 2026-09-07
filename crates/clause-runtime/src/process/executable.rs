@@ -6272,7 +6272,7 @@ struct EvaluationContextV1<'a> {
     step_ordinal: u64,
     reads: Option<&'a std::cell::RefCell<Vec<ExecutableReadV1>>>,
     sum_queries: Option<&'a std::cell::RefCell<relational::SumQueries>>,
-    scalar_memo: Option<&'a scalar_reuse::ScalarMemo<'a>>,
+    scalar_memo: Option<&'a scalar_reuse::ScalarMemo>,
     bindings: Option<&'a relational::Bindings>,
     relational_occurrence: Option<&'a relational::LazyOccurrenceIdentity<'a>>,
 }
@@ -7558,7 +7558,7 @@ impl StepEvaluator<'_> {
         let mut queries = relational::SumQueries::default();
         if let Some(plans) = self.scalar_plans { queries.scalar_plans = plans.clone(); }
         let sum_queries = std::cell::RefCell::new(queries);
-        let mut effect_plans = BTreeMap::new();
+        let mut effect_memos = BTreeMap::new();
         for (rule_index, rule, bindings, trace_index) in &selected {
             let identity = relational::LazyOccurrenceIdentity::new(evaluation, *rule_index, bindings);
             let evaluation = EvaluationContextV1 {
@@ -7587,21 +7587,20 @@ impl StepEvaluator<'_> {
                             let _profile = source_profile_scope_v1(
                                 SourceProfilePhaseV1::EffectValueEvaluation,
                             );
-                            // Every matched row shares this exact program coordinate;
-                            // only the memo values depend on its current bindings.
-                            let plan = if trace.is_none() {
+                            // The pre-state and arguments stay fixed across these rows;
+                            // the memo clears binding-dependent values on each evaluation.
+                            let memo = if trace.is_none() {
                                 let key = (*rule_index, assignment, effect_index);
-                                if let std::collections::btree_map::Entry::Vacant(entry) = effect_plans.entry(key) {
-                                    entry.insert(relational::effect_scalar_plan(self.program, key, value, evaluation)?);
+                                if let std::collections::btree_map::Entry::Vacant(entry) = effect_memos.entry(key) {
+                                    entry.insert(relational::effect_scalar_plan(self.program, key, value, evaluation)?.map(|plan| plan.memo()));
                                 }
-                                effect_plans[&key].as_ref()
+                                effect_memos[&key].as_ref()
                             } else { None };
-                            let memo = plan.map(|plan| plan.memo());
                             evaluate_for_trace(
-                                plan.map_or(value, |plan| plan.expression.as_ref()),
+                                memo.map_or(value, |memo| memo.expression()),
                                 configuration,
                                 &occurrence.arguments,
-                                EvaluationContextV1 { scalar_memo: memo.as_ref(), ..evaluation },
+                                EvaluationContextV1 { scalar_memo: memo, ..evaluation },
                                 trace.is_some(),
                             )?
                         };

@@ -166,15 +166,15 @@ impl ScalarPlan {
         Ok(Self { expression: Box::new(expression.clone()), nodes, root, instructions })
     }
 
-    pub fn memo(&self) -> ScalarMemo<'_> {
-        ScalarMemo { plan: self, values: std::cell::RefCell::new(vec![None; self.nodes.len()]),
+    pub fn memo(self: &Arc<Self>) -> ScalarMemo {
+        ScalarMemo { plan: self.clone(), values: std::cell::RefCell::new(vec![None; self.nodes.len()]),
             other_values: std::cell::RefCell::new(Vec::new()),
             row_values: std::cell::RefCell::new(Vec::new()) }
     }
 }
 
-pub(super) struct ScalarMemo<'a> {
-    plan: &'a ScalarPlan,
+pub(super) struct ScalarMemo {
+    plan: Arc<ScalarPlan>,
     values: std::cell::RefCell<Vec<Option<ScalarValue>>>,
     other_values: std::cell::RefCell<Vec<ExecutableValueV1>>,
     row_values: std::cell::RefCell<Vec<usize>>,
@@ -214,7 +214,8 @@ impl ScalarValue {
     }
 }
 
-impl ScalarMemo<'_> {
+impl ScalarMemo {
+    pub fn expression(&self) -> &ExecutableExpressionV1 { &self.plan.expression }
     fn retain(&self, value: &ExecutableValueV1) -> ScalarValue {
         match value {
             ExecutableValueV1::Number(bits) => ScalarValue::Number(*bits),
@@ -366,7 +367,7 @@ mod tests {
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
             reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         for expression in expressions {
-            let plan = ScalarPlan::new(&expression).unwrap();
+            let plan = Arc::new(ScalarPlan::new(&expression).unwrap());
             let memo = plan.memo();
             assert_eq!(evaluate(&plan.expression, &[], &[], EvaluationContextV1 { scalar_memo: Some(&memo), ..context }),
                 evaluate(&expression, &[], &[], context));
@@ -419,13 +420,13 @@ mod tests {
         let queries = std::cell::RefCell::new(relational::SumQueries::default());
         let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
         let effect = E::Add(Box::new(query.clone()), Box::new(query.clone()));
-        let first = ScalarPlan::new(&effect).unwrap();
+        let first = Arc::new(ScalarPlan::new(&effect).unwrap());
         let first_memo = first.memo();
         assert_eq!(evaluate(&first.expression, &configuration, &[number(2.0)],
             EvaluationContextV1 { scalar_memo: Some(&first_memo), ..shared }).unwrap(), number(32.0));
         let E::Sum { inputs, predicates, .. } = &query else { unreachable!() };
-        let distinct = ScalarPlan::new(&E::Sum { inputs: inputs.clone(), predicates: predicates.clone(),
-            value: Box::new(E::Constant(number(3.0))) }).unwrap();
+        let distinct = Arc::new(ScalarPlan::new(&E::Sum { inputs: inputs.clone(), predicates: predicates.clone(),
+            value: Box::new(E::Constant(number(3.0))) }).unwrap());
         let distinct_memo = distinct.memo();
         assert_eq!(evaluate(&distinct.expression, &configuration, &[number(2.0)],
             EvaluationContextV1 { scalar_memo: Some(&distinct_memo), ..shared }).unwrap(), number(6.0));
@@ -436,7 +437,7 @@ mod tests {
             assert_eq!(actual.value, expected.value);
             assert_eq!(actual.reads, expected.reads);
             let expected = evaluate_with_reads(&effect, &configuration, &[number(input)], context).unwrap();
-            let plan = ScalarPlan::new(&effect).unwrap();
+            let plan = Arc::new(ScalarPlan::new(&effect).unwrap());
             let memo = plan.memo();
             assert_eq!(evaluate_for_trace(&plan.expression, &configuration, &[number(input)],
                 EvaluationContextV1 { scalar_memo: Some(&memo), ..shared }, false).unwrap().value, expected.value);
@@ -453,7 +454,7 @@ mod tests {
         let invalid = E::Divide(Box::new(E::Argument(9)), Box::new(number(0.0)));
         let expression = E::Conditional(Box::new(E::Argument(1)),
             Box::new(E::Add(Box::new(repeated.clone()), Box::new(repeated))), Box::new(invalid.clone()));
-        let plan = ScalarPlan::new(&expression).unwrap();
+        let plan = Arc::new(ScalarPlan::new(&expression).unwrap());
         assert!(!plan.nodes.is_empty());
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
             reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
@@ -477,7 +478,7 @@ mod tests {
         assert!(matches!(evaluate(&plan.expression, &[], &arguments,
             EvaluationContextV1 { scalar_memo: Some(&memo), ..context }), Err(ExecutableErrorV1::NumericDomain)));
         let short = E::And(Box::new(E::Constant(ExecutableValueV1::Boolean(false))), Box::new(invalid));
-        let plan = ScalarPlan::new(&short).unwrap();
+        let plan = Arc::new(ScalarPlan::new(&short).unwrap());
         let memo = plan.memo();
         assert_eq!(evaluate(&plan.expression, &[], &[],
             EvaluationContextV1 { scalar_memo: Some(&memo), ..context }).unwrap(), ExecutableValueV1::Boolean(false));
