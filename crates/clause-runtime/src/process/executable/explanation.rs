@@ -190,6 +190,94 @@ impl ExecutableEvaluationTraceV1 {
     }
 }
 
+/// The same immutable evaluator inputs that produced an accepted Step. Evidence
+/// is reconstructed only on inspection, without consulting the current world.
+#[derive(Clone)]
+pub(super) struct RetainedEventV1 {
+    step: ExecutableStepV1,
+    physical_plan: ExecutablePhysicalPlanIdV1,
+    before: Vec<ExecutableSlotV1>,
+    after: Vec<ExecutableSlotV1>,
+    step_ordinal: u64,
+    configuration_ordinal: u64,
+    program: Arc<ExecutableProgramV1>,
+    allocation_root: [u8; IDENTITY_BYTES],
+    resolved: std::sync::OnceLock<ExecutableRecordedEventV1>,
+}
+
+impl RetainedEventV1 {
+    fn resolve(&self) -> &ExecutableRecordedEventV1 {
+        self.resolved.get_or_init(|| {
+            let mut trace = ExecutableEvaluationTraceV1::default();
+            let (after, _) = StepEvaluator {
+                program: &self.program,
+                allocation_root: self.allocation_root,
+                configuration_id: self.step.before,
+            }.prepare_step_traced(
+                self.step.occurrence.clone(), self.step_ordinal,
+                self.configuration_ordinal, &self.before, Some(&mut trace),
+            ).expect("accepted immutable evaluation remains valid");
+            assert!(after == self.after, "retained evaluation must reproduce its accepted state");
+            ExecutableRecordedEventV1 {
+                step: self.step.clone(), physical_plan: self.physical_plan,
+                before: self.before.clone(), after: self.after.clone(), trace,
+                step_ordinal: self.step_ordinal, configuration_ordinal: self.configuration_ordinal,
+            }
+        })
+    }
+}
+
+#[cfg(test)]
+mod retained_event_tests {
+    use super::*;
+
+    #[test]
+    fn deferred_evidence_reproduces_the_exact_original_evaluation() {
+        use ExecutableExpressionV1 as E;
+        let mut program = Arc::new(ExecutableProgramV1 {
+            initial_configuration: vec![ExecutableValueV1::Boolean(false).into()],
+            projection: None,
+            rules: vec![ExecutableRuleV1 {
+                entry: 0,
+                predicates: vec![E::Argument(0)],
+                required_present: vec![0], required_absent: vec![], removals: vec![],
+                assignments: vec![(0, E::Argument(0))],
+            }],
+        });
+        let occurrence = ExecutableOccurrenceV1 {
+            entry: 0, arguments: vec![ExecutableValueV1::Boolean(true)],
+        };
+        let before = program.initial_configuration.iter().cloned().map(Into::into).collect::<Vec<ExecutableSlotV1>>();
+        let evaluator = StepEvaluator {
+            program: &program, allocation_root: [7; IDENTITY_BYTES],
+            configuration_id: ConfigurationId::from_bytes([3; IDENTITY_BYTES]),
+        };
+        let mut eager = ExecutableEvaluationTraceV1::default();
+        let (after, step) = evaluator.prepare_step_traced(
+            occurrence.clone(), 1, 2, &before, Some(&mut eager),
+        ).unwrap();
+        assert_eq!(evaluator.prepare_step_traced(occurrence, 1, 2, &before, None).unwrap(),
+            (after.clone(), step.clone()));
+        let retained = RetainedEventV1 {
+            step: step.clone(), physical_plan: ExecutablePhysicalPlanIdV1([4; IDENTITY_BYTES]),
+            before: before.clone(), after: after.clone(), step_ordinal: 1,
+            configuration_ordinal: 2, program: Arc::clone(&program),
+            allocation_root: [7; IDENTITY_BYTES], resolved: std::sync::OnceLock::new(),
+        };
+        // A later source/world replacement cannot change the retained evaluation.
+        Arc::make_mut(&mut program).rules.clear();
+        Arc::make_mut(&mut program).initial_configuration.clear();
+        drop(program);
+        assert!(retained.resolved.get().is_none());
+        let recorded = retained.resolve();
+        assert_eq!(recorded.trace, eager);
+        assert_eq!(recorded.before, before);
+        assert_eq!(recorded.after, after);
+        assert_eq!(recorded.step, step);
+        assert!(std::ptr::eq(recorded, retained.resolve()));
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExecutableRecordedEventV1 {
     pub step: ExecutableStepV1,
@@ -454,6 +542,17 @@ pub(super) fn evaluate_with_reads(
         value,
         reads: reads.into_inner(),
     })
+}
+
+pub(super) fn evaluate_for_trace(
+    expression: &ExecutableExpressionV1,
+    configuration: &[ExecutableSlotV1],
+    arguments: &[ExecutableValueV1],
+    context: EvaluationContextV1,
+    capture: bool,
+) -> Result<EvaluatedValue, ExecutableErrorV1> {
+    if capture { evaluate_with_reads(expression, configuration, arguments, context) }
+    else { Ok(EvaluatedValue { value: evaluate(expression, configuration, arguments, context)?, reads: Vec::new() }) }
 }
 
 impl ExecutableProcessRuntimeV1 {
@@ -782,7 +881,6 @@ impl ExecutableProcessRuntimeV1 {
         step_ordinal: u64,
         configuration_ordinal: u64,
         after: &[ExecutableSlotV1],
-        trace: ExecutableEvaluationTraceV1,
     ) {
         // Latest per physical entry: high-frequency tick entries cannot erase
         // an actual input attack/heal. Total retained entries are bounded.
@@ -800,12 +898,14 @@ impl ExecutableProcessRuntimeV1 {
         }
         self.recorded_events.insert(
             step.occurrence.entry,
-            ExecutableRecordedEventV1 {
+            RetainedEventV1 {
                 step: step.clone(),
                 physical_plan: self.physical_plan,
                 before: self.configuration.clone(),
                 after: after.to_vec(),
-                trace,
+                program: Arc::clone(&self.program),
+                allocation_root: self.allocation.root,
+                resolved: std::sync::OnceLock::new(),
                 step_ordinal,
                 configuration_ordinal,
             },
@@ -813,7 +913,7 @@ impl ExecutableProcessRuntimeV1 {
     }
 
     pub fn recorded_event(&self, entry: u16) -> Option<&ExecutableRecordedEventV1> {
-        self.recorded_events.get(&entry)
+        self.recorded_events.get(&entry).map(RetainedEventV1::resolve)
     }
 
     pub fn intervene(

@@ -113,7 +113,7 @@ pub(super) fn close(
             checks += 1;
             if checks > MAX_RULE_CHECKS { return Err(ExecutableErrorV1::ResourceLimit); }
             for (matched, accepted) in relational::match_rule(
-                &rule.predicates, &next, &[], context, &mut visits,
+                &rule.predicates, &next, &[], context, &mut visits, trace.is_some(),
             )? {
                 if !accepted { continue; }
                 let evaluation = EvaluationContextV1 { bindings: Some(&matched.bindings), ..context };
