@@ -153,9 +153,45 @@ impl ExecutableRelationEffectV1 {
     }
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub(super) struct Bindings(Vec<(u16, ExecutableValueV1)>);
+
+impl Bindings {
+    pub fn get(&self, binding: &u16) -> Option<&ExecutableValueV1> {
+        self.0.binary_search_by_key(binding, |(key, _)| *key).ok().map(|index| &self.0[index].1)
+    }
+
+    pub fn contains_key(&self, binding: &u16) -> bool { self.get(binding).is_some() }
+    pub fn len(&self) -> usize { self.0.len() }
+    pub fn is_empty(&self) -> bool { self.0.is_empty() }
+
+    pub fn insert(&mut self, binding: u16, value: ExecutableValueV1) -> Option<ExecutableValueV1> {
+        match self.0.binary_search_by_key(&binding, |(key, _)| *key) {
+            Ok(index) => Some(std::mem::replace(&mut self.0[index].1, value)),
+            Err(index) => { self.0.insert(index, (binding, value)); None }
+        }
+    }
+
+    pub fn remove(&mut self, binding: &u16) -> Option<ExecutableValueV1> {
+        self.0.binary_search_by_key(binding, |(key, _)| *key).ok().map(|index| self.0.remove(index).1)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&u16, &ExecutableValueV1)> {
+        self.0.iter().map(|(binding, value)| (binding, value))
+    }
+}
+
+impl<const N: usize> From<[(u16, ExecutableValueV1); N]> for Bindings {
+    fn from(entries: [(u16, ExecutableValueV1); N]) -> Self {
+        let mut bindings = Self::default();
+        for (binding, value) in entries { bindings.insert(binding, value); }
+        bindings
+    }
+}
+
 #[derive(Clone, Default)]
 pub(super) struct Matched {
-    pub bindings: Arc<BTreeMap<u16, ExecutableValueV1>>,
+    pub bindings: Arc<Bindings>,
     pub predicates: Vec<EvaluatedValue>,
 }
 
@@ -351,7 +387,7 @@ fn match_sum(
 fn unify(
     expression: &ExecutableExpressionV1,
     value: &ExecutableValueV1,
-    bindings: &mut Arc<BTreeMap<u16, ExecutableValueV1>>,
+    bindings: &mut Arc<Bindings>,
     configuration: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
@@ -431,7 +467,7 @@ pub(super) fn facet_value(
 
 fn bound_pattern(
     expression: &ExecutableExpressionV1,
-    bindings: &BTreeMap<u16, ExecutableValueV1>,
+    bindings: &Bindings,
 ) -> Option<bool> {
     match expression {
         ExecutableExpressionV1::Binding(binding) => Some(bindings.contains_key(binding)),
@@ -752,13 +788,13 @@ fn match_rule_from(
 pub(super) struct LazyOccurrenceIdentity<'a> {
     context: EvaluationContextV1<'a>,
     rule: usize,
-    bindings: &'a BTreeMap<u16, ExecutableValueV1>,
+    bindings: &'a Bindings,
     identity: std::cell::Cell<Option<[u8; IDENTITY_BYTES]>>,
 }
 
 impl<'a> LazyOccurrenceIdentity<'a> {
     pub(super) fn new(context: EvaluationContextV1<'a>, rule: usize,
-        bindings: &'a BTreeMap<u16, ExecutableValueV1>) -> Self {
+        bindings: &'a Bindings) -> Self {
         Self { context, rule, bindings, identity: std::cell::Cell::new(None) }
     }
 
@@ -773,11 +809,11 @@ impl<'a> LazyOccurrenceIdentity<'a> {
 pub(super) fn occurrence_identity(
     context: EvaluationContextV1,
     rule: usize,
-    bindings: &BTreeMap<u16, ExecutableValueV1>,
+    bindings: &Bindings,
 ) -> Result<[u8; IDENTITY_BYTES], ExecutableErrorV1> {
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::OccurrenceIdentity);
     let mut bytes = Vec::new();
-    for (binding, value) in bindings {
+    for (binding, value) in bindings.iter() {
         bytes.extend_from_slice(&binding.to_le_bytes());
         encode_value(&mut bytes, value)?;
     }
@@ -1181,9 +1217,32 @@ mod match_ownership_tests {
     use super::*;
 
     #[test]
+    fn contiguous_bindings_preserve_sparse_map_order_replacement_and_removal() {
+        let n = |value| ExecutableValueV1::number(value).unwrap();
+        let mut cases = Vec::new();
+        for entries in [vec![], vec![(7, n(2.0)), (1, n(4.0))],
+            vec![(1, n(4.0))], vec![(7, n(2.0)), (1, n(4.0)), (7, n(-1.0))]] {
+            let mut actual = Bindings::default();
+            let mut expected = BTreeMap::new();
+            for (binding, value) in entries {
+                assert_eq!(actual.insert(binding, value.clone()), expected.insert(binding, value));
+            }
+            assert_eq!(actual.iter().collect::<Vec<_>>(), expected.iter().collect::<Vec<_>>());
+            for binding in [0, 1, 7, 128] { assert_eq!(actual.get(&binding), expected.get(&binding)); }
+            cases.push((actual.clone(), expected.clone()));
+            assert_eq!(actual.remove(&7), expected.remove(&7));
+            assert_eq!(actual.remove(&7), expected.remove(&7));
+            assert_eq!(actual.iter().collect::<Vec<_>>(), expected.iter().collect::<Vec<_>>());
+        }
+        for (left, left_map) in &cases {
+            for (right, right_map) in &cases { assert_eq!(left.cmp(right), left_map.cmp(right_map)); }
+        }
+    }
+
+    #[test]
     fn relational_identity_is_derived_only_for_evaluated_fresh_referents() {
         use ExecutableExpressionV1 as E;
-        let bindings = BTreeMap::from([(3, ExecutableValueV1::text("bound text").unwrap())]);
+        let bindings = Bindings::from([(3, ExecutableValueV1::text("bound text").unwrap())]);
         let context = EvaluationContextV1 { allocation_root: [17; IDENTITY_BYTES],
             step_ordinal: 19, reads: None, sum_queries: None, scalar_memo: None, bindings: Some(&bindings), relational_occurrence: None };
         let identity = LazyOccurrenceIdentity::new(context, 23, &bindings);
@@ -1191,10 +1250,10 @@ mod match_ownership_tests {
         let fresh = E::FreshReferent { domain: 29, binder: 31 };
         let ordinary = E::Conditional(Box::new(E::Constant(ExecutableValueV1::Boolean(false))),
             Box::new(fresh.clone()), Box::new(E::Binding(3)));
-        assert_eq!(evaluate(&ordinary, &[], &[], evaluation).unwrap(), bindings[&3]);
+        assert_eq!(&evaluate(&ordinary, &[], &[], evaluation).unwrap(), bindings.get(&3).unwrap());
         assert_eq!(identity.identity.get(), None);
         let mut preimage = 3u16.to_le_bytes().to_vec();
-        encode_value(&mut preimage, &bindings[&3]).unwrap();
+        encode_value(&mut preimage, bindings.get(&3).unwrap()).unwrap();
         let expected_match = runtime_domain_hash("clause/relational-match/v1", &[
             &[17; IDENTITY_BYTES], &19u64.to_be_bytes(), &23u64.to_be_bytes(), &preimage]);
         let expected = ExecutableValueV1::Referent(ExecutableReferentV1::created(29,

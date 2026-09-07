@@ -6273,7 +6273,7 @@ struct EvaluationContextV1<'a> {
     reads: Option<&'a std::cell::RefCell<Vec<ExecutableReadV1>>>,
     sum_queries: Option<&'a std::cell::RefCell<relational::SumQueries>>,
     scalar_memo: Option<&'a scalar_reuse::ScalarMemo<'a>>,
-    bindings: Option<&'a BTreeMap<u16, ExecutableValueV1>>,
+    bindings: Option<&'a relational::Bindings>,
     relational_occurrence: Option<&'a relational::LazyOccurrenceIdentity<'a>>,
 }
 
@@ -7491,7 +7491,7 @@ impl StepEvaluator<'_> {
                 if let Some(trace) = &mut trace {
                     let rule_trace = ExecutableRuleEvaluationV1 {
                         rule: rule_index as u16,
-                        bindings: matched.bindings.clone(),
+                        bindings: Arc::new(matched.bindings.iter().map(|(key, value)| (*key, value.clone())).collect()),
                         required_present: rule
                             .required_present
                             .iter()

@@ -212,7 +212,7 @@ pub(super) fn close(
                 if !discovered.is_empty() && let Some((retained_program, trace)) = &mut trace {
                     let index = trace.rules.len();
                     trace.push(ExecutableRuleEvaluationV1 {
-                        rule: *rule_index as u16, bindings: matched.bindings,
+                        rule: *rule_index as u16, bindings: Arc::new(matched.bindings.iter().map(|(key, value)| (*key, value.clone())).collect()),
                         required_present: vec![], required_absent: vec![], selected: true,
                         predicates: matched.predicates.into_iter().enumerate().map(|(index, value)|
                             value.retain(ExecutableExpressionReferenceV1::new(retained_program, *rule_index,

@@ -459,7 +459,7 @@ mod tests {
             reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         let memo = plan.memo();
         for value in [3.0, 7.0] {
-            let bindings = BTreeMap::from([(0, ExecutableValueV1::number(value).unwrap())]);
+            let bindings = relational::Bindings::from([(0, ExecutableValueV1::number(value).unwrap())]);
             let arguments = [ExecutableValueV1::number(2.0).unwrap(), ExecutableValueV1::Boolean(true)];
             let context = EvaluationContextV1 { bindings: Some(&bindings), ..context };
             let reused = EvaluationContextV1 { scalar_memo: Some(&memo), ..context };
