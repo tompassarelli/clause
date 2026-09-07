@@ -139,6 +139,7 @@ pub struct CanonicalAllocationV1 {
 pub struct CanonicalSourceAllocationPlanV1 {
     artifact: CanonicalSourceArtifactIdV1,
     root: ProgramChangeOccurrenceId,
+    // The private constructor preserves unique AllocationRequest order.
     allocations: Vec<CanonicalAllocationV1>,
 }
 
@@ -164,17 +165,15 @@ impl CanonicalSourceAllocationPlanV1 {
         slot: &CanonicalEmissionSlotV1,
         domain: AllocationDomain,
     ) -> Option<CanonicalAllocatedIdentityV1> {
-        self.allocations.iter().find_map(|allocation| {
+        self.allocations.binary_search_by(|allocation| {
             let CanonicalAllocationJudgmentV1::Fresh {
                 producer: actual_producer,
                 slot: CanonicalAllocationSlotV1::Emission(actual_slot),
                 ..
             } = &allocation.judgment;
-            (actual_producer == producer
-                && actual_slot == slot
-                && AllocationDomain::of(allocation.identity) == domain)
-                .then_some(allocation.identity)
-        })
+            (actual_producer, actual_slot, AllocationDomain::of(allocation.identity))
+                .cmp(&(producer, slot, domain))
+        }).ok().map(|index| self.allocations[index].identity)
     }
 }
 
@@ -1689,29 +1688,23 @@ pub fn rematerialize_canonical_source_allocation_plan_v1(
     }
     let (schema_for_producer, operator_for_producer) =
         derived_container_coordinates(recorded.root, &requests)?;
-    for request in &requests {
-        let matches = recorded
-            .allocations
-            .iter()
-            .filter(|allocation| {
-                let CanonicalAllocationJudgmentV1::Fresh {
-                    basis,
-                    producer,
-                    slot: CanonicalAllocationSlotV1::Emission(slot),
-                    collision,
-                    cycle,
-                } = &allocation.judgment;
-                *basis == CanonicalFreshBasisV1::ConstitutedProgramChange(recorded.root)
-                    && producer == &request.producer
-                    && slot == &request.slot
-                    && *collision == CanonicalAllocationCollisionDispositionV1::RejectTypedCollision
-                    && *cycle == CanonicalAllocationCycleDispositionV1::RejectDependencyCycle
-                    && AllocationDomain::of(allocation.identity) == request.domain
-            })
-            .collect::<Vec<_>>();
-        let [allocation] = matches.as_slice() else {
+    for (request, allocation) in requests.iter().zip(&recorded.allocations) {
+        let CanonicalAllocationJudgmentV1::Fresh {
+            basis,
+            producer,
+            slot: CanonicalAllocationSlotV1::Emission(slot),
+            collision,
+            cycle,
+        } = &allocation.judgment;
+        if !(*basis == CanonicalFreshBasisV1::ConstitutedProgramChange(recorded.root)
+            && producer == &request.producer
+            && slot == &request.slot
+            && *collision == CanonicalAllocationCollisionDispositionV1::RejectTypedCollision
+            && *cycle == CanonicalAllocationCycleDispositionV1::RejectDependencyCycle
+            && AllocationDomain::of(allocation.identity) == request.domain)
+        {
             return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
-        };
+        }
         let (coordinate, attempt) = derive_local_coordinate(recorded.root, request)?;
         let expected_identity = allocated_identity(
             request,
@@ -10942,19 +10935,17 @@ fn emission(
     slot: CanonicalEmissionSlotV1,
     origin: CanonicalSourceOriginV1,
 ) -> CanonicalSourceEmissionV1 {
-    let allocations = plan
-        .allocations
-        .iter()
-        .filter(|allocation| {
-            let CanonicalAllocationJudgmentV1::Fresh {
-                producer: actual_producer,
-                slot: CanonicalAllocationSlotV1::Emission(actual_slot),
-                ..
-            } = &allocation.judgment;
-            actual_producer == &producer && actual_slot == &slot
-        })
-        .cloned()
-        .collect();
+    let key = |allocation: &CanonicalAllocationV1| {
+        let CanonicalAllocationJudgmentV1::Fresh {
+            producer: actual_producer,
+            slot: CanonicalAllocationSlotV1::Emission(actual_slot),
+            ..
+        } = &allocation.judgment;
+        (actual_producer, actual_slot).cmp(&(&producer, &slot))
+    };
+    let start = plan.allocations.partition_point(|allocation| key(allocation).is_lt());
+    let end = start + plan.allocations[start..].partition_point(|allocation| key(allocation).is_eq());
+    let allocations = plan.allocations[start..end].to_vec();
     CanonicalSourceEmissionV1 {
         producer,
         slot,

@@ -341,7 +341,7 @@ pub fn replace_canonical_scalar_effect_v1(
             }
             continue;
         }
-        if !new_requests.contains(continued) {
+        if new_requests.binary_search(continued).is_err() {
             return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
         }
         let new = plan
@@ -562,7 +562,7 @@ pub fn replace_canonical_source_items_v1(
             }
             continued.producer = new.clone();
         }
-        if !new_requests.contains(&continued) {
+        if new_requests.binary_search(&continued).is_err() {
             return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
         }
         let new = plan
