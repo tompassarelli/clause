@@ -1,0 +1,680 @@
+//! Direct ES module lowering for the checked finite relational handler slice.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
+
+use crate::*;
+
+/// A generated module and its exact exported TypeScript interface.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JavaScriptArtifactsV1 {
+    pub module: String,
+    pub declarations: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JavaScriptLoweringErrorV1(pub String);
+
+impl fmt::Display for JavaScriptLoweringErrorV1 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+impl std::error::Error for JavaScriptLoweringErrorV1 {}
+
+type Result<T> = std::result::Result<T, JavaScriptLoweringErrorV1>;
+fn unsupported<T>(message: impl Into<String>) -> Result<T> {
+    Err(JavaScriptLoweringErrorV1(message.into()))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ValueType {
+    Number,
+    Boolean,
+    Text,
+    Referent(u32),
+}
+impl ValueType {
+    fn descriptor(self) -> String {
+        match self {
+            Self::Number => "[\"number\"]".into(),
+            Self::Boolean => "[\"boolean\"]".into(),
+            Self::Text => "[\"text\"]".into(),
+            Self::Referent(domain) => format!("[\"referent\",{domain}]"),
+        }
+    }
+    fn declaration(self) -> String {
+        match self {
+            Self::Number => "number".into(),
+            Self::Boolean => "boolean".into(),
+            Self::Text => "string".into(),
+            Self::Referent(domain) => format!("Referent<{domain}>"),
+        }
+    }
+}
+fn relation_type(kind: CanonicalRelationValueKindV1) -> Result<ValueType> {
+    match kind {
+        CanonicalRelationValueKindV1::Number => Ok(ValueType::Number),
+        CanonicalRelationValueKindV1::Boolean => Ok(ValueType::Boolean),
+        CanonicalRelationValueKindV1::Text => Ok(ValueType::Text),
+        CanonicalRelationValueKindV1::Referent(domain) => Ok(ValueType::Referent(domain.get())),
+        CanonicalRelationValueKindV1::Symbol => {
+            unsupported("JavaScript lowering does not support Symbol values")
+        }
+    }
+}
+fn name(bytes: &[u8]) -> Result<&str> {
+    std::str::from_utf8(bytes)
+        .map_err(|_| JavaScriptLoweringErrorV1("non-UTF-8 designation".into()))
+}
+fn quote(value: &str) -> String {
+    let mut result = String::from("\"");
+    for ch in value.chars() {
+        match ch {
+            '"' => result.push_str("\\\""),
+            '\\' => result.push_str("\\\\"),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\t' => result.push_str("\\t"),
+            ch if ch < ' ' || matches!(ch, '\u{2028}' | '\u{2029}') => {
+                use std::fmt::Write;
+                write!(&mut result, "\\u{:04x}", ch as u32).unwrap();
+            }
+            ch => result.push(ch),
+        }
+    }
+    result.push('"');
+    result
+}
+fn referent(value: CanonicalReferentV1) -> String {
+    format!(
+        "Object.freeze({{domain:{},identity:{}}})",
+        value.domain.get(),
+        value.identity.get()
+    )
+}
+fn constant(value: &CanonicalScalarValueV1) -> Result<(String, ValueType)> {
+    match value {
+        CanonicalScalarValueV1::Number(bits) => {
+            let number = f64::from_bits(*bits);
+            if !number.is_finite() {
+                return unsupported("non-finite Number constant");
+            }
+            Ok((number.to_string(), ValueType::Number))
+        }
+        CanonicalScalarValueV1::Boolean(value) => Ok((value.to_string(), ValueType::Boolean)),
+        CanonicalScalarValueV1::Text(value) => {
+            if value.len() > MAX_ATOM_FIELD_BYTES {
+                return unsupported("Text constant exceeds canonical size limit");
+            }
+            Ok((quote(value), ValueType::Text))
+        }
+        CanonicalScalarValueV1::Referent(value) => {
+            Ok((referent(*value), ValueType::Referent(value.domain.get())))
+        }
+        _ => unsupported("JavaScript lowering does not support this constant kind"),
+    }
+}
+
+struct Lowerer<'a> {
+    slots: BTreeMap<&'a CanonicalStateRefV1, usize>,
+    tables: Vec<&'a CanonicalRelationTableV1>,
+    arguments: Vec<Option<ValueType>>,
+    bindings: BTreeMap<u16, ValueType>,
+}
+impl Lowerer<'_> {
+    fn slot(&self, state: &CanonicalStateRefV1) -> Result<usize> {
+        self.slots
+            .get(state)
+            .copied()
+            .ok_or_else(|| JavaScriptLoweringErrorV1("unresolved state coordinate".into()))
+    }
+    fn expression(
+        &mut self,
+        expression: &CanonicalExecutableExpressionV1,
+        expected: Option<ValueType>,
+    ) -> Result<(String, ValueType)> {
+        use CanonicalExecutableExpressionV1 as E;
+        let result = match expression {
+            E::Constant(value) => constant(value)?,
+            E::Argument(index) => {
+                let entry = self.arguments.get_mut(usize::from(*index)).ok_or_else(|| {
+                    JavaScriptLoweringErrorV1("argument ordinal exceeds handler arity".into())
+                })?;
+                let kind = match (*entry, expected) {
+                    (Some(a), Some(b)) if a != b => {
+                        return unsupported("inconsistent argument type");
+                    }
+                    (Some(a), _) | (None, Some(a)) => a,
+                    (None, None) => {
+                        return unsupported("argument type cannot be derived from checked operands");
+                    }
+                };
+                *entry = Some(kind);
+                (format!("args[{index}]"), kind)
+            }
+            E::Binding(index) => (
+                format!("b{index}"),
+                *self
+                    .bindings
+                    .get(index)
+                    .ok_or_else(|| JavaScriptLoweringErrorV1("unbound rule variable".into()))?,
+            ),
+            E::ReferentFacet {
+                value,
+                domain,
+                members,
+            } => {
+                // The facet is justified by checked membership, not JavaScript coercion.
+                let input_type = match value.as_ref() {
+                    E::Argument(index) => {
+                        self.arguments.get(usize::from(*index)).copied().flatten()
+                    }
+                    E::Binding(index) => self.bindings.get(index).copied(),
+                    _ => None,
+                }
+                .unwrap_or(ValueType::Referent(domain.get()));
+                let (value, kind) = self.expression(value, Some(input_type))?;
+                if !matches!(kind, ValueType::Referent(_)) {
+                    return unsupported("facet operand is not a referent");
+                }
+                (
+                    format!("requireFacet({value},{},{})", domain.get(), ids(members)),
+                    ValueType::Referent(domain.get()),
+                )
+            }
+            E::Concatenate(a, b) => {
+                self.binary(a, b, ValueType::Text, ValueType::Text, "concatenate")?
+            }
+            E::Add(a, b) => self.binary(a, b, ValueType::Number, ValueType::Number, "add")?,
+            E::Subtract(a, b) => {
+                self.binary(a, b, ValueType::Number, ValueType::Number, "subtract")?
+            }
+            E::Multiply(a, b) => {
+                self.binary(a, b, ValueType::Number, ValueType::Number, "multiply")?
+            }
+            E::Divide(a, b) => self.binary(a, b, ValueType::Number, ValueType::Number, "divide")?,
+            E::GreaterThan(a, b) => {
+                self.binary(a, b, ValueType::Number, ValueType::Boolean, "greater")?
+            }
+            E::LessThanOrEqual(a, b) => {
+                self.binary(a, b, ValueType::Number, ValueType::Boolean, "lessEqual")?
+            }
+            E::StartsWith(a, b) => {
+                self.binary(a, b, ValueType::Text, ValueType::Boolean, "startsWith")?
+            }
+            E::ContainsText(a, b) => {
+                self.binary(a, b, ValueType::Text, ValueType::Boolean, "containsText")?
+            }
+            E::Equal(a, b) => {
+                let (a, kind) = self.expression(a, None)?;
+                let (b, _) = self.expression(b, Some(kind))?;
+                (format!("equal({a},{b})"), ValueType::Boolean)
+            }
+            E::Not(value) => {
+                let (value, _) = self.expression(value, Some(ValueType::Boolean))?;
+                (format!("(!{value})"), ValueType::Boolean)
+            }
+            E::Conditional(condition, yes, no) => {
+                let (condition, _) = self.expression(condition, Some(ValueType::Boolean))?;
+                let (yes, kind) = self.expression(yes, expected)?;
+                let (no, _) = self.expression(no, Some(kind))?;
+                (format!("({condition}?{yes}:{no})"), kind)
+            }
+            E::SquareRoot(value) => {
+                let (value, _) = self.expression(value, Some(ValueType::Number))?;
+                (format!("finite(Math.sqrt({value}))"), ValueType::Number)
+            }
+            E::RelationRead(table, subject) | E::RelationPresent(table, subject) => {
+                let E::State(state) = table.as_ref() else {
+                    return unsupported("relation read requires an exact state table");
+                };
+                let slot = self.slot(state)?;
+                let table = self.tables[slot];
+                let (subject, _) = self.expression(
+                    subject,
+                    Some(ValueType::Referent(table.subject_domain.get())),
+                )?;
+                if matches!(expression, E::RelationPresent(..)) {
+                    (
+                        format!("present(pre[{slot}],{subject})"),
+                        ValueType::Boolean,
+                    )
+                } else {
+                    if table.cardinality == CanonicalRelationCardinalityV1::Many {
+                        return unsupported("many-valued relation read is unsupported");
+                    }
+                    (
+                        format!("readOne(pre[{slot}],{subject})"),
+                        relation_type(table.value_kind)?,
+                    )
+                }
+            }
+            other => {
+                return unsupported(format!(
+                    "unsupported JavaScript expression: {}",
+                    expression_name(other)
+                ));
+            }
+        };
+        if expected.is_some_and(|expected| expected != result.1) {
+            return unsupported("checked operand type mismatch");
+        }
+        Ok(result)
+    }
+    fn binary(
+        &mut self,
+        a: &CanonicalExecutableExpressionV1,
+        b: &CanonicalExecutableExpressionV1,
+        input: ValueType,
+        output: ValueType,
+        function: &str,
+    ) -> Result<(String, ValueType)> {
+        let (a, _) = self.expression(a, Some(input))?;
+        let (b, _) = self.expression(b, Some(input))?;
+        Ok((format!("{function}({a},{b})"), output))
+    }
+    fn pattern(
+        &mut self,
+        pattern: &CanonicalExecutableExpressionV1,
+        candidate: &str,
+        kind: ValueType,
+    ) -> Result<String> {
+        use CanonicalExecutableExpressionV1 as E;
+        if let E::Binding(index) = pattern {
+            if !self.bindings.contains_key(index) {
+                self.bindings.insert(*index, kind);
+                return Ok(format!("const b{index}={candidate};\n"));
+            }
+        }
+        if let E::ReferentFacet {
+            value,
+            domain,
+            members,
+        } = pattern
+        {
+            let mut output = String::new();
+            if let E::Binding(index) = value.as_ref() {
+                if !self.bindings.contains_key(index) {
+                    self.bindings.insert(*index, kind);
+                    output.push_str(&format!("const b{index}={candidate};\n"));
+                }
+            }
+            let input_type = match value.as_ref() {
+                E::Binding(index) => self.bindings.get(index).copied(),
+                E::Argument(index) => self.arguments.get(usize::from(*index)).copied().flatten(),
+                _ => None,
+            }
+            .unwrap_or(ValueType::Referent(domain.get()));
+            let (value, _) = self.expression(value, Some(input_type))?;
+            output.push_str(&format!(
+                "if(!equal(facet({value},{},{}),{candidate})) continue;\n",
+                domain.get(),
+                ids(members)
+            ));
+            return Ok(output);
+        }
+        let (value, _) = self.expression(pattern, Some(kind))?;
+        Ok(format!("if(!equal({value},{candidate})) continue;\n"))
+    }
+    fn rule(&mut self, rule: &CanonicalExecutableRuleV1) -> Result<String> {
+        use CanonicalExecutableExpressionV1 as E;
+        use CanonicalExecutablePredicateV1 as P;
+        self.bindings.clear();
+        if !rule.law_origins.is_empty() || !rule.removals.is_empty() {
+            return unsupported(
+                "JavaScript lowering does not support law origins or whole-state removals",
+            );
+        }
+        let mut output = String::from("{\n");
+        let mut close = String::from("}\n");
+        for state in &rule.required_present {
+            let slot = self.slot(state)?;
+            output.push_str(&format!("if(pre[{slot}]!==undefined){{\n"));
+            close.push_str("}\n");
+        }
+        for state in &rule.required_absent {
+            let slot = self.slot(state)?;
+            output.push_str(&format!("if(pre[{slot}]===undefined){{\n"));
+            close.push_str("}\n");
+        }
+        for (ordinal, predicate) in rule.predicates.iter().enumerate() {
+            match predicate {
+                P::RelationMatch(state, subject, value) => {
+                    let slot = self.slot(state)?;
+                    let table = self.tables[slot];
+                    output.push_str(&format!(
+                        "for(const [s{ordinal},vs{ordinal}] of pre[{slot}].rows){{\n"
+                    ));
+                    output.push_str(&self.pattern(
+                        subject,
+                        &format!("s{ordinal}"),
+                        ValueType::Referent(table.subject_domain.get()),
+                    )?);
+                    output.push_str(&format!("for(const v{ordinal} of vs{ordinal}){{\n"));
+                    output.push_str(&self.pattern(
+                        value,
+                        &format!("v{ordinal}"),
+                        relation_type(table.value_kind)?,
+                    )?);
+                    close.push_str("}\n}\n");
+                }
+                P::Equal(a, b) | P::GreaterThan(a, b) | P::LessThanOrEqual(a, b) => {
+                    let expression = match predicate {
+                        P::Equal(..) => E::Equal(Box::new(a.clone()), Box::new(b.clone())),
+                        P::GreaterThan(..) => {
+                            E::GreaterThan(Box::new(a.clone()), Box::new(b.clone()))
+                        }
+                        _ => E::LessThanOrEqual(Box::new(a.clone()), Box::new(b.clone())),
+                    };
+                    let (value, _) = self.expression(&expression, Some(ValueType::Boolean))?;
+                    output.push_str(&format!("if({value}){{\n"));
+                    close.push_str("}\n");
+                }
+                P::Contains(..) => return unsupported("unsupported JavaScript Contains predicate"),
+            }
+        }
+        for assignment in &rule.assignments {
+            let slot = self.slot(&assignment.target)?;
+            let E::RelationEffects(effects) = &assignment.value else {
+                return unsupported(
+                    "JavaScript lowering currently requires relation-row assignments",
+                );
+            };
+            let table = self.tables[slot];
+            for effect in effects {
+                let (mode, subject, value) = match effect {
+                    CanonicalRelationEffectV1::Put(s, v) => (0, s, v),
+                    CanonicalRelationEffectV1::Insert(s, v) => (1, s, v),
+                    CanonicalRelationEffectV1::Remove(s, v) => (2, s, v),
+                    CanonicalRelationEffectV1::Accumulate(..) => {
+                        return unsupported("unsupported JavaScript Accumulate effect");
+                    }
+                };
+                let (subject, _) = self.expression(
+                    subject,
+                    Some(ValueType::Referent(table.subject_domain.get())),
+                )?;
+                let (value, _) = self.expression(value, Some(relation_type(table.value_kind)?))?;
+                output.push_str(&format!(
+                    "stage(pending,pre,{slot},{mode},{subject},{value});\n"
+                ));
+            }
+        }
+        output.push_str(&close);
+        Ok(output)
+    }
+}
+fn ids(values: &[FormationLocalId]) -> String {
+    format!(
+        "[{}]",
+        values
+            .iter()
+            .map(|value| value.get().to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+}
+fn expression_name(expression: &CanonicalExecutableExpressionV1) -> &'static str {
+    use CanonicalExecutableExpressionV1 as E;
+    match expression {
+        E::State(_) => "State",
+        E::TextTransform(..) => "TextTransform",
+        E::Sum { .. } => "Sum",
+        E::RelationEffects(_) => "RelationEffects",
+        E::Accumulate(_) => "Accumulate",
+        E::MatchesAny(_) => "MatchesAny",
+        E::FreshReferent { .. } => "FreshReferent",
+        E::RelationPut(..) => "RelationPut",
+        E::RelationInsert(..) => "RelationInsert",
+        E::RelationRemoveRow(..) => "RelationRemoveRow",
+        E::RelationRemoveValue(..) => "RelationRemoveValue",
+        E::Insert(..) => "Insert",
+        E::Remove(..) => "Remove",
+        _ => "invalid expression context",
+    }
+}
+
+/// Compile checked canonical IR to a self-contained ES module.
+///
+/// Each session owns its state. External handlers validate arguments, read one
+/// pre-state, and commit all row effects only after conflict and contract checks.
+/// Returns an error for unsupported source productions, triggers, values, or IR.
+pub fn lower_javascript_v1(
+    package: &CanonicalSourcePackageSliceV1,
+) -> Result<JavaScriptArtifactsV1> {
+    if !package.unsupported.is_empty() {
+        return unsupported("package contains unsupported source productions");
+    }
+    if !package.keyboard_bindings.is_empty()
+        || !package.scalar_input_bindings.is_empty()
+        || !package.referent_input_bindings.is_empty()
+    {
+        return unsupported("JavaScript lowering does not support physical input bindings");
+    }
+    let mut lowerer = Lowerer {
+        slots: BTreeMap::new(),
+        tables: Vec::new(),
+        arguments: vec![],
+        bindings: BTreeMap::new(),
+    };
+    let mut initial = Vec::new();
+    for (slot, cell) in package.state_cells.iter().enumerate() {
+        let Some(CanonicalScalarValueV1::RelationTable(table)) = &cell.initial_value else {
+            return unsupported(
+                "JavaScript lowering currently requires initialized relation-table state",
+            );
+        };
+        if lowerer.slots.insert(&cell.state, slot).is_some() {
+            return unsupported("duplicate state coordinate");
+        }
+        lowerer.tables.push(table);
+        let kind = relation_type(table.value_kind)?;
+        let cardinality = match table.cardinality {
+            CanonicalRelationCardinalityV1::One => "one",
+            CanonicalRelationCardinalityV1::Maybe => "maybe",
+            CanonicalRelationCardinalityV1::Many => "many",
+        };
+        let mut rows = Vec::new();
+        for (subject, values) in &table.rows {
+            if subject.domain != table.subject_domain {
+                return unsupported("initial relation subject type mismatch");
+            }
+            if table.cardinality != CanonicalRelationCardinalityV1::Many && values.len() != 1 {
+                return unsupported("initial relation cardinality mismatch");
+            }
+            let values = values
+                .iter()
+                .map(|value| {
+                    let (value, actual) = constant(value)?;
+                    if actual != kind {
+                        return unsupported("initial relation value type mismatch");
+                    }
+                    Ok(value)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            rows.push(format!("[{},[{}]]", referent(*subject), values.join(",")));
+        }
+        initial.push(format!(
+            "{{domain:{},kind:{},cardinality:{},total:{},rows:[{}]}}",
+            table.subject_domain.get(),
+            kind.descriptor(),
+            quote(cardinality),
+            table.total,
+            rows.join(",")
+        ));
+    }
+    let mut refs = BTreeMap::new();
+    let mut projections = BTreeMap::new();
+    let mut read_declarations = BTreeSet::new();
+    for projection in &package.relational_projection {
+        let subject = name(&projection.subject)?;
+        if refs
+            .insert(subject, projection.referent)
+            .is_some_and(|prior| prior != projection.referent)
+        {
+            return unsupported(
+                "multiple domain facets for a projected subject are not yet supported",
+            );
+        }
+        let slot = lowerer.slot(&projection.state)?;
+        let table = lowerer.tables[slot];
+        let relation = name(&projection.state.relation_designation)?;
+        if !matches!(projection.state.path, CanonicalStatePathV1::Rows) {
+            return unsupported("structured projection is not yet supported");
+        }
+        let key = format!("[{},{}]", quote(subject), quote(relation));
+        if projections
+            .insert(key, (slot, projection.referent))
+            .is_some()
+        {
+            return unsupported("ambiguous projection coordinate");
+        }
+        let mut kind = relation_type(table.value_kind)?.declaration();
+        if table.cardinality == CanonicalRelationCardinalityV1::Many {
+            kind = format!("ReadonlyArray<{kind}>");
+        } else if !table.total {
+            kind.push_str(" | undefined");
+        }
+        read_declarations.insert(format!(
+            "  read(subject: {}, relation: {}): {kind};\n",
+            quote(subject),
+            quote(relation)
+        ));
+    }
+    let mut handlers = Vec::new();
+    let mut handler_declarations = Vec::new();
+    let mut handler_names = BTreeSet::new();
+    for handler in &package.executable_handlers {
+        if handler.trigger != CanonicalHandlerTriggerV1::External {
+            return unsupported(format!(
+                "unsupported JavaScript handler trigger: {:?}",
+                handler.trigger
+            ));
+        }
+        let designation = quote(name(&handler.designation)?);
+        if !handler_names.insert(designation.clone()) {
+            return unsupported("duplicate handler designation");
+        }
+        lowerer.arguments = vec![None; usize::from(handler.argument_count)];
+        let body = handler
+            .rules
+            .iter()
+            .map(|rule| lowerer.rule(rule))
+            .collect::<Result<Vec<_>>>()?
+            .join("");
+        let types = lowerer
+            .arguments
+            .iter()
+            .map(|kind| {
+                kind.ok_or_else(|| {
+                    JavaScriptLoweringErrorV1("unused or unresolved handler argument type".into())
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let validation = types
+            .iter()
+            .enumerate()
+            .map(|(i, kind)| format!("validate(args[{i}],{});\n", kind.descriptor()))
+            .collect::<String>();
+        handlers.push(format!("[{designation},(...args)=>{{\nif(args.length!=={})fail(\"ArgumentCount\");\n{validation}const pre=state;const pending=[];\n{body}state=commit(pre,pending);\n}}]",handler.argument_count));
+        handler_declarations.push(format!(
+            "    {designation}: ({}) => void;\n",
+            types
+                .iter()
+                .enumerate()
+                .map(|(i, kind)| format!("arg{i}: {}", kind.declaration()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    let reference_entries = refs
+        .iter()
+        .map(|(name, value)| format!("[{},{}]", quote(name), referent(*value)))
+        .collect::<Vec<_>>()
+        .join(",");
+    let projection_entries = projections
+        .iter()
+        .map(|(key, (slot, subject))| format!("[{},[{slot},{}]]", quote(key), referent(*subject)))
+        .collect::<Vec<_>>()
+        .join(",");
+    let module = format!(
+        "// Generated from checked Clause canonical executable IR.\n{RUNTIME}\nexport function createSession(){{\nlet state=[{}];\nvalidateContracts(state);\nconst referents=Object.freeze(Object.fromEntries([{reference_entries}]));\nconst projections=new Map([{projection_entries}]);\nconst handlers=Object.freeze(Object.fromEntries([{}]));\nreturn Object.freeze({{referents,handlers,read(subject,relation){{\nconst projection=projections.get(JSON.stringify([subject,relation]));\nif(!projection)fail(\"UnknownProjection\");\nconst [slot,subjectValue]=projection;\nconst table=state[slot];\nconst values=row(table,subjectValue);\nreturn table.cardinality===\"many\"?Object.freeze([...(values??[])]):values?.[0];\n}}}});\n}}\n",
+        initial.join(","),
+        handlers.join(",")
+    );
+    let declarations = format!(
+        "export interface Referent<Domain extends number> {{ readonly domain: Domain; readonly identity: number; }}\nexport interface Session {{\n  readonly referents: {{ {} }};\n  readonly handlers: {{\n{}  }};\n{}}}\nexport declare function createSession(): Session;\n",
+        refs.iter()
+            .map(|(name, value)| format!(
+                "readonly {}: Referent<{}>;",
+                quote(name),
+                value.domain.get()
+            ))
+            .collect::<Vec<_>>()
+            .join(" "),
+        handler_declarations.join(""),
+        read_declarations.into_iter().collect::<String>()
+    );
+    Ok(JavaScriptArtifactsV1 {
+        module,
+        declarations,
+    })
+}
+
+const RUNTIME: &str = r#"
+function fail(code){throw new Error(code);}
+function equal(a,b){return a===b||(a!==null&&b!==null&&typeof a==='object'&&typeof b==='object'&&a.domain===b.domain&&a.identity===b.identity);}
+function finite(value){if(typeof value!=='number'||!Number.isFinite(value))fail('NumericDomain');return value===0?0:value;}
+function text(value){if(typeof value!=='string'||!value.isWellFormed()||new TextEncoder().encode(value).length>16777216)fail('TextDomain');return value;}
+function validate(value,kind){
+ switch(kind[0]){
+ case 'number':finite(value);break;
+ case 'text':text(value);break;
+ case 'boolean':if(typeof value!=='boolean')fail('TypeMismatch');break;
+ case 'referent':if(value===null||typeof value!=='object'||value.domain!==kind[1]||!Number.isInteger(value.identity)||value.identity<=0||value.identity>4294967295)fail('TypeMismatch');break;
+ default:fail('TypeMismatch');
+ }
+}
+function facet(value,domain,members){if(value===null||typeof value!=='object')return undefined;if(value.domain===domain)return value;if(members.includes(value.identity))return Object.freeze({domain,identity:value.identity});return undefined;}
+function requireFacet(value,domain,members){const result=facet(value,domain,members);if(result===undefined)fail('TypeMismatch');return result;}
+function concatenate(a,b){return text(text(a)+text(b));}
+function add(a,b){return finite(finite(a)+finite(b));}
+function subtract(a,b){return finite(finite(a)-finite(b));}
+function multiply(a,b){return finite(finite(a)*finite(b));}
+function divide(a,b){return finite(finite(a)/finite(b));}
+function greater(a,b){return finite(a)>finite(b);}
+function lessEqual(a,b){return finite(a)<=finite(b);}
+function startsWith(a,b){return text(a).startsWith(text(b));}
+function containsText(a,b){return text(a).includes(text(b));}
+function row(table,subject){return table.rows.find(([key])=>equal(key,subject))?.[1];}
+function present(table,subject){validate(subject,['referent',table.domain]);return row(table,subject)!==undefined;}
+function readOne(table,subject){const values=row(table,subject);if(values?.length!==1)fail('MissingState');return values[0];}
+function stage(pending,pre,slot,mode,subject,value){
+ const table=pre[slot];validate(subject,['referent',table.domain]);validate(value,table.kind);
+ if(table.cardinality==='many'){
+  if(mode!==1&&mode!==2)fail('TypeMismatch');
+ }else if(mode===1)fail('TypeMismatch');
+ if(pending.some(effect=>effect.slot===slot&&equal(effect.subject,subject)&&(table.cardinality!=='many'||equal(effect.value,value))))fail('ConflictingStateEffects');
+ pending.push({slot,mode,subject,value});
+}
+function commit(pre,pending){
+ const next=pre.map(table=>({...table,rows:table.rows.map(([subject,values])=>[subject,[...values]])}));
+ for(const {slot,mode,subject,value} of pending){
+  const table=next[slot];let index=table.rows.findIndex(([key])=>equal(key,subject));
+  if(mode===0){if(index<0)table.rows.push([subject,[value]]);else table.rows[index]=[subject,[value]];}
+  else if(mode===1){if(index<0)table.rows.push([subject,[value]]);else if(!table.rows[index][1].some(prior=>equal(prior,value)))table.rows[index][1].push(value);}
+  else{
+   if(index<0)fail('MissingState');
+   const values=table.rows[index][1];const at=values.findIndex(prior=>equal(prior,value));
+   if(at<0)fail('MissingState');values.splice(at,1);if(values.length===0)table.rows.splice(index,1);
+  }
+ }
+ validateContracts(next);return next;
+}
+function validateContracts(tables){
+ const participants=[];
+ for(const table of tables)for(const [subject,values] of table.rows){participants.push(subject);if(table.kind[0]==='referent')participants.push(...values);}
+ for(const table of tables)if(table.total){if(table.cardinality!=='one')fail('TypeMismatch');for(const subject of participants)if(subject.domain===table.domain&&row(table,subject)?.length!==1)fail('MissingState');}
+}
+"#;

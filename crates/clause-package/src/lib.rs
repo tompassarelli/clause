@@ -12,6 +12,7 @@ mod canonical_source;
 mod formation;
 mod hash;
 mod identity;
+mod javascript;
 mod nix_flake;
 mod process;
 mod provenance;
@@ -31,6 +32,7 @@ pub use canonical::{
 pub use canonical_source::*;
 pub use formation::*;
 pub use identity::*;
+pub use javascript::*;
 pub use nix_flake::*;
 pub use process::*;
 pub use provenance::*;
