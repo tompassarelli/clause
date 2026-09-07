@@ -4,6 +4,79 @@ Clause relates values and describes how those relationships may change.
 Author each independent semantic fact once; checking, execution, queries,
 explanations, and editing must use that same meaning.
 
+## Run the scheduling example
+
+Five tasks share prerequisites: design, prototype, validation, documentation,
+and launch. Two independent obstructions—approval and components—block parts
+of that graph. Clearing approval should unlock design while preserving the
+component obstruction farther downstream.
+
+The complete source is
+[clause:test-vectors/authoring/scheduling.clause](../test-vectors/authoring/scheduling.clause).
+The existing public-library journey is
+[clause:crates/clause-workbench/tests/scheduling.rs](../crates/clause-workbench/tests/scheduling.rs),
+starting at `scheduling_controls_use_checked_dependencies_and_preserve_identity`.
+From an owned Clause worktree, using the repository's pinned Rust development
+shell and C compiler, run:
+
+```sh
+nix develop --command cargo test -p clause-workbench --locked -j 2 --test scheduling scheduling_controls_use_checked_dependencies_and_preserve_identity -- --exact
+```
+
+This command runs the journey and checks its results; its output is a test
+verdict. It does not launch the browser application. The
+[roadmap records the observed run and its limits](roadmap.md#walkthrough-evidence).
+Follow the source and test together:
+
+1. **Declare the data.** `title`, `duration`, and `completed` each require one
+   value per Task; `prerequisite` relates Tasks to Tasks, and `obstruction`
+   relates Tasks to Roots. The five task blocks supply their required values.
+   They need no second Task membership registry. For example, prototype starts
+   with duration `4.0`, prerequisite `design`, and obstruction `components`.
+2. **State and enable the laws.** `direct-obstruction` derives a blocker from
+   an obstruction. `inherited-obstruction` carries that blocker through
+   prerequisites. The two waiting laws similarly propagate unfinished
+   prerequisites. Each law has a separate `derive` declaration; writing an
+   implication alone does not select it for computation.
+3. **Open and inspect.** `ResidentSourceWorkbenchV1::open` reads, checks, lowers,
+   and opens this source. `project_current_world()` observes its current world.
+   The test reads the projected `duration` and `blocker` relations: five tasks
+   and eight task/root blocker pairs.
+4. **Query while proposing completion.** The source's `complete` handler selects
+   the requested Task and computes two finite counts against one pre-state:
+
+   ```clause
+   sum 1.0 given ?task where { ?task waiting ?prior } as ?waiting
+   ?waiting = 0.0
+   sum 1.0 given ?task where { ?task blocker ?root } as ?blockers
+   ?blockers = 0.0
+   ```
+
+   These are handler conditions from the complete source, not a standalone
+   program. An empty completed query gives zero; an exhausted computation must
+   fail rather than pretend the Task is unblocked. This example queries through
+   the handler and reads projected relations through the library; it does not
+   use the design-level `select`, `why`, or `achieve` request syntax.
+5. **Execute, then admit.** The test's `run` helper calls `handler_occurrence`
+   with the exact input Referent, then `run_occurrences_to_candidate`, then
+   `admit`. Only the last call publishes the successor projection. The library
+   driver supplies this separate admission decision; the Clause handler's
+   `include` block does not authorize or admit itself. A blocked completion
+   produces no completed Task even though the helper admits the resulting
+   candidate.
+6. **Observe the dependency changes.** Resolving approval retracts only its
+   supported blocker consequences. Completing design then succeeds. Prototype
+   still cannot complete until components is resolved. Extending prototype
+   changes its duration from `4.0` to `6.0` while retaining its Referent.
+   After resolving components and completing prototype, validation,
+   documentation, and launch, all five are complete and both waiting and
+   blocker relations are empty. Design retains its original Referent too.
+
+The role and law definitions in the source supply both the transition checks
+and these observations. The following sections explain the smaller language
+forms used to express them; isolated fragments illustrate a concept and are
+not all standalone runnable programs.
+
 ## Values, roles, and contracts
 
 A name can denote a value:
@@ -151,7 +224,7 @@ may specialize the authored meaning; they may not silently replace it.
 
 The [authoring card](authoring-card.md) contains generated checked examples.
 The [roadmap](roadmap.md) distinguishes those bounded capabilities, the active
-five-task scheduling delivery, and the unfinished frontend, collection,
+five-task scheduling journey, and the unfinished frontend, collection,
 extension, query, and continuity work.
 
 The [syntax](syntax.md) defines source structure. The

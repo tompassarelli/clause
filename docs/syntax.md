@@ -180,6 +180,24 @@ occurrences but not a second value or identity. This is not a comma product.
 An undelimited `charge: 9.0` remains denotation; adding children rejects rather
 than turning it into shared-edge focus.
 
+The children are a subject-token list selected by this head, not arbitrary
+whitespace-separated sibling clauses. Subjects may share a line or occupy
+separate lines at the same child indentation:
+
+```clause
+(charge: 9.0):
+  first
+  second
+```
+
+Both layouts apply `charge: 9.0` separately to `first` and `second`. Ordinary
+subject blocks can express those two facts too. Equal charge values on two
+subjects are two independent facts; repeating the value does not itself
+violate the design discipline. Shared-edge focus groups an explicit common
+role/object without merging those facts. The same construct can constrain
+several bindings, as `(shape: F64):` does in the
+[language tour](language-tour.md#bindings-and-readings).
+
 ## Declared readings and modes
 
 Relations that need non-field phrase structure declare one exact Reading and
@@ -529,19 +547,39 @@ Reading proceeds in this order:
 6. If an indent follows, wrap that selected head in its declared block
    production; children cannot reclassify it.
 
-The essential layout grammar is:
+The essential layout grammar below exposes shared-edge focus separately from
+the generic block-head abstraction:
 
 ```text
 SourceFile        ::= Trivia* TopLevelConstruct* EOF
 TopLevelConstruct ::= SimpleConstruct NEWLINE
-                    | BlockHead NEWLINE INDENT ChildConstruct+ DEDENT
+                    | SharedEdgeFocus
+                    | OtherBlockHead NEWLINE INDENT ChildConstruct+ DEDENT
 BindingHead       ::= Designation HSPACE* ":" HSPACE* ProductTerm
 ProductTerm       ::= GroupedTerm ("," HSPACE* GroupedTerm)*
 SubjectFocus      ::= Designation NEWLINE INDENT FocusedEdgeChild+ DEDENT
 FocusedEdgeChild  ::= RelationEdge
                     | RelationPrefix NEWLINE INDENT FocusedEdgeChild+ DEDENT
+SharedEdgeFocus   ::= SharedEdgeHead NEWLINE INDENT SubjectRow+ DEDENT
+SharedEdgeHead    ::= "(" RelationEdge "):"
+SubjectRow        ::= SubjectToken (HSPACE+ SubjectToken)* NEWLINE
+SubjectToken      ::= Designation | "?" Designation
 ReferentDeclaration ::= Designation
 ```
+
+`OtherBlockHead` stands for the remaining declared block heads; each selects
+its own `ChildConstruct` grammar. This is a layout outline, not the complete
+set of source productions. A `SharedEdgeHead` selects `SubjectRow` children
+both at top level and in the declaration or pattern contexts that admit
+shared-edge focus. Its `RelationEdge` uses the selected declared edge grammar;
+the head fixes the role and object while the children supply subjects.
+
+Every subject row is exactly one indentation level below its head and has one
+or more named or variable subject tokens. A quoted designation remains one
+token. Subjects may share one row or occupy separate rows. Both layouts emit
+one occurrence per subject token in source order, each with its own origin.
+This row grammar belongs to shared-edge focus; it does not permit several
+arbitrary sibling clauses on one line or nested children under a subject token.
 
 `HSPACE` is one ASCII space; flexible positions accept zero or more.
 

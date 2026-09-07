@@ -231,7 +231,7 @@ The Wasm build needs that same pinned Rust toolchain's declared wasm32 target.
 Run exact `wasm-bindgen` 0.2.108 with `--target web` on
 `target/wasm32-unknown-unknown/release/clause_runtime.wasm`, separately producing
 `target/live-semantics/wasm`, `target/referent-wasm` and the repository's tracked
-`browser/jump-arena-shell/generated/wasm` artifacts. From the browser package,
+`browser/runtime/generated/wasm` artifacts. From the browser package,
 run `bun run build`, `bun run test:live-semantics` and
 `bun run test:referent-input`. Apply outer command time bounds and serialize
 these builds/tests on a resource-capped host. New diagnostics require the fresh

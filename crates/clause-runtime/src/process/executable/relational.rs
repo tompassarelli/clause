@@ -177,6 +177,15 @@ pub(super) struct Matched {
 #[derive(Default)]
 pub(super) struct SumQueries {
     entries: Vec<SumQuery>,
+    prefixes: Vec<SumPrefix>,
+}
+
+struct SumPrefix {
+    predicates: Vec<ExecutableExpressionV1>,
+    matches: MatchState,
+    visits: usize,
+    reads: Vec<ExecutableReadV1>,
+    captured_reads: bool,
 }
 
 struct SumQuery {
@@ -216,8 +225,8 @@ pub(super) fn sum(
     let query_context = EvaluationContextV1 { reads: context.reads.map(|_| &query_reads), ..context };
     let mut visits = 0;
     let mut total = 0.0;
-    for (matched, accepted) in match_rule(predicates, configuration, &inputs,
-        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits, query_context.reads.is_some())? {
+    for (matched, accepted) in match_sum(predicates, configuration, &inputs,
+        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits)? {
         if let Some(reads) = query_context.reads {
             for predicate in &matched.predicates {
                 reads.borrow_mut().extend(predicate.reads.iter().cloned());
@@ -244,6 +253,58 @@ pub(super) fn sum(
         });
     }
     Ok(result)
+}
+
+fn match_sum(
+    predicates: &[ExecutableExpressionV1],
+    configuration: &[ExecutableSlotV1],
+    arguments: &[ExecutableValueV1],
+    context: EvaluationContextV1,
+    visits: &mut usize,
+) -> Result<Vec<(Matched, bool)>, ExecutableErrorV1> {
+    fn independent_pattern(pattern: &ExecutableExpressionV1) -> bool {
+        match pattern {
+            ExecutableExpressionV1::Constant(_) | ExecutableExpressionV1::Binding(_) => true,
+            ExecutableExpressionV1::ReferentFacet { value, .. } => independent_pattern(value),
+            _ => false,
+        }
+    }
+    let capture = context.reads.is_some();
+    let prefix_len = predicates.iter().take_while(|predicate| matches!(predicate,
+        ExecutableExpressionV1::RelationMatch(_, subject, value)
+            if independent_pattern(subject) && independent_pattern(value))).count();
+    let Some(queries) = context.sum_queries.filter(|_| prefix_len > 0) else {
+        return match_rule(predicates, configuration, arguments, context, visits, capture);
+    };
+    let (prefix, rest) = predicates.split_at(prefix_len);
+    let cached = queries.borrow().prefixes.iter().find(|previous|
+        previous.captured_reads == capture && previous.predicates == prefix)
+        .map(|previous| {
+            *visits = previous.visits;
+            if let Some(reads) = context.reads {
+                reads.borrow_mut().extend(previous.reads.iter().cloned());
+            }
+            previous.matches.clone()
+        });
+    let state = if let Some(cached) = cached { cached } else {
+        let reads = std::cell::RefCell::new(Vec::new());
+        let state = match_rule_from(prefix, configuration, arguments,
+            EvaluationContextV1 { reads: context.reads.map(|_| &reads), ..context },
+            visits, capture, MatchState::default())?;
+        let reads = reads.into_inner();
+        if let Some(destination) = context.reads {
+            destination.borrow_mut().extend(reads.iter().cloned());
+        }
+        // Only argument-independent leading joins are shared, inside the same
+        // immutable pre-state as sum results. Retain their logical work counts
+        // and ordered rejection/read evidence so reuse cannot change limits.
+        queries.borrow_mut().prefixes.push(SumPrefix {
+            predicates: prefix.to_vec(), matches: state.clone(), visits: *visits,
+            reads, captured_reads: capture,
+        });
+        state
+    };
+    Ok(match_rule_from(rest, configuration, arguments, context, visits, capture, state)?.finish())
 }
 
 fn unify(
@@ -410,10 +471,42 @@ pub(super) fn match_rule(
     visits: &mut usize,
     capture: bool,
 ) -> Result<Vec<(Matched, bool)>, ExecutableErrorV1> {
-    let mut active = vec![Matched::default()];
-    let mut rejected = Vec::new();
-    let mut rejected_count = 0usize;
+    Ok(match_rule_from(predicates, configuration, arguments, context, visits,
+        capture, MatchState::default())?.finish())
+}
+
+#[derive(Clone)]
+struct MatchState {
+    active: Vec<Matched>,
+    rejected: Vec<(Matched, bool)>,
+    rejected_count: usize,
+}
+
+impl Default for MatchState {
+    fn default() -> Self {
+        Self { active: vec![Matched::default()], rejected: Vec::new(), rejected_count: 0 }
+    }
+}
+
+impl MatchState {
+    fn finish(mut self) -> Vec<(Matched, bool)> {
+        self.rejected.extend(self.active.into_iter().map(|matched| (matched, true)));
+        self.rejected
+    }
+}
+
+fn match_rule_from(
+    predicates: &[ExecutableExpressionV1],
+    configuration: &[ExecutableSlotV1],
+    arguments: &[ExecutableValueV1],
+    context: EvaluationContextV1,
+    visits: &mut usize,
+    capture: bool,
+    state: MatchState,
+) -> Result<MatchState, ExecutableErrorV1> {
+    let MatchState { mut active, mut rejected, mut rejected_count } = state;
     for predicate in predicates {
+        if active.is_empty() { break; }
         if let ExecutableExpressionV1::RelationMatch(slot, subject_pattern, value_pattern) =
             predicate
         {
@@ -608,8 +701,7 @@ pub(super) fn match_rule(
             break;
         }
     }
-    rejected.extend(active.into_iter().map(|matched| (matched, true)));
-    Ok(rejected)
+    Ok(MatchState { active, rejected, rejected_count })
 }
 
 pub(super) struct LazyOccurrenceIdentity<'a> {
@@ -826,6 +918,97 @@ mod ordered_specialization_tests {
 #[cfg(test)]
 mod sum_reuse_tests {
     use super::*;
+
+    #[test]
+    fn shared_join_prefix_preserves_input_filtering_sum_order_and_reads() {
+        use ExecutableExpressionV1 as E;
+        let number = |n| ExecutableValueV1::number(n).unwrap();
+        let table = |values: &[f64]| ExecutableValueV1::RelationTable(ExecutableRelationTableV1 {
+            subject_domain: 7, value_kind: ExecutableRelationValueKindV1::Number,
+            value_domain: None, cardinality: ExecutableRelationCardinalityV1::One, total: false,
+            rows: Arc::new(values.iter().enumerate().map(|(id, value)|
+                (ExecutableReferentV1::declared(7, id as u32), [number(*value)].into()))
+                .collect::<BTreeMap<_, _>>().into()),
+        });
+        let configuration = [table(&[1e16, 1.0, -1e16, 7.0]).into(), table(&[1.0; 3]).into()];
+        let query = E::Sum {
+            inputs: vec![E::Argument(0)],
+            predicates: vec![
+                E::RelationMatch(0, Box::new(E::Binding(0)), Box::new(E::Binding(1))),
+                E::RelationMatch(1, Box::new(E::Binding(0)), Box::new(E::Constant(number(1.0)))),
+                E::LessThanOrEqual(Box::new(E::Binding(1)), Box::new(E::Argument(0))),
+            ],
+            value: Box::new(E::Binding(1)),
+        };
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
+            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+        let queries = std::cell::RefCell::new(SumQueries::default());
+        let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
+        for (input, result) in [(1e16, 0.0), (0.0, -1e16), (1e16, 0.0)] {
+            let arguments = [number(input)];
+            let expected = evaluate_with_reads(&query, &configuration, &arguments, context).unwrap();
+            assert_eq!(expected.value, number(result));
+            assert_eq!(evaluate(&query, &configuration, &arguments, shared).unwrap(), expected.value);
+            let actual = evaluate_with_reads(&query, &configuration, &arguments, shared).unwrap();
+            assert_eq!(actual.value, expected.value);
+            assert_eq!(actual.reads, expected.reads);
+            assert!(actual.reads.iter().any(|read| matches!(read, ExecutableReadV1::RelationSearch(..))));
+        }
+        assert_eq!(queries.borrow().prefixes.len(), 2, "one join prefix per trace mode");
+        let changed = [table(&[2.0, 3.0]).into(), table(&[1.0; 3]).into()];
+        let next_queries = std::cell::RefCell::new(SumQueries::default());
+        assert_eq!(evaluate(&query, &changed, &[number(1e16)],
+            EvaluationContextV1 { sum_queries: Some(&next_queries), ..context }).unwrap(), number(5.0));
+    }
+
+    #[test]
+    fn shared_join_prefix_preserves_rejection_limits_and_empty_short_circuit() {
+        use ExecutableExpressionV1 as E;
+        let table = |count| ExecutableValueV1::RelationTable(ExecutableRelationTableV1 {
+            subject_domain: 7, value_kind: ExecutableRelationValueKindV1::Referent,
+            value_domain: Some(7), cardinality: ExecutableRelationCardinalityV1::One, total: false,
+            rows: Arc::new((0..count).map(|id| {
+                let subject = ExecutableReferentV1::declared(7, id as u32);
+                (subject.clone(), [ExecutableValueV1::Referent(subject)].into())
+            }).collect::<BTreeMap<_, _>>().into()),
+        });
+        let configuration = [table(MAX_MATCHES).into(), table(1).into()];
+        let same = |slot, binding| E::RelationMatch(slot,
+            Box::new(E::Binding(binding)), Box::new(E::Binding(binding)));
+        let query = E::Sum {
+            inputs: vec![E::Argument(0)],
+            predicates: vec![same(0, 0), same(1, 0), E::Argument(0), same(0, 1),
+                E::Constant(ExecutableValueV1::Boolean(false))],
+            value: Box::new(E::Constant(ExecutableValueV1::number(1.0).unwrap())),
+        };
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
+            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+        for capture in [false, true] {
+            let queries = std::cell::RefCell::new(SumQueries::default());
+            let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
+            for input in [true, false, true] {
+                let arguments = [ExecutableValueV1::Boolean(input)];
+                let expected = evaluate_for_trace(&query, &configuration, &arguments, context, capture);
+                let actual = evaluate_for_trace(&query, &configuration, &arguments, shared, capture);
+                if input {
+                    assert!(matches!(expected, Err(ExecutableErrorV1::ResourceLimit)));
+                    assert!(matches!(actual, Err(ExecutableErrorV1::ResourceLimit)));
+                } else {
+                    let expected = expected.unwrap();
+                    let actual = actual.unwrap();
+                    assert_eq!(actual.value, expected.value);
+                    assert_eq!(actual.reads, expected.reads);
+                }
+            }
+        }
+        let empty = [table(0).into()];
+        let queries = std::cell::RefCell::new(SumQueries::default());
+        for input in [true, false] {
+            assert_eq!(evaluate(&query, &empty, &[ExecutableValueV1::Boolean(input)],
+                EvaluationContextV1 { sum_queries: Some(&queries), ..context }).unwrap(),
+                ExecutableValueV1::number(0.0).unwrap());
+        }
+    }
 
     #[test]
     fn preparation_effects_share_queries_with_exact_reads_and_independent_errors() {

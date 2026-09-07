@@ -10,7 +10,15 @@ resident bounded compiler/runtime, experimental process carriers, and focused
 native/Wasm/browser journeys. Passing a focused test establishes only its
 named slice.
 
-## What runs
+Read [demonstrated capabilities](#demonstrated-capabilities) for current
+behavior, [remaining language work](#remaining-language-work) for dependency
+order, and [application acceptance criteria](#application-acceptance-criteria) plus
+[performance targets](#performance-targets) for the broader acceptance criteria.
+A delivered application slice does not complete those remaining criteria.
+
+## Demonstrated capabilities
+
+### Resident source compiler and runtime
 
 The resident source compiler uses ordinary `domain`, `range`, and
 `cardinality` facts as binary role contracts. The same role definitions govern
@@ -63,6 +71,16 @@ each stratum, and rejects cycles through aggregates. Root changes recompute
 all strata atomically. Recursive negation, recursive aggregation, allocation,
 general multi-input conclusions, and a source-soundness proof are not implemented.
 
+Finite positive matching currently returns complete matches or an explicit
+error, including a resource-limit error. Bounded intervention queries instead
+return `completed` and `exhausted` fields alongside an optional solution;
+an evaluator error rejects the query. These are distinct API contracts, not
+one universal three-valued Boolean. Keeping query outcomes, transactional
+admission, and local ownership obligations coherent is unfinished work; their
+cost cannot be inferred from the semantic distinctions alone. The measured
+runtime and edit observations below do not isolate open-world reasoning or
+affine ownership as a performance cause.
+
 Finite F64 scalar laws support declared symbolic Readings, simultaneous
 binder substitution, composed expressions, guarded alternatives, exact source
 origins, and conservative uniqueness checking. Finite sums can join typed
@@ -97,9 +115,9 @@ Admission. Current browser adapters are passive for the tested projections,
 but the complete process carrier, semantic refinement proof, controlled
 frame-allocation proof, and uniform frontend remain open.
 
-## Scheduling delivery
+### Scheduling delivery
 
-The active scheduling vertical uses five Tasks—design, prototype, validation,
+The demonstrated scheduling vertical uses five Tasks—design, prototype, validation,
 documentation, and launch—with required title, duration, and completion roles.
 Two Root values supply independent obstructions. Positive laws derive direct
 and inherited blockers plus direct and inherited waiting dependencies.
@@ -134,10 +152,42 @@ observed a 273.4 ms first valid edit, so this application slice is delivered
 without claiming the 250 ms performance target. The broader language and
 performance goals remain incomplete.
 
-## Remaining language path
+### Latest Greywrought runtime evidence
+
+At Clause revision `756895f60879e8e06cfe59b6a7cc4adb2cb2c040`, focused
+relational checks passed for reuse of input-independent relation prefixes
+within sum queries. The supplied 2026-09-07 hardware profile recorded 127.9 ms
+total and 96.4 ms in actual queries, compared with an earlier 258.4/221.5 ms
+profile. The measurements used different warmed ticks; they are not a matched
+comparison or proof of a performance improvement. Greywrought's full 100 FPS,
+20 ms, real-time simulation, and edit-latency delivery gates remain unmet.
+
+### Walkthrough evidence
+
+The [language-tour journey](language-tour.md#run-the-scheduling-example) uses
+`clause:test-vectors/authoring/scheduling.clause` and the existing
+`clause:crates/clause-workbench/tests/scheduling.rs` public-library test. Its
+check covers source opening, recursive blockers, finite completion queries,
+separate candidate execution and admission, task completion, and retained
+Referent identities. On 2026-09-07 at revision
+`756895f60879e8e06cfe59b6a7cc4adb2cb2c040`, the exact focused command in the
+tour passed: 1 test, 0 failures, 3 filtered out; 31.73 s cold build and 0.14 s
+test execution. It does not establish the complete frontend, general
+query syntax, browser behavior, or any performance target.
+
+## Remaining language work
 
 The next implementation work follows dependency order; later application work
 may proceed when it consumes only already-running semantics.
+
+Extensible source languages have precedent in systems such as
+[Racket](https://docs.racket-lang.org/guide/languages.html). Clause's unproved
+combination is carrying independently authored Readings through the same
+checking, affine lifetime analysis, native/Wasm resource guarantees, and
+verified trust chain while remaining pleasant to author. Evidence for any one
+piece does not establish those seams. The early frontend slice below tests
+extension and checking; its later physical realization must expose allocation
+and timing costs instead of assuming custom notation preserves them.
 
 ### One frontend
 
@@ -155,6 +205,31 @@ binding form, one effect form, one typed macro, and one diagnostic without host
 semantic edits. Clause-defined algebraic data and exhaustive matching must
 accept complete cases and reject missing and unreachable cases through the
 same mechanism.
+
+The next domain-vocabulary proof is pending: have an author other than the
+frontend implementer express an existing Greywrought movement action through
+a new checked sentence shape with bindings and an effect, using only
+Clause-authored declarations and transformations. Execute the action and query
+its consequences through the same semantic core; reject an invalid binding,
+and change the domain rule in one authored place without maintaining a second
+implementation. This is an early gate before broad language expansion, not a
+reason to stop existing consumer repairs. Existing custom Reading examples do
+not establish this complete extensibility claim. A separate agent can exercise
+the extension contract; human domain-expert usability remains unproved.
+
+The Nix and JavaScript authoring slices must also earn their notation in small
+executing consumer examples before expansion. Compare each with its host
+source for domain readability, familiar mathematical composition, and how many
+places an ordinary rule change touches. Concise function notation can serve
+that goal as well as a domain phrase. A preferred small slice is evidence for
+that slice; domain-expert usability and general extensibility remain separate
+claims to establish.
+
+After that consumer slice works, try one small piece of Clause's own
+foundation vocabulary as checked declarations and derive its corresponding
+reference description from those declarations. This is a deferred experiment
+in avoiding duplicated definitions, not a claim that generated prose proves
+the semantics or a prerequisite for the first usable frontend.
 
 ### Relations, definitions, and collections
 
@@ -219,7 +294,7 @@ The Clause-authored workbench must provide long-lived `parse`, `check`,
 operations. Rust may own bounded transport, caches, scheduling, persistence,
 and foreign calls, but no source grammar, semantic query, or diagnostic rule.
 
-## Application proofs
+## Application acceptance criteria
 
 ### Greywrought
 
@@ -263,10 +338,12 @@ an ordinary requirement change. Duplicate registries, host-side dependency
 logic, or a second UI state model fail the proof even if the screen appears
 correct.
 
-## Performance claims
+## Performance targets
 
+The earlier language-wide reference target below remains an unpassed baseline;
+it does not replace the stricter Greywrought delivery gates recorded above.
 Measure on the named reference PC rather than inferring performance from code
-shape. The target is:
+shape:
 
 - 60 frames per second with real-time simulation;
 - 100 active actors;
