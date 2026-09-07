@@ -1,8 +1,8 @@
 //! Compiler-checked source transitions applied to runtime-owned live state.
 use super::*;
 use clause_package::{
-    CanonicalAllocatedIdentityV1, CanonicalDeclaredFrontendV1, CanonicalSourceEditV1, CanonicalSourceContextV1,
-    ProgramChangeOccurrenceId, canonical_scalar_effects_v1, elaborate_canonical_source_package_v1,
+    CheckedCanonicalSourceAnalysisV1, CanonicalAllocatedIdentityV1, CanonicalDeclaredFrontendV1, CanonicalSourceEditV1, CanonicalSourceContextV1,
+    ProgramChangeOccurrenceId, canonical_scalar_effects_v1,
     plan_independent_canonical_source_allocations_v1, read_canonical_source_with_declared_frontend_v1,
     replace_canonical_scalar_effect_v1,
 };
@@ -65,6 +65,7 @@ pub struct CheckedExecutableSourceEditV1 {
     new_plan: ExecutablePhysicalPlanIdV1,
     edit: CanonicalSourceEditV1,
     continuity: ExecutableSourceContinuityV1,
+    pub(crate) preparation: Arc<CheckedExecutableSourcePreparationV1>,
 }
 
 impl CheckedExecutableSourceEditV1 {
@@ -618,23 +619,95 @@ pub fn decode_executable_source_edit_v1(
     Ok(result)
 }
 
+/// Source-only startup capsule. Executable state never crosses this interface.
+pub fn encode_executable_source_preparation_v1(
+    source: &[u8], root: ProgramChangeOccurrenceId, declared_frontend: &[u8],
+) -> Result<Vec<u8>, ExecutableErrorV1> {
+    let mut bytes = b"CPS1".to_vec();
+    bytes.extend_from_slice(root.as_bytes());
+    for blob in [source, declared_frontend] {
+        bytes.extend_from_slice(&u32::try_from(blob.len()).map_err(|_| ExecutableErrorV1::ResourceLimit)?.to_le_bytes());
+        bytes.extend_from_slice(blob);
+    }
+    if bytes.len() > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 { return Err(ExecutableErrorV1::ResourceLimit); }
+    Ok(bytes)
+}
+
+/// Privately checked analysis of one exact source and physical realization.
+/// It is local to this compiler instance and cannot be deserialized from a host.
+pub struct CheckedExecutableSourcePreparationV1 {
+    analysis: CheckedCanonicalSourceAnalysisV1,
+    declared_frontend: Vec<u8>,
+    scope: TermScope,
+    exact_cpp1: Vec<u8>,
+    plan: ExecutablePhysicalPlanV1,
+    lowered: ExecutableCanonicalProgramV1,
+}
+
+pub fn check_executable_source_preparation_v1(
+    bytes: &[u8], scope: TermScope, exact_cpp1: &[u8],
+) -> Result<CheckedExecutableSourcePreparationV1, ExecutableErrorV1> {
+    if bytes.len() > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 { return Err(ExecutableErrorV1::ResourceLimit); }
+    let mut d = Decoder::new(bytes);
+    if d.take(4)? != b"CPS1" { return Err(ExecutableErrorV1::MalformedProgram); }
+    let root = ProgramChangeOccurrenceId::from_bytes(d.identity()?);
+    let len = d.u32()? as usize;
+    let source = d.take(len)?;
+    let len = d.u32()? as usize;
+    let declared_frontend = d.take(len)?;
+    if !d.is_complete() { return Err(ExecutableErrorV1::MalformedProgram); }
+    let rejected = |_| ExecutableErrorV1::MalformedProgram;
+    let frontend = CanonicalDeclaredFrontendV1::read(declared_frontend).map_err(rejected)?;
+    let cst = read_canonical_source_with_declared_frontend_v1(source, &frontend).map_err(rejected)?;
+    let allocations = plan_independent_canonical_source_allocations_v1(&cst, root).map_err(rejected)?;
+    let analysis = CheckedCanonicalSourceAnalysisV1::new(cst, allocations,
+        CanonicalSourceContextV1 { universe: scope.universe, semantics: scope.semantics }).map_err(rejected)?;
+    let plan = decode_executable_physical_plan_v1(exact_cpp1)?;
+    let package = analysis.package();
+    let roles = plan.program.projection.as_ref().ok_or(ExecutableErrorV1::MalformedProgram)?
+        .bindings.iter().map(|binding| binding.role).collect::<Vec<_>>();
+    let mut lowered = lower_canonical_executable_program_v1(scope, &package.state_cells, &package.executable_handlers, &roles)?;
+    replay_canonical_executable_entry_layout_v1(scope, package, analysis.source().artifact(), &mut lowered, &plan)?;
+    let mut expected = plan.clone();
+    expected.program = lowered.program.clone();
+    if plan.program.rules.len() == expected.program.rules.len() + 1 {
+        let checkpoint = plan.program.rules.last().ok_or(ExecutableErrorV1::MalformedProgram)?;
+        if !checkpoint.predicates.is_empty() || !checkpoint.required_present.is_empty()
+            || !checkpoint.required_absent.is_empty() || !checkpoint.assignments.is_empty() || !checkpoint.removals.is_empty() {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+        expected.program.rules.push(checkpoint.clone());
+    }
+    expected.project_referent_input_domains(scope)?;
+    expected.bind_source_snapshot_with_states(scope, package, analysis.source().artifact(), root, &lowered.states)?;
+    if expected != plan { return Err(ExecutableErrorV1::SourceContinuityRejected("prepared source does not realize exact bound CPP1")); }
+    Ok(CheckedExecutableSourcePreparationV1 { analysis, declared_frontend: declared_frontend.to_vec(), scope, exact_cpp1: exact_cpp1.to_vec(), plan, lowered })
+}
+
 pub fn check_executable_source_edit_v1(
     witness: &ExecutableSourceEditV1,
     scope: TermScope,
 ) -> Result<CheckedExecutableSourceEditV1, ExecutableErrorV1> {
+    let phase = source_profile_scope_v1(SourceProfilePhaseV1::OldElaboration);
+    let capsule = encode_executable_source_preparation_v1(&witness.old_source, witness.old_root, &witness.declared_frontend)?;
+    let preparation = check_executable_source_preparation_v1(&capsule, scope, &witness.old_cpp1)?;
+    drop(phase);
+    check_prepared_executable_source_edit_v1(witness, scope, &preparation)
+}
+
+pub fn check_prepared_executable_source_edit_v1(
+    witness: &ExecutableSourceEditV1, scope: TermScope, preparation: &CheckedExecutableSourcePreparationV1,
+) -> Result<CheckedExecutableSourceEditV1, ExecutableErrorV1> {
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::WitnessCheck);
+    if preparation.scope != scope || preparation.exact_cpp1 != witness.old_cpp1
+        || preparation.analysis.source().exact_source() != witness.old_source
+        || preparation.analysis.plan().root() != witness.old_root
+        || preparation.declared_frontend != witness.declared_frontend {
+        return Err(ExecutableErrorV1::SourceContinuityRejected("stale source preparation"));
+    }
     let rejected = |_| ExecutableErrorV1::MalformedProgram;
-    let phase = source_profile_scope_v1(SourceProfilePhaseV1::SourceRead);
-    let frontend =
-        CanonicalDeclaredFrontendV1::read(&witness.declared_frontend).map_err(rejected)?;
-    let old_cst = read_canonical_source_with_declared_frontend_v1(&witness.old_source, &frontend)
-        .map_err(rejected)?;
-    drop(phase);
-    let phase = source_profile_scope_v1(SourceProfilePhaseV1::Allocation);
-    let old_allocations =
-        plan_independent_canonical_source_allocations_v1(&old_cst, witness.old_root)
-            .map_err(rejected)?;
-    drop(phase);
+    let old_cst = preparation.analysis.source();
+    let old_allocations = preparation.analysis.plan();
     let phase = source_profile_scope_v1(SourceProfilePhaseV1::OfferedEdit);
     let edit = match &witness.operation {
         ExecutableSourceOperationV1::ScalarEffect {
@@ -692,38 +765,18 @@ pub fn check_executable_source_edit_v1(
         }
     };
     drop(phase);
-    let context = CanonicalSourceContextV1 {
-        universe: scope.universe,
-        semantics: scope.semantics,
-    };
-    let phase = source_profile_scope_v1(SourceProfilePhaseV1::OldElaboration);
-    let old = elaborate_canonical_source_package_v1(&old_cst, context, &old_allocations)
-        .map_err(rejected)?;
-    drop(phase);
+    let old = preparation.analysis.package();
     let phase = source_profile_scope_v1(SourceProfilePhaseV1::NewElaboration);
-    let new = elaborate_canonical_source_package_v1(edit.source(), context, edit.plan())
-        .map_err(rejected)?;
+    let next_analysis = preparation.analysis.advance(&edit).map_err(rejected)?;
+    let new = next_analysis.package();
     drop(phase);
     let phase = source_profile_scope_v1(SourceProfilePhaseV1::Cpp1Decode);
-    let old_plan = decode_executable_physical_plan_v1(&witness.old_cpp1)?;
+    let old_plan = &preparation.plan;
     let new_plan = decode_executable_physical_plan_v1(&witness.new_cpp1)?;
     drop(phase);
-    let roles = old_plan
-        .program
-        .projection
-        .as_ref()
-        .ok_or(ExecutableErrorV1::MalformedProgram)?
-        .bindings
-        .iter()
-        .map(|binding| binding.role)
-        .collect::<Vec<_>>();
-    let mut old_lowered = lower_canonical_executable_program_v1(
-        scope,
-        &old.state_cells,
-        &old.executable_handlers,
-        &roles,
-    )?;
-    replay_canonical_executable_entry_layout_v1(scope, &old, old_cst.artifact(), &mut old_lowered, &old_plan)?;
+    let roles = old_plan.program.projection.as_ref().ok_or(ExecutableErrorV1::MalformedProgram)?
+        .bindings.iter().map(|binding| binding.role).collect::<Vec<_>>();
+    let old_lowered = &preparation.lowered;
     let new_lowered = lower_canonical_executable_program_v1(
         scope,
         &new.state_cells,
@@ -825,7 +878,7 @@ pub fn check_executable_source_edit_v1(
     expected_old.bind_source_snapshot_with_states(scope, &old, old_cst.artifact(), witness.old_root, &old_lowered.states)?;
     expected_new.bind_source_snapshot_with_states(scope, &new, edit.source().artifact(), witness.new_root, &new_lowered.states)?;
     let _compare = source_profile_scope_v1(SourceProfilePhaseV1::CompareAndMap);
-    if expected_old != old_plan {
+    if &expected_old != old_plan {
         return Err(ExecutableErrorV1::SourceContinuityRejected(
             "old source does not realize exact bound CPP1",
         ));
@@ -862,6 +915,10 @@ pub fn check_executable_source_edit_v1(
             occurrences: vec![],
         },
         edit,
+        preparation: Arc::new(CheckedExecutableSourcePreparationV1 {
+            analysis: next_analysis, declared_frontend: witness.declared_frontend.clone(), scope,
+            exact_cpp1: witness.new_cpp1.clone(), plan: new_plan, lowered: new_lowered,
+        }),
     })
 }
 

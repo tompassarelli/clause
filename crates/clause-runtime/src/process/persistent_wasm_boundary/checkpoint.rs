@@ -268,6 +268,7 @@ impl WasmPersistentSessionBoundaryV1 {
             },
         };
         self.live = Some(LiveSessionV1 {
+            source_preparation: None,
             exact_open: exact_open.to_vec(),
             session,
             sequence: saved.sequence,

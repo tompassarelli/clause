@@ -5027,7 +5027,7 @@ fn checked_executable_handlers(
         formation_id(
             plan,
             producer,
-            &head_slot(CanonicalSourceProductionV1::Handler),
+            &head_slot(producer.production),
         )
     };
     let input = input.map(|(source, assertion)| Ok::<_, CanonicalSourceErrorV1>((source, assertion, handler_id(&source.producer)?)))

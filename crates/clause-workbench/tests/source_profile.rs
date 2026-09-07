@@ -88,7 +88,8 @@ fn profiled_real_source_edit_still_checks_noop_rejection_stale_and_live_continui
     // Native preparation performs a checked preflight; the independently
     // owned live boundary replays the witness again before replacement.
     assert_eq!(report.phases[Phase::WitnessCheck as usize].calls, 2);
-    assert_eq!(report.phases[Phase::OldElaboration as usize].calls, 2);
+    // Both boundaries use their privately prepared old source analysis.
+    assert_eq!(report.phases[Phase::OldElaboration as usize].calls, 0);
     assert_eq!(report.phases[Phase::NewElaboration as usize].calls, 2);
     assert_eq!(report.phases[Phase::Migration as usize].calls, 1);
     assert!(report.phases[Phase::Lowering as usize].calls >= 2);

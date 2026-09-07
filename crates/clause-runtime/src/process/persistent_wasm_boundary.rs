@@ -283,6 +283,7 @@ pub struct WasmSessionEventV1 {
 }
 
 struct LiveSessionV1 {
+    source_preparation: Option<std::sync::Arc<super::CheckedExecutableSourcePreparationV1>>,
     exact_open: Vec<u8>,
     session: PersistentProcessSessionV1,
     sequence: u64,
@@ -468,7 +469,41 @@ impl WasmPersistentSessionBoundaryV1 {
     }
 
     pub fn open(&mut self, bytes: &[u8]) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
-        self.open_inner(bytes, None)
+        self.open_inner(bytes, None, None)
+    }
+
+    pub fn open_prepared(&mut self, bytes: &[u8], preparation: &[u8]) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+        self.open_inner(bytes, None, Some(preparation))
+    }
+
+    /// Preparation is passive: successful checking changes no runtime state,
+    /// handle, or sequence. A rejected capsule preserves the previous analysis.
+    pub fn prepare_source(&mut self, handle: WasmSessionHandleV1, expected_sequence: u64, preparation: &[u8]) -> Result<(), WasmProcessStatusV1> {
+        if handle.slot != SLOT || self.generation != Some(handle.generation) { return Err(WasmProcessStatusV1::StaleSessionHandle); }
+        let live = self.live.as_mut().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
+        if live.sequence != expected_sequence { return Err(WasmProcessStatusV1::SequenceRejected); }
+        let carrier = live.session.carrier().map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        let constitution = carrier.constitution();
+        let scope = TermScope { universe: constitution.universe(), semantics: constitution.semantics() };
+        let open = decode_wasm_session_open_v1(&live.exact_open)?;
+        let checked = super::check_executable_source_preparation_v1(preparation, scope, &open.physical_plan_bytes)
+            .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        live.source_preparation = Some(std::sync::Arc::new(checked));
+        Ok(())
+    }
+
+    pub fn check_source_edit(&self, handle: WasmSessionHandleV1, expected_sequence: u64, witness: &super::ExecutableSourceEditV1) -> Result<super::CheckedExecutableSourceEditV1, WasmProcessStatusV1> {
+        if handle.slot != SLOT || self.generation != Some(handle.generation) { return Err(WasmProcessStatusV1::StaleSessionHandle); }
+        let live = self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
+        if live.sequence != expected_sequence { return Err(WasmProcessStatusV1::SequenceRejected); }
+        if decode_wasm_session_open_v1(&live.exact_open)?.physical_plan_bytes != witness.old_cpp1 { return Err(WasmProcessStatusV1::ProcessRejected); }
+        let carrier = live.session.carrier().map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        let constitution = carrier.constitution();
+        let scope = TermScope { universe: constitution.universe(), semantics: constitution.semantics() };
+        match &live.source_preparation {
+            Some(preparation) => super::check_prepared_executable_source_edit_v1(witness, scope, preparation),
+            None => super::check_executable_source_edit_v1(witness, scope),
+        }.map_err(|_| WasmProcessStatusV1::ProcessRejected)
     }
 
     /// A compiler witness is replayed against the exact currently owned plan.
@@ -482,24 +517,16 @@ impl WasmPersistentSessionBoundaryV1 {
         witness: &[u8],
     ) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
         let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::Transfer);
-        if handle.slot != SLOT || self.generation != Some(handle.generation) {
-            return Err(WasmProcessStatusV1::StaleSessionHandle);
-        }
-        let live = self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
-        if live.sequence != expected_sequence { return Err(WasmProcessStatusV1::SequenceRejected); }
-        let carrier = live.session.carrier().map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
-        let constitution = carrier.constitution();
-        let scope = TermScope { universe: constitution.universe(), semantics: constitution.semantics() };
         let witness = super::decode_executable_source_edit_v1(witness).map_err(|_| WasmProcessStatusV1::MalformedRequest)?;
         let request = decode_wasm_session_open_v1(open)?;
         if request.physical_plan_bytes != witness.new_cpp1 || !matches!(request.allocation, WasmSessionAllocationV1::New) {
             return Err(WasmProcessStatusV1::ProcessRejected);
         }
-        let checked = super::check_executable_source_edit_v1(&witness, scope).map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
-        self.open_inner(open, Some(&checked))
+        let checked = self.check_source_edit(handle, expected_sequence, &witness)?;
+        self.open_inner(open, Some(&checked), None)
     }
 
-    fn open_inner(&mut self, bytes: &[u8], continuity: Option<&super::CheckedExecutableSourceEditV1>) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+    fn open_inner(&mut self, bytes: &[u8], continuity: Option<&super::CheckedExecutableSourceEditV1>, preparation: Option<&[u8]>) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
         let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::Instantiate);
         let request = decode_wasm_session_open_v1(bytes)?;
         validate_limits(request.limits)?;
@@ -522,6 +549,7 @@ impl WasmPersistentSessionBoundaryV1 {
                 }
             },
         };
+        let preparation_cpp1 = preparation.map(|_| request.physical_plan_bytes.clone());
         let mut session = instantiate_persistent_process_session_v1(
             request.package_bytes,
             request.application,
@@ -556,7 +584,15 @@ impl WasmPersistentSessionBoundaryV1 {
                 state_revision_count: state_revision_count(&session)?,
             },
         };
+        let source_preparation = if let Some(preparation) = preparation {
+            let carrier = session.carrier().map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+            let constitution = carrier.constitution();
+            let scope = TermScope { universe: constitution.universe(), semantics: constitution.semantics() };
+            Some(std::sync::Arc::new(super::check_executable_source_preparation_v1(preparation, scope, preparation_cpp1.as_deref().expect("preparation retains exact CPP1"))
+                .map_err(|_| WasmProcessStatusV1::ProcessRejected)?))
+        } else { continuity.map(|checked| std::sync::Arc::clone(&checked.preparation)) };
         let replacement = LiveSessionV1 {
+            source_preparation,
             exact_open: bytes.to_vec(),
             session,
             sequence: 0,
@@ -2247,6 +2283,13 @@ mod wasm_exports {
     }
 
     #[wasm_bindgen(skip_typescript)]
+    pub fn clause_session_v1_prepare_source(slot: u32, generation: u32, sequence: u64, preparation: &[u8]) -> u32 {
+        SESSION_BOUNDARY.with_borrow_mut(|boundary| match boundary.prepare_source(
+            super::WasmSessionHandleV1 { slot, generation }, sequence, preparation,
+        ) { Ok(()) => WasmProcessStatusV1::Ready as u32, Err(error) => error as u32 })
+    }
+
+    #[wasm_bindgen(skip_typescript)]
     pub fn clause_session_v1_source_edit_bulk(slot: u32, generation: u32, sequence: u64, open: &[u8], witness: &[u8]) -> u32 {
         SESSION_BOUNDARY.with_borrow_mut(|boundary| match boundary.source_edit_bulk(
             super::WasmSessionHandleV1 { slot, generation }, sequence, open, witness,
@@ -2290,6 +2333,7 @@ mod wasm_exports {
     const SESSION_BULK_TYPES: &'static str = r#"
 export function clause_session_v1_open_bulk(request: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_command_bulk(request: Uint8Array<ArrayBuffer>): number;
+export function clause_session_v1_prepare_source(slot: number, generation: number, sequence: bigint, preparation: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_source_edit_bulk(slot: number, generation: number, sequence: bigint, open: Uint8Array<ArrayBuffer>, witness: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_intervene_bulk(slot: number, generation: number, request: Uint8Array<ArrayBuffer>): Uint8Array;
 "#;
