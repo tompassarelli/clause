@@ -566,6 +566,7 @@ pub struct CanonicalSourceCstV1 {
     conformance: std::sync::OnceLock<conformance::Domains>,
     relational_handlers: std::sync::OnceLock<BTreeSet<CanonicalSourceOriginV1>>,
     relational_relations: std::sync::OnceLock<BTreeSet<Vec<u8>>>,
+    allocation_requests: std::sync::OnceLock<std::sync::Arc<[AllocationRequest]>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1611,6 +1612,7 @@ pub fn read_canonical_source_with_declared_frontend_v1(
         conformance: std::sync::OnceLock::new(),
         relational_handlers: std::sync::OnceLock::new(),
         relational_relations: std::sync::OnceLock::new(),
+        allocation_requests: std::sync::OnceLock::new(),
     };
     normalize_focused_state_assertions(&mut cst);
     Ok(cst)
@@ -1755,8 +1757,8 @@ fn build_independent_plan(
             derivation_attempt,
             judgment: CanonicalAllocationJudgmentV1::Fresh {
                 basis,
-                producer: request.producer,
-                slot: CanonicalAllocationSlotV1::Emission(request.slot),
+                producer: request.producer.clone(),
+                slot: CanonicalAllocationSlotV1::Emission(request.slot.clone()),
                 collision: CanonicalAllocationCollisionDispositionV1::RejectTypedCollision,
                 cycle: CanonicalAllocationCycleDispositionV1::RejectDependencyCycle,
             },
@@ -1835,7 +1837,14 @@ fn allocated_identity(
     }
 }
 
-fn allocation_requests(
+fn allocation_requests(cst: &CanonicalSourceCstV1) -> Result<&[AllocationRequest], CanonicalSourceErrorV1> {
+    if let Some(requests) = cst.allocation_requests.get() { return Ok(requests); }
+    let requests = compute_allocation_requests(cst)?;
+    let _ = cst.allocation_requests.set(requests.into());
+    Ok(cst.allocation_requests.get().expect("a successful request computation initializes the immutable source index"))
+}
+
+fn compute_allocation_requests(
     cst: &CanonicalSourceCstV1,
 ) -> Result<Vec<AllocationRequest>, CanonicalSourceErrorV1> {
     let mut requested = Vec::new();

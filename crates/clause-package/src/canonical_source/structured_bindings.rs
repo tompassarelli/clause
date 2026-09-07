@@ -155,6 +155,7 @@ pub(super) fn expand<'a>(
         let rewritten = result.to_mut();
         rewritten.relational_handlers.take();
         rewritten.relational_relations.take();
+        rewritten.allocation_requests.take();
         rewritten.items[index].kind = CstKind::GeneralHandler(expanded);
     }
     Ok(result)
