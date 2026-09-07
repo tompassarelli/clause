@@ -213,7 +213,7 @@ impl RetainedEventV1 {
                 program: &self.program,
                 allocation_root: self.allocation_root,
                 configuration_id: self.step.before,
-                cache: None,
+                cache: None, scalar_plans: None,
             }.prepare_step_traced(
                 self.step.occurrence.clone(), self.step_ordinal,
                 self.configuration_ordinal, &self.before, Some(&mut trace),
@@ -252,7 +252,7 @@ mod retained_event_tests {
         let evaluator = StepEvaluator {
             program: &program, allocation_root: [7; IDENTITY_BYTES],
             configuration_id: ConfigurationId::from_bytes([3; IDENTITY_BYTES]),
-            cache: None,
+            cache: None, scalar_plans: None,
         };
         let mut eager = ExecutableEvaluationTraceV1::default();
         let (after, step) = evaluator.prepare_step_traced(

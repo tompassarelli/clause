@@ -213,6 +213,33 @@ mod tests {
     use ExecutableExpressionV1 as E;
 
     #[test]
+    fn retained_plans_use_fresh_values_across_preparations() {
+        let number = |value| ExecutableValueV1::number(value).unwrap();
+        let plans = Arc::new(relational::ScalarPlans::default());
+        let expression = E::Add(Box::new(E::Slot(0)), Box::new(E::Argument(0)));
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
+            reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
+        let mut retained = None;
+        for (state, input) in [(2.0, 3.0), (7.0, -4.0), (2.0, 9.0)] {
+            let mut queries = relational::SumQueries::default();
+            queries.scalar_plans = plans.clone();
+            let queries = std::cell::RefCell::new(queries);
+            let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
+            let plan = relational::scalar_plan(&expression, shared).unwrap().unwrap();
+            if let Some(previous) = &retained { assert!(Arc::ptr_eq(previous, &plan)); }
+            let memo = plan.memo();
+            let configuration = [number(state).into()];
+            let arguments = [number(input)];
+            let actual = evaluate(&plan.expression, &configuration, &arguments,
+                EvaluationContextV1 { scalar_memo: Some(&memo), ..shared }).unwrap();
+            assert_eq!(actual, evaluate_with_reads(&expression, &configuration, &arguments, context).unwrap().value);
+            assert_eq!(actual, number(state + input));
+            drop(memo);
+            retained = Some(plan);
+        }
+    }
+
+    #[test]
     fn sum_contributions_reuse_structure_with_fresh_values_for_each_match_and_query() {
         let number = |value| ExecutableValueV1::number(value).unwrap();
         let configuration = [ExecutableValueV1::RelationTable(ExecutableRelationTableV1 {

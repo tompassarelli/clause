@@ -165,8 +165,11 @@ pub(super) struct Matched {
 pub(super) struct SumQueries {
     entries: Vec<SumQuery>,
     prefixes: Vec<SumPrefix>,
-    scalar_plans: Vec<Arc<scalar_reuse::ScalarPlan>>,
+    pub scalar_plans: Arc<ScalarPlans>,
 }
+
+#[derive(Default)]
+pub(super) struct ScalarPlans(Mutex<Vec<Arc<scalar_reuse::ScalarPlan>>>);
 
 struct SumPrefix {
     predicates: Vec<ExecutableExpressionV1>,
@@ -254,13 +257,14 @@ pub(super) fn scalar_plan(expression: &ExecutableExpressionV1, context: Evaluati
     }
     let Some(queries) = context.sum_queries else { return Ok(None) };
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanLookup);
-    let mut queries = queries.borrow_mut();
-    if let Some(existing) = queries.scalar_plans.iter().find(|plan| plan.expression.as_ref() == expression) {
+    let queries = queries.borrow();
+    let mut plans = queries.scalar_plans.0.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+    if let Some(existing) = plans.iter().find(|plan| plan.expression.as_ref() == expression) {
         return Ok(Some(existing.clone()));
     }
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanBuild);
     let plan = Arc::new(scalar_reuse::ScalarPlan::new(expression)?);
-    queries.scalar_plans.push(plan.clone());
+    plans.push(plan.clone());
     Ok(Some(plan))
 }
 

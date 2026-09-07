@@ -2882,6 +2882,7 @@ pub struct ExecutableProcessRuntimeV1 {
     source_continuity: Option<ExecutableSourceContinuityV1>,
     evaluation_cache: Mutex<evaluation_cache::EvaluationCache>,
     projection_plan: Option<projection_plan::ProjectionPlan>,
+    scalar_plans: Arc<relational::ScalarPlans>,
 }
 
 impl ExecutableProcessRuntimeV1 {
@@ -3019,6 +3020,7 @@ impl ExecutableProcessRuntimeV1 {
             source_continuity: None,
             evaluation_cache: Mutex::default(),
             projection_plan,
+            scalar_plans: Arc::default(),
         })
     }
 }
@@ -4644,6 +4646,7 @@ impl ExecutableProcessRuntimeV1 {
             allocation_root: self.allocation.root,
             configuration_id: self.configuration_id,
             cache: Some(&self.evaluation_cache),
+            scalar_plans: Some(&self.scalar_plans),
         }.prepare_step_traced(occurrence, step_ordinal, configuration_ordinal, configuration, trace)
     }
 
@@ -7350,6 +7353,7 @@ struct StepEvaluator<'a> {
     allocation_root: [u8; IDENTITY_BYTES],
     configuration_id: ConfigurationId,
     cache: Option<&'a Mutex<evaluation_cache::EvaluationCache>>,
+    scalar_plans: Option<&'a Arc<relational::ScalarPlans>>,
 }
 
 impl StepEvaluator<'_> {
@@ -7519,7 +7523,9 @@ impl StepEvaluator<'_> {
             source_profile_scope_v1(SourceProfilePhaseV1::EffectEvaluation);
         // All effects read this preparation's immutable, closed pre-state.
         // The context below never reaches closure of the staged next state.
-        let sum_queries = std::cell::RefCell::new(relational::SumQueries::default());
+        let mut queries = relational::SumQueries::default();
+        if let Some(plans) = self.scalar_plans { queries.scalar_plans = plans.clone(); }
+        let sum_queries = std::cell::RefCell::new(queries);
         let mut effect_plans = BTreeMap::new();
         for (rule_index, rule, bindings, trace_index) in &selected {
             let identity = relational::LazyOccurrenceIdentity::new(evaluation, *rule_index, bindings);

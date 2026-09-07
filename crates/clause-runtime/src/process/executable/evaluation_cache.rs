@@ -129,7 +129,7 @@ mod tests {
         })
     }
     fn evaluator<'a>(program: &'a Arc<ExecutableProgramV1>, cache: Option<&'a Mutex<EvaluationCache>>) -> StepEvaluator<'a> {
-        StepEvaluator { program, cache, allocation_root: [11; IDENTITY_BYTES],
+        StepEvaluator { program, cache, scalar_plans: None, allocation_root: [11; IDENTITY_BYTES],
             configuration_id: ConfigurationId::from_bytes([13; IDENTITY_BYTES]) }
     }
     fn rule(entry: u16, assignments: Vec<(u16, E)>) -> ExecutableRuleV1 {
