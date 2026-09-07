@@ -411,90 +411,37 @@ export type ProjectedValue =
   | readonly ProjectedValue[]
   | ProjectedObject;
 
-function hex_whitespace_code_p(code: number): boolean {
-  return (
-    equivalent(code, 9) ||
-    equivalent(code, 10) ||
-    equivalent(code, 13) ||
-    equivalent(code, 32)
-  );
-}
-
-function lowercase_hex_nibble(code: number): number {
-  return 48 <= code && code <= 57
-    ? code - 48
-    : 97 <= code && code <= 102
-      ? code - 97 + 10
-      : -1;
-}
-
 function decode_hex_transport(
   source: unknown,
   label: string,
   maximumBytes: number,
   maximumSourceUnits: number,
 ): ExactBytes {
-  if (typeof source === "string") {
-    const length = source.length;
-    if (equivalent(length, 0) || length > maximumSourceUnits) {
-      (() => {
-        throw new Error(`${label} hex transport is outside its source bound`);
-      })();
-    }
-    const bytes = [];
-    return (() => {
-      let index = 0;
-      let high = -1;
-      while (true) {
-        if (index === length) {
-          return !equivalent(high, -1)
-            ? (() => {
-                throw new Error(`${label} hex transport has an incomplete byte`);
-              })()
-            : equivalent(countValues(bytes), 0)
-              ? (() => {
-                  throw new Error(`${label} hex transport is empty`);
-                })()
-              : retain_decoded_bytes(bytes);
-        } else {
-          const code = source.charCodeAt(index);
-          const nibble = lowercase_hex_nibble(code);
-          if (hex_whitespace_code_p(code)) {
-            const _recur_0 = index + 1;
-            const _recur_1 = high;
-            index = _recur_0;
-            high = _recur_1;
-            continue;
-          } else if (nibble < 0) {
-            return (() => {
-              throw new Error(`${label} hex transport contains a non-hex unit`);
-            })();
-          } else if (equivalent(high, -1)) {
-            const _recur_0 = index + 1;
-            const _recur_1 = nibble;
-            index = _recur_0;
-            high = _recur_1;
-            continue;
-          } else if (countValues(bytes) >= maximumBytes) {
-            return (() => {
-              throw new Error(`${label} hex transport exceeds its byte bound`);
-            })();
-          } else {
-            bytes.push(high * 16 + nibble);
-            const _recur_0 = index + 1;
-            const _recur_1 = -1;
-            index = _recur_0;
-            high = _recur_1;
-            continue;
-          }
-        }
-      }
-    })();
-  } else {
-    return (() => {
-      throw new Error(`${label} hex transport must be text`);
-    })();
+  if (typeof source !== "string") throw new Error(`${label} hex transport must be text`);
+  if (source.length === 0 || source.length > maximumSourceUnits) {
+    throw new Error(`${label} hex transport is outside its source bound`);
   }
+  const bytes: number[] = [];
+  let high = -1;
+  for (let index = 0; index < source.length; index += 1) {
+    const code = source.charCodeAt(index);
+    const nibble = code >= 48 && code <= 57 ? code - 48
+      : code >= 97 && code <= 102 ? code - 87 : -1;
+    if (nibble < 0) {
+      if (code === 9 || code === 10 || code === 13 || code === 32) continue;
+      throw new Error(`${label} hex transport contains a non-hex unit`);
+    }
+    if (high < 0) {
+      high = nibble;
+    } else {
+      if (bytes.length >= maximumBytes) throw new Error(`${label} hex transport exceeds its byte bound`);
+      bytes.push(high * 16 + nibble);
+      high = -1;
+    }
+  }
+  if (high >= 0) throw new Error(`${label} hex transport has an incomplete byte`);
+  if (bytes.length === 0) throw new Error(`${label} hex transport is empty`);
+  return retain_decoded_bytes(bytes);
 }
 
 function decode_cwr1_hex(source: unknown): ExactBytes {
