@@ -148,7 +148,7 @@ pub struct ExecutableEffectEvaluationV1 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExecutableRuleEvaluationV1 {
     pub rule: u16,
-    pub bindings: BTreeMap<u16, ExecutableValueV1>,
+    pub bindings: Arc<BTreeMap<u16, ExecutableValueV1>>,
     pub required_present: Vec<(u16, bool)>,
     pub required_absent: Vec<(u16, bool)>,
     /// Evaluated prefix only. Short-circuited predicates are never claimed read.

@@ -271,6 +271,32 @@ pub enum ExecutableRelationCardinalityV1 {
     Many = 2,
 }
 
+/// An ordered collection of executable values shared across immutable snapshots.
+#[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ExecutableValuesV1(Arc<BTreeSet<ExecutableValueV1>>);
+
+impl std::ops::Deref for ExecutableValuesV1 {
+    type Target = BTreeSet<ExecutableValueV1>;
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+impl std::ops::DerefMut for ExecutableValuesV1 {
+    fn deref_mut(&mut self) -> &mut Self::Target { Arc::make_mut(&mut self.0) }
+}
+impl From<BTreeSet<ExecutableValueV1>> for ExecutableValuesV1 {
+    fn from(values: BTreeSet<ExecutableValueV1>) -> Self { Self(Arc::new(values)) }
+}
+impl<const N: usize> From<[ExecutableValueV1; N]> for ExecutableValuesV1 {
+    fn from(values: [ExecutableValueV1; N]) -> Self { values.into_iter().collect() }
+}
+impl FromIterator<ExecutableValueV1> for ExecutableValuesV1 {
+    fn from_iter<T: IntoIterator<Item = ExecutableValueV1>>(values: T) -> Self { BTreeSet::from_iter(values).into() }
+}
+impl<'a> IntoIterator for &'a ExecutableValuesV1 {
+    type Item = &'a ExecutableValueV1;
+    type IntoIter = std::collections::btree_set::Iter<'a, ExecutableValueV1>;
+    fn into_iter(self) -> Self::IntoIter { self.iter() }
+}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ExecutableRelationTableV1 {
     subject_domain: u32,
@@ -278,7 +304,7 @@ pub struct ExecutableRelationTableV1 {
     value_domain: Option<u32>,
     cardinality: ExecutableRelationCardinalityV1,
     total: bool,
-    rows: Arc<BTreeMap<ExecutableReferentV1, BTreeSet<ExecutableValueV1>>>,
+    rows: Arc<BTreeMap<ExecutableReferentV1, ExecutableValuesV1>>,
 }
 
 impl ExecutableRelationTableV1 {
@@ -293,7 +319,7 @@ impl ExecutableRelationTableV1 {
     }
 
     #[must_use]
-    pub fn rows(&self) -> &BTreeMap<ExecutableReferentV1, BTreeSet<ExecutableValueV1>> {
+    pub fn rows(&self) -> &BTreeMap<ExecutableReferentV1, ExecutableValuesV1> {
         &self.rows
     }
 
@@ -367,7 +393,7 @@ impl ExecutableRelationTableV1 {
             return Err(ExecutableErrorV1::TypeMismatch);
         }
         let subject = self.subject(subject)?.clone();
-        Arc::make_mut(&mut self.rows).insert(subject, BTreeSet::from([value]));
+        Arc::make_mut(&mut self.rows).insert(subject, BTreeSet::from([value]).into());
         Ok(())
     }
 
@@ -413,7 +439,7 @@ impl ExecutableRelationTableV1 {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ExecutableSetV1 {
     element_kind: ExecutableValueKindV1,
-    values: BTreeSet<ExecutableValueV1>,
+    values: ExecutableValuesV1,
 }
 
 impl ExecutableSetV1 {
@@ -423,7 +449,7 @@ impl ExecutableSetV1 {
             .ok_or(ExecutableErrorV1::TypeMismatch)?;
         Ok(Self {
             element_kind,
-            values: BTreeSet::new(),
+            values: ExecutableValuesV1::default(),
         })
     }
 
@@ -728,12 +754,12 @@ pub fn executable_configuration_term_v1(
     values: &[ExecutableSlotV1],
 ) -> Result<Term, ExecutableErrorV1> {
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ConfigurationEncoding);
-    let mut bytes = Vec::new();
+    let mut bytes = SegmentedBytes::default();
     encode_slots(&mut bytes, values)?;
-    Term::atom(
+    Term::atom_segments(
         scope,
         CONFIGURATION_KIND.to_vec(),
-        bytes,
+        bytes.finish(),
         EqualityContract::ExactOctetsV1,
     )
     .map_err(|_| ExecutableErrorV1::MalformedProgram)
@@ -1806,7 +1832,7 @@ fn lower_scalar_value(
                         values
                             .iter()
                             .map(lower_scalar_value)
-                            .collect::<Result<BTreeSet<_>, _>>()?,
+                            .collect::<Result<ExecutableValuesV1, _>>()?,
                     ))
                 })
                 .collect::<Result<BTreeMap<_, _>, ExecutableErrorV1>>()?;
@@ -6857,14 +6883,56 @@ fn runtime_domain_hash(domain: &str, components: &[&[u8]]) -> [u8; clause_packag
     hasher.finalize().into()
 }
 
-fn encode_count(bytes: &mut Vec<u8>, count: usize) -> Result<(), ExecutableErrorV1> {
+pub(super) trait ExecutableBytes {
+    fn push(&mut self, value: u8);
+    fn extend_from_slice(&mut self, value: &[u8]);
+    fn text(&mut self, value: &ExecutableTextV1);
+}
+
+impl ExecutableBytes for Vec<u8> {
+    fn push(&mut self, value: u8) { Vec::push(self, value); }
+    fn extend_from_slice(&mut self, value: &[u8]) { Vec::extend_from_slice(self, value); }
+    fn text(&mut self, value: &ExecutableTextV1) { self.extend_from_slice(value.as_str().as_bytes()); }
+}
+
+#[derive(Default)]
+struct SegmentedBytes {
+    current: Vec<u8>,
+    segments: Vec<AtomPayloadSegment>,
+}
+
+impl SegmentedBytes {
+    fn flush(&mut self) {
+        if !self.current.is_empty() {
+            self.segments.push(AtomPayloadSegment::Bytes(std::mem::take(&mut self.current).into()));
+        }
+    }
+    fn finish(mut self) -> Vec<AtomPayloadSegment> { self.flush(); self.segments }
+}
+
+impl ExecutableBytes for SegmentedBytes {
+    fn push(&mut self, value: u8) { self.current.push(value); }
+    fn extend_from_slice(&mut self, value: &[u8]) { self.current.extend_from_slice(value); }
+    fn text(&mut self, value: &ExecutableTextV1) {
+        // Coalesce short fields: a shared segment and its prefix allocation
+        // cost more than copying a small payload.
+        if value.as_str().len() <= 128 {
+            self.current.extend_from_slice(value.as_str().as_bytes());
+            return;
+        }
+        self.flush();
+        self.segments.push(AtomPayloadSegment::Text(value.value.clone()));
+    }
+}
+
+fn encode_count(bytes: &mut impl ExecutableBytes, count: usize) -> Result<(), ExecutableErrorV1> {
     let count = u16::try_from(count).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
     bytes.extend_from_slice(&count.to_le_bytes());
     Ok(())
 }
 
 fn encode_values(
-    bytes: &mut Vec<u8>,
+    bytes: &mut impl ExecutableBytes,
     values: &[ExecutableValueV1],
 ) -> Result<(), ExecutableErrorV1> {
     encode_count(bytes, values.len())?;
@@ -6874,7 +6942,7 @@ fn encode_values(
     Ok(())
 }
 
-fn encode_slots(bytes: &mut Vec<u8>, slots: &[ExecutableSlotV1]) -> Result<(), ExecutableErrorV1> {
+fn encode_slots(bytes: &mut impl ExecutableBytes, slots: &[ExecutableSlotV1]) -> Result<(), ExecutableErrorV1> {
     encode_count(bytes, slots.len())?;
     for slot in slots {
         match slot {
@@ -6970,7 +7038,7 @@ fn decode_projection(
 }
 
 pub(super) fn encode_value(
-    bytes: &mut Vec<u8>,
+    bytes: &mut impl ExecutableBytes,
     value: &ExecutableValueV1,
 ) -> Result<(), ExecutableErrorV1> {
     match value {
@@ -7000,7 +7068,7 @@ pub(super) fn encode_value(
                         .to_le_bytes(),
                 );
             }
-            bytes.extend_from_slice(value.as_str().as_bytes());
+            bytes.text(value);
         }
         ExecutableValueV1::Referent(value) => {
             bytes.push(5);
@@ -7044,7 +7112,7 @@ pub(super) fn encode_value(
     Ok(())
 }
 
-fn encode_referent(bytes: &mut Vec<u8>, value: &ExecutableReferentV1) {
+fn encode_referent(bytes: &mut impl ExecutableBytes, value: &ExecutableReferentV1) {
     bytes.extend_from_slice(&value.domain.to_le_bytes());
     match &value.identity {
         ExecutableReferentIdentityV1::Declared(identity) => {
@@ -7360,7 +7428,7 @@ impl<'a> Decoder<'a> {
                             return Err(ExecutableErrorV1::MalformedProgram);
                         }
                     }
-                    if Arc::make_mut(&mut table.rows).insert(subject, values).is_some() {
+                    if Arc::make_mut(&mut table.rows).insert(subject, values.into()).is_some() {
                         return Err(ExecutableErrorV1::MalformedProgram);
                     }
                 }

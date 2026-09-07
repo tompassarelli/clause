@@ -155,7 +155,7 @@ impl ExecutableRelationEffectV1 {
 
 #[derive(Clone, Default)]
 pub(super) struct Matched {
-    pub bindings: BTreeMap<u16, ExecutableValueV1>,
+    pub bindings: Arc<BTreeMap<u16, ExecutableValueV1>>,
     pub predicates: Vec<EvaluatedValue>,
 }
 
@@ -231,7 +231,7 @@ pub(super) fn sum(
 fn unify(
     expression: &ExecutableExpressionV1,
     value: &ExecutableValueV1,
-    bindings: &mut BTreeMap<u16, ExecutableValueV1>,
+    bindings: &mut Arc<BTreeMap<u16, ExecutableValueV1>>,
     configuration: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
@@ -274,7 +274,7 @@ fn unify(
         if bindings.len() == MAX_BINDINGS {
             return Err(ExecutableErrorV1::ResourceLimit);
         }
-        bindings.insert(*binding, value.clone());
+        Arc::make_mut(bindings).insert(*binding, value.clone());
         return Ok(true);
     }
     Ok(evaluate(
@@ -370,7 +370,7 @@ impl<'a> CheckedValueIndex<'a> {
         }
         // Strict bucket ordering forbids duplicates; exact membership forbids
         // inventions; disjoint value keys plus equal cardinality prove coverage.
-        if covered != table.rows.values().map(BTreeSet::len).sum::<usize>() {
+        if covered != table.rows.values().map(|values| values.len()).sum::<usize>() {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
         Ok(Self { buckets })
@@ -437,7 +437,7 @@ pub(super) fn match_rule(
                     }
                 };
                 let mut rows: Box<
-                    dyn Iterator<Item = (&ExecutableReferentV1, &BTreeSet<ExecutableValueV1>)> + '_,
+                    dyn Iterator<Item = (&ExecutableReferentV1, &ExecutableValuesV1)> + '_,
                 > = if !unbound && bound_subject.is_none() {
                     Box::new(std::iter::empty())
                 } else if let Some(subject) = bound_subject.as_ref() {
@@ -479,14 +479,28 @@ pub(super) fn match_rule(
                     } else {
                         Box::new(first_row.into_iter().chain(rows).flat_map(|(subject, values)| values.iter().map(move |value| (subject, value))))
                     };
-                for (subject, value) in candidates {
+                let mut candidates = candidates.peekable();
+                let mut incoming = Some(incoming);
+                while let Some((subject, value)) = candidates.next() {
                         *visits = visits
                             .checked_add(1)
                             .ok_or(ExecutableErrorV1::ResourceLimit)?;
                         if *visits > MAX_JOIN_VISITS {
                             return Err(ExecutableErrorV1::ResourceLimit);
                         }
-                        let mut matched = incoming.clone();
+                        let last = candidates.peek().is_none();
+                        let mut matched = if last { incoming.take().expect("last candidate owns its prefix") }
+                            else { incoming.as_ref().expect("more candidates retain their prefix").clone() };
+                        let new_bindings = [subject_pattern.as_ref(), value_pattern.as_ref()].map(|pattern| {
+                            fn binding(pattern: &ExecutableExpressionV1) -> Option<u16> {
+                                match pattern {
+                                    ExecutableExpressionV1::Binding(id) => Some(*id),
+                                    ExecutableExpressionV1::ReferentFacet { value, .. } => binding(value),
+                                    _ => None,
+                                }
+                            }
+                            binding(pattern).filter(|id| !matched.bindings.contains_key(id))
+                        });
                         if !unify(
                             subject_pattern,
                             &ExecutableValueV1::Referent(subject.clone()),
@@ -502,6 +516,10 @@ pub(super) fn match_rule(
                             arguments,
                             context,
                         )? {
+                            if last {
+                                for binding in new_bindings.into_iter().flatten() { Arc::make_mut(&mut matched.bindings).remove(&binding); }
+                                incoming = Some(matched);
+                            }
                             continue;
                         }
                         found = true;
@@ -519,7 +537,7 @@ pub(super) fn match_rule(
                         }
                 }
                 if !found {
-                    let mut incoming = incoming;
+                    let mut incoming = incoming.expect("failed candidates retain their original prefix");
                     incoming.predicates.push(EvaluatedValue {
                         value: ExecutableValueV1::Boolean(false),
                         reads: vec![ExecutableReadV1::RelationSearch(
@@ -699,9 +717,9 @@ mod ordered_specialization_tests {
             cardinality: ExecutableRelationCardinalityV1::Many,
             total: false,
             rows: BTreeMap::from([
-                (ExecutableReferentV1::declared(7, 9), BTreeSet::from([n(4.0), n(9.0)])),
-                (ExecutableReferentV1::created(7, [1; IDENTITY_BYTES]), BTreeSet::from([n(4.0)])),
-                (ExecutableReferentV1::created(7, [2; IDENTITY_BYTES]), BTreeSet::from([n(4.0)])),
+                (ExecutableReferentV1::declared(7, 9), BTreeSet::from([n(4.0), n(9.0)]).into()),
+                (ExecutableReferentV1::created(7, [1; IDENTITY_BYTES]), BTreeSet::from([n(4.0)]).into()),
+                (ExecutableReferentV1::created(7, [2; IDENTITY_BYTES]), BTreeSet::from([n(4.0)]).into()),
             ]).into(),
         }
     }
@@ -773,7 +791,7 @@ mod sum_reuse_tests {
             value_domain: None, cardinality: ExecutableRelationCardinalityV1::One,
             total: false,
             rows: (0..3).map(|id| (ExecutableReferentV1::declared(7, id),
-                BTreeSet::from([number(1.0)]))).collect::<BTreeMap<_, _>>().into(),
+                BTreeSet::from([number(1.0)]).into())).collect::<BTreeMap<_, _>>().into(),
         }).into()];
         let query = E::Sum {
             inputs: vec![E::Argument(0)],
@@ -821,7 +839,7 @@ mod sum_reuse_tests {
             cardinality: ExecutableRelationCardinalityV1::One,
             total: false,
             rows: (0..100).map(|id| (ExecutableReferentV1::declared(7, id),
-                BTreeSet::from([number(1.0)]))).collect::<BTreeMap<_, _>>().into(),
+                BTreeSet::from([number(1.0)]).into())).collect::<BTreeMap<_, _>>().into(),
         };
         let configuration = vec![ExecutableValueV1::RelationTable(table).into()];
         let sum = ExecutableExpressionV1::Sum {
@@ -869,5 +887,34 @@ mod sum_reuse_tests {
         let invalid = ExecutableExpressionV1::Sum { inputs: vec![], predicates: vec![],
             value: Box::new(ExecutableExpressionV1::Constant(ExecutableValueV1::Boolean(true))) };
         assert!(matches!(evaluate_with_reads(&invalid, &[], &[], context), Err(ExecutableErrorV1::TypeMismatch)));
+    }
+}
+
+#[cfg(test)]
+mod match_ownership_tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_final_candidate_restores_the_original_bindings() {
+        let subject = ExecutableReferentV1::declared(7, 1);
+        let value = ExecutableValueV1::Referent(ExecutableReferentV1::declared(7, 2));
+        let table = ExecutableRelationTableV1 {
+            subject_domain: 7, value_kind: ExecutableRelationValueKindV1::Referent,
+            value_domain: Some(7), cardinality: ExecutableRelationCardinalityV1::Many,
+            total: false, rows: Arc::new(BTreeMap::from([(subject, BTreeSet::from([value]).into())])),
+        };
+        let predicate = ExecutableExpressionV1::RelationMatch(0,
+            Box::new(ExecutableExpressionV1::Binding(0)),
+            Box::new(ExecutableExpressionV1::Binding(0)));
+        let results = match_rule(&[predicate], &[ExecutableValueV1::RelationTable(table).into()], &[],
+            EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
+                reads: None, sum_queries: None, bindings: None, relational_occurrence: None }, &mut 0).unwrap();
+        assert_eq!(results.len(), 1);
+        let (matched, accepted) = &results[0];
+        assert!(!accepted);
+        assert!(matched.bindings.is_empty());
+        assert_eq!(matched.predicates.len(), 1);
+        assert_eq!(matched.predicates[0].value, ExecutableValueV1::Boolean(false));
+        assert!(matches!(matched.predicates[0].reads.as_slice(), [ExecutableReadV1::RelationSearch(0, None, 1)]));
     }
 }
