@@ -1492,6 +1492,8 @@ pub fn read_canonical_source_with_declared_frontend_v1(
     let artifact =
         CanonicalSourceArtifactIdV1(domain_hash(SOURCE_ARTIFACT_DOMAIN, &[exact_source]));
     let lines = source_lines(source)?;
+    let frontend = frontend.with_transition_readings(artifact, &lines)?;
+    let frontend = &frontend;
     let scalar_laws = ScalarLawEnvironment::read(artifact, &lines, frontend)?;
     let mut items = Vec::new();
     let mut callables = Vec::new();
@@ -1526,6 +1528,9 @@ pub fn read_canonical_source_with_declared_frontend_v1(
             start: block[0].start as u64,
             end: last.end as u64,
         };
+        if block[0].text.starts_with("reading ") {
+            continue;
+        }
         if let Some((definition, relation)) = callable::read(block, origin, &scalar_laws.declarations)? {
             callables.push(definition);
             items.push(CstItem { origin, kind: CstKind::Relation(relation) });
@@ -7043,7 +7048,7 @@ fn parse_item(
     frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<CstItem, CanonicalSourceErrorV1> {
     if block[0].text.starts_with("on ") || block[0].text.starts_with("law ") {
-        let logical = patterns::handler_lines(logical_source_lines(artifact, block)?, frontend, scalar_laws)?;
+        let logical = declared_frontend::handler_lines(logical_source_lines(artifact, block)?, frontend, scalar_laws)?;
         if logical.iter().any(|line| line.structured.is_some()) {
             return Ok(CstItem { origin, kind: CstKind::GeneralHandler(
                 parse_general_handler(artifact, block, origin, scalar_laws, frontend)?
@@ -8112,7 +8117,7 @@ fn parse_general_handler(
         return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
     }
 
-    let logical = patterns::handler_lines(logical_source_lines(artifact, block)?, frontend, scalar_laws)?;
+    let logical = declared_frontend::handler_lines(logical_source_lines(artifact, block)?, frontend, scalar_laws)?;
     let mut section = String::new();
     let mut when = Vec::new();
     let mut create = Vec::<(Vec<u8>, Option<Vec<u8>>)>::new();

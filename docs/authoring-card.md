@@ -10,6 +10,36 @@ Use that pin's workbench directly:
 
 Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.
 
+## Declared transition sentences
+
+A reading names a sentence whose body supplies the ordinary checked preconditions and atomic changes. Invoke it as the sole body of an on handler. Each pattern binding occurs once and is used in the body; other bindings are local. Role contracts infer capture types and reject wrong types or unbound effects. Change the body once to change every use. This first slice does not nest readings or combine several sentences in one handler.
+
+Catalog ID: `transition-reading`
+
+```clause
+F64
+Meter
+
+amount
+  domain: Meter
+  range: F64
+  cardinality: one
+
+meter
+  amount: 2.0
+
+reading ?item gains ?increment
+  when
+    ?item amount ?prior
+  withdraw
+    ?item amount ?prior
+  include
+    ?item amount ?prior + ?increment
+
+on add ?prior
+  ?prior gains 3.0
+```
+
 ## Typed pure callables and text interpolation
 
 A named callable gives each argument and result its type, and its body returns one value without mutable output state. `export` exposes its checked signature to generated JavaScript and declarations. Text interpolation checks the same named bindings and pure expressions; effects and type mismatches reject. `compile-js SOURCE.clause OUTPUT.js` opens and checks the source before emitting the module and adjacent declarations.

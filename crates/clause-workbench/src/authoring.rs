@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "transition-reading",
+        title: "Declared transition sentences",
+        summary: "A reading names a sentence whose body supplies the ordinary checked preconditions and atomic changes. Invoke it as the sole body of an on handler. Each pattern binding occurs once and is used in the body; other bindings are local. Role contracts infer capture types and reject wrong types or unbound effects. Change the body once to change every use. This first slice does not nest readings or combine several sentences in one handler.",
+        source: include_str!("../../../test-vectors/authoring/transition-reading.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "pure-callable",
         title: "Typed pure callables and text interpolation",
         summary: "A named callable gives each argument and result its type, and its body returns one value without mutable output state. `export` exposes its checked signature to generated JavaScript and declarations. Text interpolation checks the same named bindings and pure expressions; effects and type mismatches reject. `compile-js SOURCE.clause OUTPUT.js` opens and checks the source before emitting the module and adjacent declarations.",
