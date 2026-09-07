@@ -20,6 +20,11 @@ enum Node {
 enum Instruction {
     Cached { node: usize, end: usize },
     Evaluate(usize),
+    Add(usize, usize, usize), Subtract(usize, usize, usize),
+    Multiply(usize, usize, usize), Divide(usize, usize, usize),
+    GreaterThan(usize, usize, usize), LessThanOrEqual(usize, usize, usize),
+    Equal(usize, usize, usize), Not(usize, usize), SquareRoot(usize, usize),
+    Clamp(usize, usize, usize, usize),
     Number(usize),
     Boolean(usize),
     Nonzero(usize),
@@ -43,6 +48,19 @@ fn emit_scalar_instructions(index: usize, nodes: &[(Node, bool, bool)], code: &m
             code.push(Instruction::Boolean(index));
         }
     }
+    let operation = match nodes[index].0 {
+        Node::Add(a, b) => Instruction::Add(index, a, b),
+        Node::Subtract(a, b) => Instruction::Subtract(index, a, b),
+        Node::Multiply(a, b) => Instruction::Multiply(index, a, b),
+        Node::Divide(a, b) => Instruction::Divide(index, a, b),
+        Node::GreaterThan(a, b) => Instruction::GreaterThan(index, a, b),
+        Node::LessThanOrEqual(a, b) => Instruction::LessThanOrEqual(index, a, b),
+        Node::Equal(a, b) => Instruction::Equal(index, a, b),
+        Node::Not(a) => Instruction::Not(index, a),
+        Node::SquareRoot(a) => Instruction::SquareRoot(index, a),
+        Node::Clamp(a, b, c) => Instruction::Clamp(index, a, b, c),
+        _ => Instruction::Evaluate(index),
+    };
     let cached = nodes[index].1.then(|| {
         let position = code.len();
         code.push(Instruction::Cached { node: index, end: 0 });
@@ -52,21 +70,21 @@ fn emit_scalar_instructions(index: usize, nodes: &[(Node, bool, bool)], code: &m
         Node::Add(a, b) | Node::Subtract(a, b) | Node::Multiply(a, b)
         | Node::GreaterThan(a, b) | Node::LessThanOrEqual(a, b) => {
             number(a, nodes, code); number(b, nodes, code);
-            code.push(Instruction::Evaluate(index));
+            code.push(operation);
         }
         Node::Divide(a, b) => {
             number(b, nodes, code); code.push(Instruction::Nonzero(b));
-            number(a, nodes, code); code.push(Instruction::Evaluate(index));
+            number(a, nodes, code); code.push(operation);
         }
         Node::Equal(a, b) => {
             emit_scalar_instructions(a, nodes, code); emit_scalar_instructions(b, nodes, code);
-            code.push(Instruction::Evaluate(index));
+            code.push(operation);
         }
-        Node::Not(a) => { boolean(a, nodes, code); code.push(Instruction::Evaluate(index)); }
-        Node::SquareRoot(a) => { number(a, nodes, code); code.push(Instruction::Evaluate(index)); }
+        Node::Not(a) => { boolean(a, nodes, code); code.push(operation); }
+        Node::SquareRoot(a) => { number(a, nodes, code); code.push(operation); }
         Node::Clamp(a, b, c) => {
             number(a, nodes, code); number(b, nodes, code); number(c, nodes, code);
-            code.push(Instruction::Evaluate(index));
+            code.push(operation);
         }
         Node::Conditional(a, b, c) => {
             emit_scalar_instructions(a, nodes, code);
@@ -86,7 +104,7 @@ fn emit_scalar_instructions(index: usize, nodes: &[(Node, bool, bool)], code: &m
             code.push(Instruction::Copy { from: a, to: index });
             code[jump] = Instruction::Jump(code.len());
         }
-        _ => code.push(Instruction::Evaluate(index)),
+        _ => code.push(operation),
     }
     if let Some(position) = cached { code[position] = Instruction::Cached { node: index, end: code.len() }; }
 }
@@ -254,6 +272,9 @@ impl ScalarMemo<'_> {
         let mut row_values = self.row_values.borrow_mut();
         for index in row_values.drain(..) { values[index] = None; }
         let evaluation = ScalarEvaluation { configuration, arguments, context: EvaluationContextV1 { scalar_memo: None, ..context } };
+        macro_rules! eval { ($index:expr) => { values[$index].ok_or(ExecutableErrorV1::MalformedProgram) }; }
+        macro_rules! numeric { ($index:expr) => { eval!($index)?.as_number() }; }
+        macro_rules! boolean_value { ($index:expr) => { eval!($index)?.as_boolean() }; }
         let mut pc = 0;
         while pc < self.plan.instructions.len() {
             let stored = match self.plan.instructions[pc] {
@@ -261,7 +282,27 @@ impl ScalarMemo<'_> {
                     if values[node].is_some() { pc = end; continue; }
                     None
                 }
-                Instruction::Evaluate(node) => Some((node, self.value(node, &evaluation, &values)?)),
+                Instruction::Evaluate(node) => Some((node, self.value(node, &evaluation)?)),
+                Instruction::Add(node, a, b) => Some((node, ScalarValue::number(numeric!(a)? + numeric!(b)?)?)),
+                Instruction::Subtract(node, a, b) => Some((node, ScalarValue::number(numeric!(a)? - numeric!(b)?)?)),
+                Instruction::Multiply(node, a, b) => Some((node, ScalarValue::number(numeric!(a)? * numeric!(b)?)?)),
+                Instruction::Divide(node, a, b) => Some((node, ScalarValue::number(numeric!(a)? / numeric!(b)?)?)),
+                Instruction::GreaterThan(node, a, b) => Some((node, ScalarValue::Boolean(numeric!(a)? > numeric!(b)?))),
+                Instruction::LessThanOrEqual(node, a, b) => Some((node, ScalarValue::Boolean(numeric!(a)? <= numeric!(b)?))),
+                Instruction::Equal(node, a, b) => Some((node, ScalarValue::Boolean(self.equal(eval!(a)?, eval!(b)?)))),
+                Instruction::Not(node, a) => Some((node, ScalarValue::Boolean(!boolean_value!(a)?))),
+                Instruction::SquareRoot(node, a) => {
+                    let value = numeric!(a)?;
+                    if value < 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
+                    Some((node, ScalarValue::number(value.sqrt())?))
+                }
+                Instruction::Clamp(node, a, b, c) => {
+                    let value = numeric!(a)?;
+                    let lower = numeric!(b)?;
+                    let upper = numeric!(c)?;
+                    if lower > upper { return Err(ExecutableErrorV1::NumericDomain); }
+                    Some((node, ScalarValue::number(value.clamp(lower, upper))?))
+                }
                 Instruction::Copy { from, to } => Some((to, values[from].ok_or(ExecutableErrorV1::MalformedProgram)?)),
                 Instruction::Number(node) => { values[node].ok_or(ExecutableErrorV1::MalformedProgram)?.as_number()?; None }
                 Instruction::Boolean(node) => { values[node].ok_or(ExecutableErrorV1::MalformedProgram)?.as_boolean()?; None }
@@ -288,12 +329,8 @@ impl ScalarMemo<'_> {
         Ok(self.expand(values[self.plan.root].ok_or(ExecutableErrorV1::MalformedProgram)?))
     }
 
-    fn value(&self, index: usize, evaluation: &ScalarEvaluation,
-        values: &[Option<ScalarValue>])
+    fn value(&self, index: usize, evaluation: &ScalarEvaluation)
         -> Result<ScalarValue, ExecutableErrorV1> {
-        macro_rules! eval { ($index:expr) => { values[$index].ok_or(ExecutableErrorV1::MalformedProgram) }; }
-        macro_rules! numeric { ($index:expr) => { eval!($index)?.as_number() }; }
-        macro_rules! boolean_value { ($index:expr) => { eval!($index)?.as_boolean() }; }
         let value = match self.plan.nodes[index].0 {
             Node::Value(ref expression) => self.retain(&evaluate_uncached(expression, evaluation.configuration, evaluation.arguments, evaluation.context)?),
             Node::Sum { ref expression, ref shape } => {
@@ -312,32 +349,7 @@ impl ScalarMemo<'_> {
                 .ok_or(ExecutableErrorV1::UnknownArgument(argument))?),
             Node::Binding(binding) => self.retain(evaluation.context.bindings.and_then(|bindings| bindings.get(&binding))
                 .ok_or(ExecutableErrorV1::MalformedProgram)?),
-            Node::Add(a, b) => ScalarValue::number(numeric!(a)? + numeric!(b)?)?,
-            Node::Subtract(a, b) => ScalarValue::number(numeric!(a)? - numeric!(b)?)?,
-            Node::Multiply(a, b) => ScalarValue::number(numeric!(a)? * numeric!(b)?)?,
-            Node::Divide(a, b) => {
-                let denominator = numeric!(b)?;
-                if denominator == 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
-                ScalarValue::number(numeric!(a)? / denominator)?
-            },
-            Node::GreaterThan(a, b) => ScalarValue::Boolean(numeric!(a)? > numeric!(b)?),
-            Node::LessThanOrEqual(a, b) => ScalarValue::Boolean(numeric!(a)? <= numeric!(b)?),
-            Node::Equal(a, b) => ScalarValue::Boolean(self.equal(eval!(a)?, eval!(b)?)),
-            Node::And(a, b) => ScalarValue::Boolean(boolean_value!(a)? && boolean_value!(b)?),
-            Node::Not(a) => ScalarValue::Boolean(!boolean_value!(a)?),
-            Node::SquareRoot(a) => {
-                let value = numeric!(a)?;
-                if value < 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
-                ScalarValue::number(value.sqrt())?
-            },
-            Node::Conditional(a, b, c) => eval!(if boolean_value!(a)? { b } else { c })?,
-            Node::Clamp(a, b, c) => {
-                let value = numeric!(a)?;
-                let lower = numeric!(b)?;
-                let upper = numeric!(c)?;
-                if lower > upper { return Err(ExecutableErrorV1::NumericDomain); }
-                ScalarValue::number(value.clamp(lower, upper))?
-            },
+            _ => return Err(ExecutableErrorV1::MalformedProgram),
         };
         Ok(value)
     }
