@@ -910,7 +910,7 @@ fn migrate_value(
                 value_domain: table.value_domain.map(formation).transpose()?,
                 cardinality: table.cardinality,
                 total: table.total,
-                rows: table
+                rows: Arc::new(table
                     .rows
                     .iter()
                     .map(|(key, values)| {
@@ -922,7 +922,7 @@ fn migrate_value(
                                 .collect::<Result<_, ExecutableErrorV1>>()?,
                         ))
                     })
-                    .collect::<Result<_, ExecutableErrorV1>>()?,
+                    .collect::<Result<_, ExecutableErrorV1>>()?),
             })
         }
         _ => value.clone(),

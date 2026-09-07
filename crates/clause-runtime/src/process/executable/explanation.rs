@@ -262,11 +262,9 @@ impl ExecutableInterventionChangeV1 {
             let Some(ExecutableValueV1::RelationTable(table)) = state.value() else {
                 return Err(ExecutableErrorV1::TypeMismatch);
             };
-            ExecutableValueV1::RelationTable(table.put(
-                &ExecutableValueV1::Referent(subject.clone()),
-                self.value.clone(),
-            )?)
-            .into()
+            let mut table = table.clone();
+            table.put(&ExecutableValueV1::Referent(subject.clone()), self.value.clone())?;
+            ExecutableValueV1::RelationTable(table).into()
         } else {
             self.value.clone().into()
         };

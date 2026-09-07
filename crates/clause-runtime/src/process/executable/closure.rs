@@ -159,7 +159,7 @@ pub(super) fn close(
                 next.get_mut(usize::from(*slot)) else {
                 return Err(ExecutableErrorV1::MalformedProgram);
             };
-            table.rows.clear();
+            Arc::make_mut(&mut table.rows).clear();
         }
     }
     let mut checks = 0;
@@ -195,7 +195,7 @@ pub(super) fn close(
                         };
                         let subject = table.subject(&subject.value)?.clone();
                         if !table.value_matches(&value.value) { return Err(ExecutableErrorV1::TypeMismatch); }
-                        let values = table.rows.entry(subject.clone()).or_default();
+                        let values = Arc::make_mut(&mut table.rows).entry(subject.clone()).or_default();
                         // Optional conclusions are still monotone sets: equal proofs
                         // share one value, while competing values reject the closure.
                         if table.cardinality == ExecutableRelationCardinalityV1::Maybe
