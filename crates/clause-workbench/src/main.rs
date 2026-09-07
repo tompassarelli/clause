@@ -4,6 +4,8 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+mod text_command;
+
 use clause_package::{
     CanonicalSourceProductionV1, Term, decode_canonical_term_bytes, project_nix_flake_v1,
     render_nix_flake_v1,
@@ -21,6 +23,9 @@ fn main() -> ExitCode {
     let mut arguments = std::env::args_os().skip(1);
     match arguments.next().as_deref() {
         None => serve_binary_workbench(),
+        Some(command) if command == OsStr::new("run-text") => {
+            text_command::run(arguments.collect())
+        }
         Some(command) if command == OsStr::new("source-loop") => {
             let Some(source) = arguments.next() else {
                 eprintln!("{USAGE}");

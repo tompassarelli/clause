@@ -10,6 +10,57 @@ Use that pin's workbench directly:
 
 Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.
 
+## Typed command arguments and selected Text output
+
+`run-text SOURCE.clause HANDLER SUBJECT ROLE [TEXT ...]` passes each argument as one exact Text value to a checked handler and prints the selected source-owned Text field after admission. Arity, type, execution and projection failures produce no output. Arguments are not split or evaluated as source.
+
+Catalog ID: `command-text`
+
+```clause
+Text
+Command
+Response
+
+node
+  domain: Command
+  range: Text
+  cardinality: one
+edge
+  domain: Command
+  range: Text
+  cardinality: one
+summary
+  domain: Command
+  range: Text
+  cardinality: one
+output
+  domain: Response
+  range: Text
+  cardinality: one
+
+list
+  node: "module"
+  edge: "list"
+  summary: "list modules"
+status
+  node: "module"
+  edge: "status"
+  summary: "show module status"
+response
+  output: "Unknown command\n"
+
+on describe ?response ?node ?edge
+  when
+    ?response output ?prior
+    ?command node ?node
+    ?command edge ?edge
+    ?command summary ?summary
+  withdraw
+    ?response output ?prior
+  include
+    ?response output "firn " ++ ?node ++ " " ++ ?edge ++ ": " ++ ?summary ++ "\n"
+```
+
 ## Positioned measurement occurrences
 
 Calibrate each active batch's readings once while preserving its occurrence identities and explicit positions. Equal readings remain independent, including newly appended measurements. An invalid numeric result rejects the whole change.

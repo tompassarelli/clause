@@ -1,0 +1,42 @@
+Text
+Command
+Response
+
+node
+  domain: Command
+  range: Text
+  cardinality: one
+edge
+  domain: Command
+  range: Text
+  cardinality: one
+summary
+  domain: Command
+  range: Text
+  cardinality: one
+output
+  domain: Response
+  range: Text
+  cardinality: one
+
+list
+  node: "module"
+  edge: "list"
+  summary: "list modules"
+status
+  node: "module"
+  edge: "status"
+  summary: "show module status"
+response
+  output: "Unknown command\n"
+
+on describe ?response ?node ?edge
+  when
+    ?response output ?prior
+    ?command node ?node
+    ?command edge ?edge
+    ?command summary ?summary
+  withdraw
+    ?response output ?prior
+  include
+    ?response output "firn " ++ ?node ++ " " ++ ?edge ++ ": " ++ ?summary ++ "\n"

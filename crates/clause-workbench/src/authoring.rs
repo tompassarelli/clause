@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "command-text",
+        title: "Typed command arguments and selected Text output",
+        summary: "`run-text SOURCE.clause HANDLER SUBJECT ROLE [TEXT ...]` passes each argument as one exact Text value to a checked handler and prints the selected source-owned Text field after admission. Arity, type, execution and projection failures produce no output. Arguments are not split or evaluated as source.",
+        source: include_str!("../../../test-vectors/authoring/command-text.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "ordered-measurements",
         title: "Positioned measurement occurrences",
         summary: "Calibrate each active batch's readings once while preserving its occurrence identities and explicit positions. Equal readings remain independent, including newly appended measurements. An invalid numeric result rejects the whole change.",
