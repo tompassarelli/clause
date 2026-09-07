@@ -152,7 +152,10 @@ pub(super) fn expand<'a>(
                 expanded.predicates.push(predicate.clone());
             }
         }
-        result.to_mut().items[index].kind = CstKind::GeneralHandler(expanded);
+        let rewritten = result.to_mut();
+        rewritten.relational_handlers.take();
+        rewritten.relational_relations.take();
+        rewritten.items[index].kind = CstKind::GeneralHandler(expanded);
     }
     Ok(result)
 }

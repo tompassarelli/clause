@@ -562,6 +562,8 @@ pub struct CanonicalSourceCstV1 {
     subject_focuses: Vec<CanonicalSubjectFocusV1>,
     declared_frontend: CanonicalDeclaredFrontendV1,
     conformance: std::sync::OnceLock<conformance::Domains>,
+    relational_handlers: std::sync::OnceLock<BTreeSet<CanonicalSourceOriginV1>>,
+    relational_relations: std::sync::OnceLock<BTreeSet<Vec<u8>>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1605,6 +1607,8 @@ pub fn read_canonical_source_with_declared_frontend_v1(
         subject_focuses,
         declared_frontend: frontend.clone(),
         conformance: std::sync::OnceLock::new(),
+        relational_handlers: std::sync::OnceLock::new(),
+        relational_relations: std::sync::OnceLock::new(),
     };
     normalize_focused_state_assertions(&mut cst);
     Ok(cst)
@@ -2308,7 +2312,11 @@ fn general_handler_mutated_relation_designations(
         .collect()
 }
 
-fn relational_handler_origins(cst: &CanonicalSourceCstV1) -> BTreeSet<CanonicalSourceOriginV1> {
+fn relational_handler_origins(cst: &CanonicalSourceCstV1) -> &BTreeSet<CanonicalSourceOriginV1> {
+    cst.relational_handlers.get_or_init(|| compute_relational_handler_origins(cst))
+}
+
+fn compute_relational_handler_origins(cst: &CanonicalSourceCstV1) -> BTreeSet<CanonicalSourceOriginV1> {
     let handlers = cst
         .items
         .iter()
@@ -2361,7 +2369,11 @@ fn relational_handler_origins(cst: &CanonicalSourceCstV1) -> BTreeSet<CanonicalS
     origins
 }
 
-fn relational_relation_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<u8>> {
+fn relational_relation_designations(cst: &CanonicalSourceCstV1) -> &BTreeSet<Vec<u8>> {
+    cst.relational_relations.get_or_init(|| compute_relational_relation_designations(cst))
+}
+
+fn compute_relational_relation_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<u8>> {
     let origins = relational_handler_origins(cst);
     cst.items
         .iter()
@@ -4392,7 +4404,7 @@ fn checked_source_state_cells(
             .items
             .iter()
             .find_map(|item| match &item.kind {
-                CstKind::Relation(candidate) if candidate.surface == relation => Some(item.origin),
+                CstKind::Relation(candidate) if candidate.surface == *relation => Some(item.origin),
                 _ => None,
             })
             .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding {
