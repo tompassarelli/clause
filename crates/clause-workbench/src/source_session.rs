@@ -779,6 +779,13 @@ impl ResidentSourceWorkbenchV1 {
         .map_err(|error| debug_error("canonical source elaboration", error))?;
         let mut callables = BTreeMap::new();
         for definition in &compiled.callables {
+            // Target construction callables are checked static artifacts for
+            // a backend renderer; they are intentionally not executable by
+            // the native resident runtime. Keep them in the compiled package
+            // while excluding them from the pure callable table.
+            if definition.result_kind.contains_delayed() {
+                continue;
+            }
             let lowered = clause_runtime::lower_canonical_callable_v1(definition)
                 .map_err(|e| boxed_error("pure callable lowering", e))?;
             if definition.exported { callables.insert(definition.designation.clone(), lowered); }
