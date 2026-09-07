@@ -220,8 +220,8 @@ pub(super) fn sum(
     let memo = plan.as_ref().map(|plan| plan.memo());
     let mut visits = 0;
     let mut total = 0.0;
-    for (matched, accepted) in match_sum(predicates, configuration, &inputs,
-        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits)? {
+    for (matched, accepted) in match_with_shared_prefix(predicates, configuration, &inputs,
+        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits, query_context.reads.is_some())? {
         if let Some(reads) = query_context.reads {
             for predicate in &matched.predicates {
                 reads.borrow_mut().extend(predicate.reads.iter().cloned());
@@ -278,12 +278,13 @@ pub(super) fn scalar_plan(expression: &ExecutableExpressionV1, context: Evaluati
     Ok(Some(plan))
 }
 
-fn match_sum(
+pub(super) fn match_with_shared_prefix(
     predicates: &[ExecutableExpressionV1],
     configuration: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
     visits: &mut usize,
+    capture: bool,
 ) -> Result<Vec<(Matched, bool)>, ExecutableErrorV1> {
     fn independent_pattern(pattern: &ExecutableExpressionV1) -> bool {
         match pattern {
@@ -292,7 +293,6 @@ fn match_sum(
             _ => false,
         }
     }
-    let capture = context.reads.is_some();
     let prefix_len = predicates.iter().take_while(|predicate| matches!(predicate,
         ExecutableExpressionV1::RelationMatch(_, subject, value)
             if independent_pattern(subject) && independent_pattern(value))).count();
@@ -300,16 +300,20 @@ fn match_sum(
         return match_rule(predicates, configuration, arguments, context, visits, capture);
     };
     let (prefix, rest) = predicates.split_at(prefix_len);
+    let initial_visits = *visits;
     let cached = queries.borrow().prefixes.iter().find(|previous|
         previous.captured_reads == capture && previous.predicates == prefix)
         .map(|previous| {
-            *visits = previous.visits;
             if let Some(reads) = context.reads {
                 reads.borrow_mut().extend(previous.reads.iter().cloned());
             }
-            previous.matches.clone()
+            (previous.matches.clone(), previous.visits)
         });
-    let state = if let Some(cached) = cached { cached } else {
+    let state = if let Some((cached, count)) = cached {
+        *visits = visits.checked_add(count).ok_or(ExecutableErrorV1::ResourceLimit)?;
+        if *visits > MAX_JOIN_VISITS { return Err(ExecutableErrorV1::ResourceLimit); }
+        cached
+    } else {
         let reads = std::cell::RefCell::new(Vec::new());
         let state = match_rule_from(prefix, configuration, arguments,
             EvaluationContextV1 { reads: context.reads.map(|_| &reads), ..context },
@@ -322,7 +326,7 @@ fn match_sum(
         // immutable pre-state as sum results. Retain their logical work counts
         // and ordered rejection/read evidence so reuse cannot change limits.
         queries.borrow_mut().prefixes.push(SumPrefix {
-            predicates: prefix.to_vec(), matches: state.clone(), visits: *visits,
+            predicates: prefix.to_vec(), matches: state.clone(), visits: *visits - initial_visits,
             reads, captured_reads: capture,
         });
         state
@@ -982,6 +986,31 @@ mod sum_reuse_tests {
             assert!(actual.reads.iter().any(|read| matches!(read, ExecutableReadV1::RelationSearch(..))));
         }
         assert_eq!(queries.borrow().prefixes.len(), 2, "one join prefix per trace mode");
+        let E::Sum { predicates, .. } = &query else { unreachable!() };
+        let mut plain_visits = 11;
+        let mut shared_visits = 11;
+        for input in [1e16, 0.0, 1e16] {
+            let arguments = [number(input)];
+            let expected = match_rule(predicates, &configuration, &arguments, context, &mut plain_visits, true).unwrap();
+            let actual = match_with_shared_prefix(predicates, &configuration, &arguments, shared, &mut shared_visits, true).unwrap();
+            assert_eq!(shared_visits, plain_visits);
+            assert_eq!(actual.len(), expected.len());
+            for ((actual, accepted), (expected, expected_accepted)) in actual.iter().zip(&expected) {
+                assert_eq!(accepted, expected_accepted);
+                assert_eq!(actual.bindings, expected.bindings);
+                assert_eq!(actual.predicates.len(), expected.predicates.len());
+                for (actual, expected) in actual.predicates.iter().zip(&expected.predicates) {
+                    assert_eq!(actual.value, expected.value);
+                    assert_eq!(actual.reads, expected.reads);
+                }
+            }
+        }
+        for incoming_visits in [MAX_JOIN_VISITS - 1, MAX_JOIN_VISITS] {
+            let mut plain = incoming_visits;
+            let mut reused = incoming_visits;
+            assert!(matches!(match_rule(predicates, &configuration, &[number(1e16)], context, &mut plain, true), Err(ExecutableErrorV1::ResourceLimit)));
+            assert!(matches!(match_with_shared_prefix(predicates, &configuration, &[number(1e16)], shared, &mut reused, true), Err(ExecutableErrorV1::ResourceLimit)));
+        }
         let changed = [table(&[2.0, 3.0]).into(), table(&[1.0; 3]).into()];
         let next_queries = std::cell::RefCell::new(SumQueries::default());
         assert_eq!(evaluate(&query, &changed, &[number(1e16)],
