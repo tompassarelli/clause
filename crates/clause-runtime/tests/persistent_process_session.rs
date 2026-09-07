@@ -1881,7 +1881,7 @@ fn shipped_process_continuation_cwr1_is_exact() {
         .expect("generic continuation browser CWR1 fixture encodes");
     let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../browser/jump-arena-shell/fixtures/wasm-process-continuation-v1/",
+        "/../../test-vectors/browser/wasm-process-continuation-v1/",
         "process-continuation-v1.cwr1.hex"
     );
     if std::env::var_os("CLAUSE_UPDATE_BROWSER_PROCESS_CONTINUATION_CWR1").is_some() {
@@ -1891,7 +1891,7 @@ fn shipped_process_continuation_cwr1_is_exact() {
     }
     let tracked = decode_hex(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../browser/jump-arena-shell/fixtures/wasm-process-continuation-v1/",
+        "/../../test-vectors/browser/wasm-process-continuation-v1/",
         "process-continuation-v1.cwr1.hex"
     )));
     assert_eq!(tracked, exact);
@@ -1909,7 +1909,7 @@ fn shipped_ongoing_effect_cwr1_is_exact() {
         .expect("ongoing effect browser CWR1 fixture encodes");
     let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../browser/jump-arena-shell/fixtures/wasm-ongoing-effect-v1/",
+        "/../../test-vectors/browser/wasm-ongoing-effect-v1/",
         "ongoing-effect-v1.cwr1.hex"
     );
     if std::env::var_os("CLAUSE_UPDATE_BROWSER_ONGOING_EFFECT_CWR1").is_some() {

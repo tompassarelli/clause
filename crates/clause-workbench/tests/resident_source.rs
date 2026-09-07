@@ -2676,7 +2676,7 @@ fn tracked_browser_carrier_uses_the_generic_source_plan() {
     let current = decode_wasm_process_request_v1(&workbench.generation().cwr1)
         .expect("generated generic CWR1 decodes");
     let fixture_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../browser/jump-arena-shell/fixtures/wasm-generic-source-v1");
+        .join("../../test-vectors/browser/wasm-generic-source-v1");
     let fixture_path = fixture_root.join("generic-source-v1.cwr1.hex");
     if std::env::var_os("CLAUSE_UPDATE_BROWSER_GENERIC_SOURCE_CWR1").is_some() {
         std::fs::create_dir_all(&fixture_root).expect("generic browser fixture directory exists");
