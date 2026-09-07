@@ -63,6 +63,14 @@ fn relation_type(kind: CanonicalRelationValueKindV1) -> Result<ValueType> {
         }
     }
 }
+fn scalar_type(kind: CanonicalScalarValueKindV1) -> Result<ValueType> {
+    match kind {
+        CanonicalScalarValueKindV1::Number => Ok(ValueType::Number),
+        CanonicalScalarValueKindV1::Boolean => Ok(ValueType::Boolean),
+        CanonicalScalarValueKindV1::Text => Ok(ValueType::Text),
+        _ => unsupported("JavaScript callables require Text, Number, or Boolean types"),
+    }
+}
 fn name(bytes: &[u8]) -> Result<&str> {
     std::str::from_utf8(bytes)
         .map_err(|_| JavaScriptLoweringErrorV1("non-UTF-8 designation".into()))
@@ -147,7 +155,9 @@ impl Lowerer<'_> {
                     }
                     (Some(a), _) | (None, Some(a)) => a,
                     (None, None) => {
-                        return unsupported("argument type cannot be derived from checked operands");
+                        return unsupported(
+                            "argument type cannot be derived from checked operands",
+                        );
                     }
                 };
                 *entry = Some(kind);
@@ -598,12 +608,12 @@ pub fn lower_javascript_v1(
         .map(|(key, (slot, subject))| format!("[{},[{slot},{}]]", quote(key), referent(*subject)))
         .collect::<Vec<_>>()
         .join(",");
-    let module = format!(
+    let mut module = format!(
         "// Generated from checked Clause canonical executable IR.\n{RUNTIME}\nexport function createSession(){{\nlet state=[{}];\nvalidateContracts(state);\nconst referents=Object.freeze(Object.fromEntries([{reference_entries}]));\nconst projections=new Map([{projection_entries}]);\nconst handlers=Object.freeze(Object.fromEntries([{}]));\nreturn Object.freeze({{referents,handlers,read(subject,relation){{\nconst projection=projections.get(JSON.stringify([subject,relation]));\nif(!projection)fail(\"UnknownProjection\");\nconst [slot,subjectValue]=projection;\nconst table=state[slot];\nconst values=row(table,subjectValue);\nreturn table.cardinality===\"many\"?Object.freeze([...(values??[])]):values?.[0];\n}}}});\n}}\n",
         initial.join(","),
         handlers.join(",")
     );
-    let declarations = format!(
+    let mut declarations = format!(
         "export interface Referent<Domain extends number> {{ readonly domain: Domain; readonly identity: number; }}\nexport interface Session {{\n  readonly referents: {{ {} }};\n  readonly handlers: {{\n{}  }};\n{}}}\nexport declare function createSession(): Session;\n",
         refs.iter()
             .map(|(name, value)| format!(
@@ -616,6 +626,59 @@ pub fn lower_javascript_v1(
         handler_declarations.join(""),
         read_declarations.into_iter().collect::<String>()
     );
+    let mut export_names = BTreeSet::new();
+    if package.state_cells.is_empty() && package.executable_handlers.is_empty() {
+        module = format!("// Generated from checked Clause canonical executable IR.\n{RUNTIME}\n");
+        declarations.clear();
+    } else {
+        export_names.insert("createSession".to_string());
+    }
+    for (ordinal, callable) in package.callables.iter().enumerate() {
+        let designation = name(&callable.designation)?;
+        if callable.exported && !export_names.insert(designation.to_string()) {
+            return unsupported("duplicate JavaScript export name");
+        }
+        let types = callable
+            .arguments
+            .iter()
+            .map(|argument| scalar_type(argument.value_kind))
+            .collect::<Result<Vec<_>>>()?;
+        let result = scalar_type(callable.result_kind)?;
+        // Pure callables cannot access session state or rule-local bindings.
+        let mut pure = Lowerer {
+            slots: BTreeMap::new(),
+            tables: Vec::new(),
+            bindings: BTreeMap::new(),
+            arguments: types.iter().copied().map(Some).collect(),
+        };
+        let (expression, _) = pure.expression(&callable.expression, Some(result))?;
+        let validation = types
+            .iter()
+            .enumerate()
+            .map(|(index, kind)| format!("validate(args[{index}],{});\n", kind.descriptor()))
+            .collect::<String>();
+        module.push_str(&format!(
+            "function callable{ordinal}(...args){{\nif(args.length!=={})fail(\"ArgumentCount\");\n{validation}const result={expression};\nvalidate(result,{});\nreturn result;\n}}\n",
+            types.len(), result.descriptor(),
+        ));
+        if callable.exported {
+            let export = format!(
+                "export {{ callable{ordinal} as {} }};\n",
+                quote(designation)
+            );
+            module.push_str(&export);
+            declarations.push_str(&format!(
+                "declare function callable{ordinal}({}): {};\n{export}",
+                types
+                    .iter()
+                    .enumerate()
+                    .map(|(index, kind)| format!("arg{index}: {}", kind.declaration()))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                result.declaration()
+            ));
+        }
+    }
     Ok(JavaScriptArtifactsV1 {
         module,
         declarations,

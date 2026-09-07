@@ -167,3 +167,73 @@ fn unsupported_executable_ir_is_rejected_before_emitting_an_artifact() {
             .contains("RelationClosure")
     );
 }
+
+#[test]
+fn pure_callable_exports_source_name_and_checks_finite_arguments_and_results() {
+    let mut package = checked(include_bytes!(
+        "../../../test-vectors/authoring/pure-callable.clause"
+    ));
+    let mut divide = package.callables[0].clone();
+    divide.designation = b"quotient".to_vec();
+    divide.arguments.truncate(2);
+    for argument in &mut divide.arguments {
+        argument.value_kind = CanonicalScalarValueKindV1::Number;
+    }
+    divide.result_kind = CanonicalScalarValueKindV1::Number;
+    divide.expression = CanonicalExecutableExpressionV1::Divide(
+        Box::new(CanonicalExecutableExpressionV1::Argument(0)),
+        Box::new(CanonicalExecutableExpressionV1::Argument(1)),
+    );
+    package.callables.push(divide);
+    let directory = std::env::temp_dir().join(format!("clause-js-pure-{}", std::process::id()));
+    std::fs::create_dir(&directory).unwrap();
+    let artifacts = write_module(&directory, "pure.mjs", &package);
+    assert!(
+        artifacts
+            .declarations
+            .contains("export { callable0 as \"missing-leaf\" }")
+    );
+    assert!(
+        artifacts
+            .declarations
+            .contains("(arg0: string, arg1: string, arg2: string, arg3: string): string")
+    );
+    assert!(
+        artifacts
+            .declarations
+            .contains("(arg0: number, arg1: number): number")
+    );
+    assert!(!artifacts.declarations.contains("createSession"));
+    std::fs::write(directory.join("pure.d.ts"), artifacts.declarations).unwrap();
+    std::fs::write(directory.join("run.mjs"), r#"
+import { 'missing-leaf' as missingLeaf, quotient } from './pure.mjs';
+function assert(value){if(!value)throw Error('assertion failed');}
+function rejects(run,code){try{run();}catch(error){assert(error.message===code);return;}throw Error('expected '+code);}
+const actual=missingLeaf('module','enable','NAME','Enable a module');
+assert(actual==="firn: 'module enable' requires a leaf node\nUsage: firn module enable NAME\n  Enable a module\n");
+rejects(()=>missingLeaf('module',7,'NAME','Enable a module'),'TextDomain');
+rejects(()=>missingLeaf('module'),'ArgumentCount');
+assert(quotient(6,2)===3);
+rejects(()=>quotient(Infinity,2),'NumericDomain');
+rejects(()=>quotient(1,0),'NumericDomain');
+new Bun.Transpiler({loader:'ts'}).transformSync(await Bun.file(new URL('./pure.d.ts',import.meta.url)).text());
+console.log(actual);
+"#).unwrap();
+    let output = Command::new(std::env::var_os("CLAUSE_BUN").unwrap_or_else(|| "bun".into()))
+        .arg(directory.join("run.mjs"))
+        .output()
+        .expect("Bun must be available for the JavaScript backend check");
+    for name in ["pure.mjs", "pure.d.ts", "run.mjs"] {
+        std::fs::remove_file(directory.join(name)).unwrap();
+    }
+    std::fs::remove_dir(directory).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "firn: 'module enable' requires a leaf node\nUsage: firn module enable NAME\n  Enable a module\n\n"
+    );
+}
