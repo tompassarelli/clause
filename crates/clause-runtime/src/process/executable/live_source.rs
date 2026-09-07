@@ -81,8 +81,25 @@ impl ExecutablePhysicalPlanV1 {
         artifact: clause_package::CanonicalSourceArtifactIdV1,
         root: ProgramChangeOccurrenceId,
     ) -> Result<(), ExecutableErrorV1> {
+        let roles = self.program.projection.as_ref()
+            .ok_or(ExecutableErrorV1::MalformedProgram)?.bindings.iter()
+            .map(|binding| binding.role).collect::<Vec<_>>();
+        let lowered = lower_canonical_executable_program_v1(
+            scope, &package.state_cells, &package.executable_handlers, &roles,
+        )?;
+        self.bind_source_snapshot_with_states(scope, package, artifact, root, &lowered.states)
+    }
+
+    fn bind_source_snapshot_with_states(
+        &mut self,
+        scope: TermScope,
+        package: &clause_package::CanonicalSourcePackageSliceV1,
+        artifact: clause_package::CanonicalSourceArtifactIdV1,
+        root: ProgramChangeOccurrenceId,
+        states: &[ExecutableCanonicalStateBindingV1],
+    ) -> Result<(), ExecutableErrorV1> {
         let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SnapshotMetadata);
-        self.project_source_rows(scope, package)?;
+        self.project_source_rows(scope, package, states)?;
         let projection = self
             .program
             .projection
@@ -123,7 +140,7 @@ impl ExecutablePhysicalPlanV1 {
             projection.template.clone(),
         ])
         .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
-        self.source_metadata = Some(source_metadata(scope, package, artifact, &self.program)?);
+        self.source_metadata = Some(source_metadata(scope, package, artifact, states)?);
         Ok(())
     }
 }
@@ -132,22 +149,8 @@ fn source_metadata(
     scope: TermScope,
     package: &clause_package::CanonicalSourcePackageSliceV1,
     artifact: clause_package::CanonicalSourceArtifactIdV1,
-    program: &ExecutableProgramV1,
+    states: &[ExecutableCanonicalStateBindingV1],
 ) -> Result<Term, ExecutableErrorV1> {
-    let roles = program
-        .projection
-        .as_ref()
-        .ok_or(ExecutableErrorV1::MalformedProgram)?
-        .bindings
-        .iter()
-        .map(|binding| binding.role)
-        .collect::<Vec<_>>();
-    let lowered = lower_canonical_executable_program_v1(
-        scope,
-        &package.state_cells,
-        &package.executable_handlers,
-        &roles,
-    )?;
     let mut handlers = package.executable_handlers.iter().collect::<Vec<_>>();
     handlers.sort_by_key(|handler| handler.id);
     let mut rules = Vec::new();
@@ -194,8 +197,7 @@ fn source_metadata(
             ));
         }
     }
-    let states = lowered
-        .states
+    let states = states
         .iter()
         .map(|binding| {
             let state = &binding.state;
@@ -382,7 +384,7 @@ pub fn replay_canonical_executable_entry_layout_v1(
             scope,
             package,
             artifact,
-            &lowered.program,
+            &lowered.states,
         )?)
         || recorded.program.initial_configuration != lowered.program.initial_configuration
         || recorded.program.rules.len() < lowered.program.rules.len()
@@ -820,8 +822,8 @@ pub fn check_executable_source_edit_v1(
     }
     expected_old.project_referent_input_domains(scope)?;
     expected_new.project_referent_input_domains(scope)?;
-    expected_old.bind_source_snapshot(scope, &old, old_cst.artifact(), witness.old_root)?;
-    expected_new.bind_source_snapshot(scope, &new, edit.source().artifact(), witness.new_root)?;
+    expected_old.bind_source_snapshot_with_states(scope, &old, old_cst.artifact(), witness.old_root, &old_lowered.states)?;
+    expected_new.bind_source_snapshot_with_states(scope, &new, edit.source().artifact(), witness.new_root, &new_lowered.states)?;
     let _compare = source_profile_scope_v1(SourceProfilePhaseV1::CompareAndMap);
     if expected_old != old_plan {
         return Err(ExecutableErrorV1::SourceContinuityRejected(

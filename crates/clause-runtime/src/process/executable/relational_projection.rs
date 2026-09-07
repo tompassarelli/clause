@@ -33,6 +33,7 @@ impl ExecutablePhysicalPlanV1 {
         &mut self,
         scope: TermScope,
         package: &clause_package::CanonicalSourcePackageSliceV1,
+        states: &[ExecutableCanonicalStateBindingV1],
     ) -> Result<(), ExecutableErrorV1> {
         let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RowProjection);
         if package.relational_projection.is_empty() {
@@ -43,19 +44,7 @@ impl ExecutablePhysicalPlanV1 {
             .projection
             .as_mut()
             .ok_or(ExecutableErrorV1::MalformedProgram)?;
-        let roles = projection
-            .bindings
-            .iter()
-            .map(|binding| binding.role)
-            .collect::<Vec<_>>();
-        let lowered = lower_canonical_executable_program_v1(
-            scope,
-            &package.state_cells,
-            &package.executable_handlers,
-            &roles,
-        )?;
-        let bindings = lowered
-            .states
+        let bindings = states
             .iter()
             .map(|binding| (&binding.state, binding))
             .collect::<BTreeMap<_, _>>();
