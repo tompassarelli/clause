@@ -172,6 +172,7 @@ struct SumQuery {
     inputs: Vec<ExecutableValueV1>,
     result: ExecutableValueV1,
     reads: Vec<ExecutableReadV1>,
+    captured_reads: bool,
 }
 
 pub(super) fn sum(
@@ -186,7 +187,8 @@ pub(super) fn sum(
         .collect::<Result<Vec<_>, _>>()?;
     if let Some(queries) = context.sum_queries {
         if let Some(previous) = queries.borrow().entries.iter().find(|previous|
-            previous.predicates == predicates && previous.contribution == *value && previous.inputs == inputs) {
+            previous.predicates == predicates && previous.contribution == *value && previous.inputs == inputs
+                && previous.captured_reads == context.reads.is_some()) {
             if let Some(reads) = context.reads {
                 reads.borrow_mut().extend(previous.reads.iter().cloned());
             }
@@ -195,7 +197,7 @@ pub(super) fn sum(
     }
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumQuery);
     let query_reads = std::cell::RefCell::new(Vec::new());
-    let query_context = EvaluationContextV1 { reads: Some(&query_reads), ..context };
+    let query_context = EvaluationContextV1 { reads: context.reads.map(|_| &query_reads), ..context };
     let mut visits = 0;
     let mut total = 0.0;
     for (matched, accepted) in match_rule(predicates, configuration, &inputs,
@@ -222,7 +224,7 @@ pub(super) fn sum(
     if let Some(queries) = context.sum_queries {
         queries.borrow_mut().entries.push(SumQuery {
             predicates: predicates.to_vec(), contribution: value.clone(), inputs,
-            result: result.clone(), reads: query_reads,
+            result: result.clone(), reads: query_reads, captured_reads: context.reads.is_some(),
         });
     }
     Ok(result)
@@ -843,6 +845,19 @@ mod sum_reuse_tests {
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
             step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
         let expected = evaluate_with_reads(&sum, &configuration, &[], context).unwrap();
+        let queries = std::cell::RefCell::new(SumQueries::default());
+        let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
+        for _ in 0..2 {
+            assert_eq!(evaluate(&sum, &configuration, &[], shared).unwrap(), expected.value);
+            assert_eq!(queries.borrow().entries.len(), 1);
+            assert!(queries.borrow().entries[0].reads.is_empty());
+        }
+        let traced = evaluate_with_reads(&sum, &configuration, &[], shared).unwrap();
+        assert_eq!(traced.value, expected.value);
+        assert_eq!(traced.reads, expected.reads);
+        assert!(!traced.reads.is_empty());
+        assert_eq!(queries.borrow().entries.len(), 2);
+
         let mut repeated = sum.clone();
         for _ in 1..8 {
             repeated = ExecutableExpressionV1::Add(Box::new(repeated), Box::new(sum.clone()));
