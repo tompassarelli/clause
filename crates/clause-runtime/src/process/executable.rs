@@ -37,6 +37,7 @@ mod explanation;
 pub use explanation::*;
 mod relational;
 mod evaluation_cache;
+mod scalar_reuse;
 mod closure;
 pub use relational::ExecutableRelationEffectV1;
 mod relational_projection;
@@ -5870,7 +5871,7 @@ fn materialize_initial_configuration(
 ) -> Result<Vec<ExecutableSlotV1>, ExecutableErrorV1> {
     let base = materialize_base_configuration(program)?;
     let closed = closure::close(program, &base, EvaluationContextV1 {
-        allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None, sum_queries: None,
+        allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None, sum_queries: None, scalar_memo: None,
         bindings: None, relational_occurrence: None,
     }, None)?;
     relational::validate_contracts(&closed)?;
@@ -6336,11 +6337,24 @@ struct EvaluationContextV1<'a> {
     step_ordinal: u64,
     reads: Option<&'a std::cell::RefCell<Vec<ExecutableReadV1>>>,
     sum_queries: Option<&'a std::cell::RefCell<relational::SumQueries>>,
+    scalar_memo: Option<&'a scalar_reuse::ScalarMemo<'a>>,
     bindings: Option<&'a BTreeMap<u16, ExecutableValueV1>>,
     relational_occurrence: Option<&'a relational::LazyOccurrenceIdentity<'a>>,
 }
 
 fn evaluate(
+    expression: &ExecutableExpressionV1,
+    slots: &[ExecutableSlotV1],
+    arguments: &[ExecutableValueV1],
+    context: EvaluationContextV1,
+) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    if context.reads.is_none() && let Some(memo) = context.scalar_memo {
+        return memo.evaluate(expression, slots, arguments, context);
+    }
+    evaluate_uncached(expression, slots, arguments, context)
+}
+
+fn evaluate_uncached(
     expression: &ExecutableExpressionV1,
     slots: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
@@ -7452,7 +7466,7 @@ impl StepEvaluator<'_> {
             allocation_root: self.allocation_root,
             step_ordinal,
             reads: None,
-            sum_queries: None,
+            sum_queries: None, scalar_memo: None,
             bindings: None,
             relational_occurrence: None,
         };

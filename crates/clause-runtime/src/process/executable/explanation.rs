@@ -971,7 +971,7 @@ impl ExecutableProcessRuntimeV1 {
             allocation_root: self.allocation.root,
             step_ordinal: recorded.step_ordinal,
             reads: None,
-            sum_queries: None,
+            sum_queries: None, scalar_memo: None,
             bindings: None,
             relational_occurrence: None,
         };

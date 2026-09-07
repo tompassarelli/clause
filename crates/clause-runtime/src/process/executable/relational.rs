@@ -165,6 +165,7 @@ pub(super) struct Matched {
 pub(super) struct SumQueries {
     entries: Vec<SumQuery>,
     prefixes: Vec<SumPrefix>,
+    scalar_plans: Vec<Arc<scalar_reuse::ScalarPlan>>,
 }
 
 struct SumPrefix {
@@ -658,14 +659,25 @@ fn match_rule_from(
             }
             active = next.into_values().collect();
         } else {
+            let plan = if !capture && let Some(queries) = context.sum_queries {
+                let mut queries = queries.borrow_mut();
+                let existing = queries.scalar_plans.iter().find(|plan| plan.expression.as_ref() == predicate).cloned();
+                Some(if let Some(existing) = existing { existing } else {
+                    let plan = Arc::new(scalar_reuse::ScalarPlan::new(predicate)?);
+                    queries.scalar_plans.push(plan.clone());
+                    plan
+                })
+            } else { None };
             let mut next = Vec::new();
             for mut matched in active {
+                let memo = plan.as_ref().map(|plan| plan.memo());
                 let evaluated = evaluate_for_trace(
-                    predicate,
+                    plan.as_ref().map_or(predicate, |plan| plan.expression.as_ref()),
                     configuration,
                     arguments,
                     EvaluationContextV1 {
                         bindings: Some(&matched.bindings),
+                        scalar_memo: memo.as_ref(),
                         ..context
                     },
                     capture,
@@ -928,7 +940,7 @@ mod sum_reuse_tests {
             value: Box::new(E::Binding(1)),
         };
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
-            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+            step_ordinal: 0, reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         let queries = std::cell::RefCell::new(SumQueries::default());
         let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
         for (input, result) in [(1e16, 0.0), (0.0, -1e16), (1e16, 0.0)] {
@@ -969,7 +981,7 @@ mod sum_reuse_tests {
             value: Box::new(E::Constant(ExecutableValueV1::number(1.0).unwrap())),
         };
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
-            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+            step_ordinal: 0, reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         for capture in [false, true] {
             let queries = std::cell::RefCell::new(SumQueries::default());
             let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
@@ -1014,7 +1026,7 @@ mod sum_reuse_tests {
             value: Box::new(E::Constant(number(1.0))),
         };
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
-            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+            step_ordinal: 0, reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         let expected = [1.0, 2.0].map(|input|
             evaluate_with_reads(&query, &configuration, &[number(input)], context).unwrap());
         assert_eq!(expected[0].value, number(3.0));
@@ -1065,7 +1077,7 @@ mod sum_reuse_tests {
             value: Box::new(ExecutableExpressionV1::Binding(1)),
         };
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
-            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+            step_ordinal: 0, reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         let expected = evaluate_with_reads(&sum, &configuration, &[], context).unwrap();
         let queries = std::cell::RefCell::new(SumQueries::default());
         let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
@@ -1127,7 +1139,7 @@ mod match_ownership_tests {
         use ExecutableExpressionV1 as E;
         let bindings = BTreeMap::from([(3, ExecutableValueV1::text("bound text").unwrap())]);
         let context = EvaluationContextV1 { allocation_root: [17; IDENTITY_BYTES],
-            step_ordinal: 19, reads: None, sum_queries: None, bindings: Some(&bindings), relational_occurrence: None };
+            step_ordinal: 19, reads: None, sum_queries: None, scalar_memo: None, bindings: Some(&bindings), relational_occurrence: None };
         let identity = LazyOccurrenceIdentity::new(context, 23, &bindings);
         let evaluation = EvaluationContextV1 { relational_occurrence: Some(&identity), ..context };
         let fresh = E::FreshReferent { domain: 29, binder: 31 };
@@ -1170,7 +1182,7 @@ mod match_ownership_tests {
             E::Constant(ExecutableValueV1::Boolean(false)),
         ];
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
-            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+            step_ordinal: 0, reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         for capture in [false, true] {
             let mut visits = 0;
             assert!(matches!(match_rule(&predicates, &configuration, &[], context,
@@ -1196,7 +1208,7 @@ mod match_ownership_tests {
             Box::new(ExecutableExpressionV1::Binding(0)));
         let results = match_rule(&[predicate], &[ExecutableValueV1::RelationTable(table).into()], &[],
             EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
-                reads: None, sum_queries: None, bindings: None, relational_occurrence: None }, &mut 0, true).unwrap();
+                reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None }, &mut 0, true).unwrap();
         assert_eq!(results.len(), 1);
         let (matched, accepted) = &results[0];
         assert!(!accepted);
