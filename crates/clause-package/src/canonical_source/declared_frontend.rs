@@ -3,8 +3,8 @@
 //! The Clause source beside this module owns the focused-edge Readings. This
 //! Rust module is the generic bootstrap that evaluates those Readings against
 //! lossless line slices and projects their explicit role bindings into the
-//! resident checker's application carrier. It contains no production-name or
-//! source-keyword dispatch.
+//! resident checker's application carrier. Consumer-declared transition
+//! sentences instantiate ordinary checked clauses without domain dispatch.
 
 use super::*;
 
@@ -14,6 +14,14 @@ pub const DECLARED_FOCUSED_FRONTEND_SOURCE_V1: &[u8] = include_bytes!("focused_f
 pub struct CanonicalDeclaredFrontendV1 {
     exact_source: Box<[u8]>,
     readings: Vec<DeclaredReading>,
+    transitions: Vec<DeclaredTransition>,
+}
+
+#[derive(Clone, Debug)]
+struct DeclaredTransition {
+    pattern: Vec<RelationReadingPartCst>,
+    body: Vec<LogicalSourceLine>,
+    locals: BTreeMap<Vec<u8>, String>,
 }
 
 #[derive(Clone, Debug)]
@@ -45,6 +53,97 @@ enum DeclaredSurface {
 }
 
 impl CanonicalDeclaredFrontendV1 {
+    pub(super) fn with_transition_readings(
+        &self,
+        artifact: CanonicalSourceArtifactIdV1,
+        lines: &[SourceLine<'_>],
+    ) -> Result<Self, CanonicalSourceErrorV1> {
+        let mut frontend = self.clone();
+        if !lines.iter().any(|line| line.indent == 0 && line.text.starts_with("reading ")) {
+            return Ok(frontend);
+        }
+        let mut occupied = BTreeSet::new();
+        for line in lines {
+            for token in input_tokens(line.text)? {
+                if let Some((name, _)) = binding_token(&line.text[token.start..token.end]) {
+                    occupied.insert(name.to_owned());
+                }
+            }
+        }
+        let mut cursor = 0;
+        while cursor < lines.len() {
+            let head = lines[cursor];
+            cursor += 1;
+            let Some(pattern) = head.text.strip_prefix("reading ").filter(|_| head.indent == 0) else {
+                continue;
+            };
+            let start = cursor - 1;
+            while cursor < lines.len()
+                && (lines[cursor].indent > 0 || lines[cursor].text.trim().is_empty())
+            {
+                cursor += 1;
+            }
+            let origin = block_origin(artifact, &lines[start..cursor]);
+            let pattern = parse_relation_reading(pattern, origin)?;
+            let mut parameters = BTreeSet::new();
+            let mut literal = false;
+            for part in &pattern {
+                match part {
+                    RelationReadingPartCst::Literal(_) => literal = true,
+                    RelationReadingPartCst::Role(role) => {
+                        if !parameters.insert(role.clone()) {
+                            return Err(CanonicalSourceErrorV1::InvalidDeclaredFrontend { origin });
+                        }
+                    }
+                }
+            }
+            if !literal || parameters.is_empty() {
+                return Err(CanonicalSourceErrorV1::InvalidDeclaredFrontend { origin });
+            }
+            let body = logical_source_lines(artifact, &lines[start + 1..cursor])?
+                .into_iter().filter(|line| !line.text.is_empty()).collect::<Vec<_>>();
+            let mut sections = BTreeSet::new();
+            let mut used = BTreeSet::new();
+            for line in &body {
+                if line.indent == 2 {
+                    if !matches!(line.text.as_str(), "when" | "create" | "withdraw" | "include" | "accumulate")
+                        || !sections.insert(line.text.clone())
+                    {
+                        return Err(CanonicalSourceErrorV1::InvalidDeclaredFrontend { origin: line.origin });
+                    }
+                } else if line.indent < 4 || sections.is_empty() {
+                    return Err(CanonicalSourceErrorV1::InvalidDeclaredFrontend { origin: line.origin });
+                }
+                for token in input_tokens(&line.text)? {
+                    if let Some((name, _)) = binding_token(&line.text[token.start..token.end]) {
+                        used.insert(name.as_bytes().to_vec());
+                    }
+                }
+            }
+            if !parameters.is_subset(&used)
+                || !sections.iter().any(|section| matches!(section.as_str(), "withdraw" | "include" | "accumulate"))
+            {
+                return Err(CanonicalSourceErrorV1::InvalidDeclaredFrontend { origin });
+            }
+            // These names only bridge the lossless CST to checked binder identities.
+            // Freshness is against the entire consumer source, including call sites.
+            let mut locals = BTreeMap::new();
+            for local in used.difference(&parameters) {
+                let mut ordinal = 0;
+                loop {
+                    let fresh = format!("reading-local-{ordinal}");
+                    if occupied.insert(fresh.clone()) {
+                        locals.insert(local.clone(), format!("?{fresh}"));
+                        break;
+                    }
+                    ordinal += 1;
+                }
+            }
+            frontend.transitions.push(DeclaredTransition { pattern, body, locals });
+        }
+        Ok(frontend)
+    }
+
     pub fn read(exact_source: &[u8]) -> Result<Self, CanonicalSourceErrorV1> {
         let source =
             std::str::from_utf8(exact_source).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
@@ -105,6 +204,7 @@ impl CanonicalDeclaredFrontendV1 {
         Ok(Self {
             exact_source: exact_source.into(),
             readings,
+            transitions: Vec::new(),
         })
     }
 
@@ -120,6 +220,7 @@ impl CanonicalDeclaredFrontendV1 {
         let object = b"object".to_vec();
         Self {
             exact_source: Box::new([]),
+            transitions: Vec::new(),
             readings: vec![DeclaredReading {
                 pattern: vec![
                     RelationReadingPartCst::Role(relation.clone()),
@@ -295,6 +396,62 @@ impl CanonicalDeclaredFrontendV1 {
         render_parts(if matched.complete_prefix { reading.object_prefix_pattern() }
             else { reading.prefix_pattern() }, &matched.bindings)
     }
+}
+
+fn binding_token(token: &str) -> Option<(&str, &str)> {
+    let parameter = token.strip_prefix('?')?;
+    let end = parameter.find('.').unwrap_or(parameter.len());
+    Some((&parameter[..end], &parameter[end..]))
+}
+
+/// Instantiate one declared transition into the existing checked clause carrier.
+/// The invocation supplies only explicit captures; other bindings are local.
+pub(super) fn handler_lines(
+    lines: Vec<LogicalSourceLine>,
+    frontend: &CanonicalDeclaredFrontendV1,
+    environment: &ScalarLawEnvironment,
+) -> Result<Vec<LogicalSourceLine>, CanonicalSourceErrorV1> {
+    let meaningful = lines.iter().filter(|line| !line.text.is_empty()).collect::<Vec<_>>();
+    if let [header, invocation] = meaningful.as_slice()
+        && header.text.starts_with("on ") && invocation.indent == 2
+    {
+        let mut matches = Vec::new();
+        let tokens = input_tokens(&invocation.text)?;
+        for (index, transition) in frontend.transitions.iter().enumerate() {
+            let mut bindings = Vec::new();
+            match_parts(&invocation.text, &tokens, &transition.pattern, 0, 0,
+                &mut BTreeMap::new(), &mut bindings);
+            matches.extend(bindings.into_iter().map(|bindings| (index, bindings)));
+        }
+        if matches.len() > 1 {
+            return Err(CanonicalSourceErrorV1::AmbiguousDeclaredProduction { origin: invocation.origin });
+        }
+        if let Some((index, mut bindings)) = matches.pop() {
+            let transition = &frontend.transitions[index];
+            bindings.extend(transition.locals.clone());
+            let mut expanded = vec![(*header).clone()];
+            for line in &transition.body {
+                let mut text = String::new();
+                let mut cursor = 0;
+                for token in input_tokens(&line.text)? {
+                    text.push_str(&line.text[cursor..token.start]);
+                    let spelling = &line.text[token.start..token.end];
+                    if let Some((name, suffix)) = binding_token(spelling) {
+                        text.push_str(bindings.get(name.as_bytes())
+                            .ok_or(CanonicalSourceErrorV1::InvalidDeclaredFrontend { origin: line.origin })?);
+                        text.push_str(suffix);
+                    } else {
+                        text.push_str(spelling);
+                    }
+                    cursor = token.end;
+                }
+                text.push_str(&line.text[cursor..]);
+                expanded.push(LogicalSourceLine { text, ..line.clone() });
+            }
+            return patterns::handler_lines(expanded, frontend, environment);
+        }
+    }
+    patterns::handler_lines(lines, frontend, environment)
 }
 
 impl DeclaredReading {

@@ -1,0 +1,21 @@
+F64
+Meter
+
+amount
+  domain: Meter
+  range: F64
+  cardinality: one
+
+meter
+  amount: 2.0
+
+reading ?item gains ?increment
+  when
+    ?item amount ?prior
+  withdraw
+    ?item amount ?prior
+  include
+    ?item amount ?prior + ?increment
+
+on add ?prior
+  ?prior gains 3.0
