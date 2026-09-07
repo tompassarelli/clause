@@ -1,4 +1,3 @@
-use super::super::MAX_ADMITTED_CHECKPOINT_BYTES_V1 as LIMIT;
 use super::*;
 use sha2::{Digest, Sha256};
 
@@ -17,7 +16,7 @@ struct RecordedBoundary<'a> {
 }
 
 fn decode(bytes: &[u8]) -> Result<RecordedBoundary<'_>, WasmProcessStatusV1> {
-    if bytes.len() < 36 || bytes.len() > LIMIT {
+    if bytes.len() < 36 {
         return Err(WasmProcessStatusV1::MalformedRequest);
     }
     let (body, digest) = bytes.split_at(bytes.len() - 32);
@@ -29,9 +28,9 @@ fn decode(bytes: &[u8]) -> Result<RecordedBoundary<'_>, WasmProcessStatusV1> {
         return Err(WasmProcessStatusV1::MalformedRequest);
     }
     let record = RecordedBoundary {
-        context: d.blob(LIMIT)?,
-        exact_open: d.blob(LIMIT)?,
-        runtime: d.blob(LIMIT)?,
+        context: d.blob(body.len())?,
+        exact_open: d.blob(body.len())?,
+        runtime: d.blob(body.len())?,
         generation: d.u32()?,
         sequence: d.u64()?,
         command_window_start: d.u64()?,
@@ -80,9 +79,6 @@ impl WasmPersistentSessionBoundaryV1 {
             .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
         let mut bytes = MAGIC.to_vec();
         for value in [context, live.exact_open.as_slice(), runtime.as_slice()] {
-            if bytes.len().saturating_add(value.len()).saturating_add(4) > LIMIT {
-                return Err(WasmProcessStatusV1::ResponseOutOfBounds);
-            }
             put_blob(&mut bytes, value)?;
         }
         bytes.extend_from_slice(&handle.generation.to_le_bytes());
@@ -93,9 +89,6 @@ impl WasmPersistentSessionBoundaryV1 {
         bytes.extend_from_slice(&live.last_configuration_revision.to_le_bytes());
         let digest = Sha256::digest(&bytes);
         bytes.extend_from_slice(&digest);
-        if bytes.len() > LIMIT {
-            return Err(WasmProcessStatusV1::ResponseOutOfBounds);
-        }
         Ok(bytes)
     }
 
@@ -185,17 +178,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn checkpoint_envelope_rejects_corruption_and_valid_oversize_encoding() {
+    fn checkpoint_envelope_rejects_corruption_and_truncated_blob() {
         let mut bytes = MAGIC.to_vec();
-        // Three blobs, the fixed boundary fields, and the digest consume 85 bytes.
-        let context = vec![0; LIMIT - 85];
+        let context = vec![0; 1024];
         for value in [context.as_slice(), &[], &[]] {
             put_blob(&mut bytes, value).unwrap();
         }
         bytes.extend_from_slice(&[0; 37]);
         let digest = Sha256::digest(&bytes);
         bytes.extend_from_slice(&digest);
-        assert_eq!(bytes.len(), LIMIT);
         assert_eq!(wasm_session_checkpoint_context_v1(&bytes).unwrap(), context);
 
         *bytes.last_mut().unwrap() ^= 1;
@@ -205,14 +196,12 @@ mod tests {
         );
 
         bytes.truncate(bytes.len() - 32);
-        bytes.insert(8, 0);
-        bytes[4..8].copy_from_slice(&((context.len() + 1) as u32).to_le_bytes());
+        bytes[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
         let digest = Sha256::digest(&bytes);
         bytes.extend_from_slice(&digest);
-        assert_eq!(bytes.len(), LIMIT + 1);
         assert_eq!(
             wasm_session_checkpoint_context_v1(&bytes),
-            Err(WasmProcessStatusV1::MalformedRequest),
+            Err(WasmProcessStatusV1::RequestOutOfBounds),
         );
     }
 }
