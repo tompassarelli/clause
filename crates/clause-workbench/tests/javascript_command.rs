@@ -82,3 +82,41 @@ assert.equal(unusedFailure(2), 'unused');
     std::fs::remove_file(runner).unwrap();
     std::fs::remove_dir(output_dir).unwrap();
 }
+
+#[test]
+fn compiled_foreign_procedure_reads_real_argv_and_writes_stderr() {
+    let output_dir =
+        std::env::temp_dir().join(format!("clause-js-foreign-command-{}", std::process::id()));
+    std::fs::create_dir(&output_dir).unwrap();
+    let module = output_dir.join("foreign-cli.js");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../test-vectors/authoring/foreign-cli.clause");
+    let compiled = Command::new(env!("CARGO_BIN_EXE_clause-workbench"))
+        .arg("compile-js")
+        .arg(source)
+        .arg(&module)
+        .output()
+        .unwrap();
+    assert!(compiled.status.success(), "{compiled:?}");
+    let runner = output_dir.join("run.mjs");
+    std::fs::write(
+        &runner,
+        "import { run } from './foreign-cli.js';\nprocess.exitCode = run();\n",
+    )
+    .unwrap();
+    let result = Command::new(std::env::var_os("BUN").unwrap_or_else(|| "bun".into()))
+        .arg(&runner)
+        .args(["module", "add"])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(1), "{result:?}");
+    assert!(result.stdout.is_empty(), "{result:?}");
+    assert_eq!(
+        result.stderr,
+        b"firn: 'module add' requires a leaf node\nUsage: firn module add <name>\n  scaffold a minimal module (.bnix + .nix)\n"
+    );
+    for path in [&module, &module.with_extension("d.ts"), &runner] {
+        std::fs::remove_file(path).unwrap();
+    }
+    std::fs::remove_dir(output_dir).unwrap();
+}

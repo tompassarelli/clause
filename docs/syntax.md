@@ -297,14 +297,69 @@ export greeting(?name: Text): Text
 The body returns its value without introducing world state. `export` selects
 public visibility; omitting it keeps the callable private. The compiler retains
 the relation, mode, definition, and export as separate semantic emissions.
-The current subset accepts `Text`, `F64`, and `Bool` arguments and results, with
-checked pure scalar expressions. Effects, unresolved bindings, and mismatched
-argument or result types reject.
+Scalar argument and result types are `Text`, `F64`, and `Bool`. Effects,
+unresolved bindings, and mismatched argument or result types reject in a pure
+callable.
 
 Text interpolation inside a callable body evaluates the enclosed Clause
 expression and requires Text; it performs no implicit numeric conversion.
 Ordinary source text outside these callable bodies retains literal braces.
-The compact callable subset does not yet support calling other callables.
+Callables may invoke named pure callables in the same source scope, including
+later definitions. Each argument is checked and evaluated once before the body;
+an unused argument can still fail. Conditional expressions evaluate only their
+selected branch. Cycles and exhausted expansion bounds reject explicitly.
+
+Callable value contracts also admit `Sequence<T>` and named structural Shapes.
+A sequence preserves order and repeated equal values. Record values spell each
+declared field once, as in `{message: "Missing name", status: 1}`; missing,
+extra, or mistyped fields reject. The same recursive element and field contracts
+check exported arguments, results, and foreign crossings. Equality compares
+sequence elements in order and record fields structurally.
+
+`?reply.message` projects the declared `message` field. `drop(sequence, count)`
+returns the ordered suffix after a nonnegative integer count.
+`require(condition, value, message)` evaluates the Bool condition first; success
+evaluates and returns the value, while rejection evaluates the Text message and
+fails. Both alternatives are checked.
+
+A foreign declaration identifies one actual module member and its checked
+contract:
+
+```clause
+foreign arguments(): Sequence<Text>
+  get: "argv"
+  from: "node:process"
+  failure: throw
+
+foreign write-output(?fd: F64, ?message: Text): F64
+  call: "writeSync"
+  from: "node:fs"
+  failure: throw
+```
+
+`get` reads a member without arguments; `call` invokes it with the declared
+arguments. Module and member names are inert foreign identifiers. The explicit
+`throw` contract permits an attempt to fail; it promises neither success nor
+rollback. Ordinary callables reject foreign operations and calls to procedures.
+`procedure` selects an effect-permitting direction. Source checking retains
+unresolved native foreign obligations; invoking one without a binding rejects.
+JavaScript lowering binds the exact declared member and checks values crossing
+that boundary. Exported declarations describe the same checked public types;
+they do not import or emulate the TypeScript type system.
+
+A procedure body sequences its expression lines and returns the last value.
+Each preceding expression evaluates exactly once before the next one. A wrapped
+expression continues on more-indented lines:
+
+```clause
+procedure deliver(?outcome: DispatchError): F64
+  write-output(2, ?outcome.message)
+  ?outcome.status
+```
+
+The mode's foreign-access contract is derived from the same checked body,
+including composed calls. An effectful direction cannot acquire a pure function
+contract merely because it has no state delta or governed effect intent.
 
 A law binds variables in premises before using them in conclusions:
 

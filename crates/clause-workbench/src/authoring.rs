@@ -22,6 +22,18 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/pure-callable.clause"),
     },
     AuthoringExampleV1 {
+        slug: "pure-composition",
+        title: "Typed callable composition",
+        summary: "A callable can invoke another checked pure callable in its source scope, including a later definition. Arguments evaluate once before the body; an unused argument may still fail. Conditional branches remain lazy, and private definitions remain private in generated JavaScript.",
+        source: include_str!("../../../test-vectors/authoring/pure-composition.clause"),
+    },
+    AuthoringExampleV1 {
+        slug: "foreign-cli",
+        title: "Ordered arguments and typed foreign procedures",
+        summary: "Sequences preserve order and repeated values; named record contracts check each field. Pure dispatch composes a typed message and status. Explicit foreign declarations identify the actual module/member, input/output types and throwing failure contract; procedures permit those accesses. Native invocation without a foreign binding rejects. This executable comparison covers only the existing firn module-add missing-name branch.",
+        source: include_str!("../../../test-vectors/authoring/foreign-cli.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "command-text",
         title: "Typed command arguments and selected Text output",
         summary: "`run-text SOURCE.clause HANDLER SUBJECT ROLE [TEXT ...]` passes each argument as one exact Text value to a checked handler and prints the selected source-owned Text field after admission. Arity, type, execution and projection failures produce no output. Arguments are not split or evaluated as source.",

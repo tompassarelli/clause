@@ -21,6 +21,57 @@ export missing-leaf(?node: Text, ?edge: Text, ?leaf: Text, ?summary: Text): Text
   "firn: '{?node} {?edge}' requires a leaf node\nUsage: firn {?node} {?edge} {?leaf}\n  {?summary}\n"
 ```
 
+## Typed callable composition
+
+A callable can invoke another checked pure callable in its source scope, including a later definition. Arguments evaluate once before the body; an unused argument may still fail. Conditional branches remain lazy, and private definitions remain private in generated JavaScript.
+
+Catalog ID: `pure-composition`
+
+```clause
+export missing-command(?node: Text, ?edge: Text): Text
+  if(?edge = "add", missing-leaf(?node, ?edge, "<name>", "Add a module"), "")
+
+missing-leaf(?node: Text, ?edge: Text, ?leaf: Text, ?summary: Text): Text
+  "firn: '{?node} {?edge}' requires a leaf node\nUsage: firn {?node} {?edge} {?leaf}\n  {?summary}\n"
+```
+
+## Ordered arguments and typed foreign procedures
+
+Sequences preserve order and repeated values; named record contracts check each field. Pure dispatch composes a typed message and status. Explicit foreign declarations identify the actual module/member, input/output types and throwing failure contract; procedures permit those accesses. Native invocation without a foreign binding rejects. This executable comparison covers only the existing firn module-add missing-name branch.
+
+Catalog ID: `foreign-cli`
+
+```clause
+DispatchError:
+  message: Text
+  status: F64
+
+missing-leaf(?node: Text, ?edge: Text, ?leaf: Text, ?summary: Text): Text
+  "firn: '{?node} {?edge}' requires a leaf node\nUsage: firn {?node} {?edge} {?leaf}\n  {?summary}\n"
+
+foreign arguments(): Sequence<Text>
+  get: "argv"
+  from: "node:process"
+  failure: throw
+
+foreign write-output(?fd: F64, ?message: Text): F64
+  call: "writeSync"
+  from: "node:fs"
+  failure: throw
+
+export dispatch(?args: Sequence<Text>): DispatchError
+  require(?args = ["module", "add"],
+    {message: missing-leaf("module", "add", "<name>", "scaffold a minimal module (.bnix + .nix)"), status: 1},
+    "This comparison covers firn module add without a leaf")
+
+procedure deliver(?outcome: DispatchError): F64
+  write-output(2, ?outcome.message)
+  ?outcome.status
+
+export procedure run(): F64
+  deliver(dispatch(drop(arguments(), 2)))
+```
+
 ## Typed command arguments and selected Text output
 
 `run-text SOURCE.clause HANDLER SUBJECT ROLE [TEXT ...]` passes each argument as one exact Text value to a checked handler and prints the selected source-owned Text field after admission. Arity, type, execution and projection failures produce no output. Arguments are not split or evaluated as source.
