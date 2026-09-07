@@ -95,12 +95,12 @@ fn foreign_modules(expression: &CanonicalExecutableExpressionV1, modules: &mut B
             modules.insert(binding.module.clone());
             for value in arguments { foreign_modules(value, modules); }
         }
-        E::Let { value, body, .. } => { foreign_modules(value, modules); foreign_modules(body, modules); }
+        E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => { foreign_modules(value, modules); foreign_modules(body, modules); }
         E::Sequence(values) => { for value in values { foreign_modules(value, modules); } }
         E::Record(fields) => { for value in fields.values() { foreign_modules(value, modules); } }
-        E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
+        E::SequenceJoin(a,b) | E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
         E::Require(a,b,c) | E::Conditional(a,b,c) => { foreign_modules(a,modules); foreign_modules(b,modules); foreign_modules(c,modules); }
-        E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
+        E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
         _ => {}
     }
 }
@@ -197,6 +197,31 @@ impl Lowerer<'_> {
                     emitted.push(format!("[{},{}]", quote(name(key)?), value));
                 }
                 (format!("Object.freeze(Object.fromEntries([{}]))", emitted.join(",")), ValueType::Record(kinds))
+            }
+            E::SequenceMap { binding, source, body } => {
+                let (source, ValueType::Sequence(element)) = self.expression(source, None)? else { return unsupported("mapping requires a sequence"); };
+                let previous = self.bindings.insert(*binding, *element);
+                let wanted = match &expected { Some(ValueType::Sequence(element)) => Some(element.as_ref().clone()), _ => None };
+                let result = self.expression(body, wanted);
+                if let Some(previous) = previous { self.bindings.insert(*binding, previous); }
+                else { self.bindings.remove(binding); }
+                let (body, kind) = result?;
+                (format!("Object.freeze(({source}).map((b{binding})=>({body})))"), ValueType::Sequence(Box::new(kind)))
+            }
+            E::SequenceCount(value) => {
+                let (value, kind) = self.expression(value, None)?;
+                if !matches!(kind, ValueType::Sequence(_)) { return unsupported("count requires a sequence"); }
+                (format!("({value}).length"), ValueType::Number)
+            }
+            E::SequenceJoin(value, separator) => {
+                let (value, _) = self.expression(value, Some(ValueType::Sequence(Box::new(ValueType::Text))))?;
+                let (separator, _) = self.expression(separator, Some(ValueType::Text))?;
+                (format!("text(({value}).join({separator}))"), ValueType::Text)
+            }
+            E::ScalarText(value) => {
+                let (value, kind) = self.expression(value, None)?;
+                if !matches!(kind, ValueType::Text | ValueType::Boolean | ValueType::Number) { return unsupported("interpolation requires Text, Bool or F64"); }
+                (format!("scalarText({value})"), ValueType::Text)
             }
             E::SequenceDrop(value,count) => {
                 let (value,kind) = self.expression(value,expected.clone())?;
@@ -791,6 +816,17 @@ function equal(a,b){
  const keys=Object.keys(a);return keys.length===Object.keys(b).length&&keys.every(k=>Object.hasOwn(b,k)&&equal(a[k],b[k]));
 }
 function finite(value){if(typeof value!=='number'||!Number.isFinite(value))fail('NumericDomain');return value===0?0:value;}
+function scalarText(value){
+ if(typeof value!=='number')return String(value);
+ const rendered=String(finite(value));
+ if(!rendered.includes('e'))return rendered;
+ const negative=rendered.startsWith('-');
+ const [mantissa,exponent]=rendered.replace(/^-/, '').split('e');
+ const digits=mantissa.replace('.', '');
+ const point=(mantissa.includes('.')?mantissa.indexOf('.'):mantissa.length)+Number(exponent);
+ const decimal=point<=0?'0.'+'0'.repeat(-point)+digits:point>=digits.length?digits+'0'.repeat(point-digits.length):digits.slice(0,point)+'.'+digits.slice(point);
+ return (negative?'-':'')+decimal;
+}
 function text(value){if(typeof value!=='string'||!value.isWellFormed()||new TextEncoder().encode(value).length>16777216)fail('TextDomain');return value;}
 function validate(value,kind){
  switch(kind[0]){

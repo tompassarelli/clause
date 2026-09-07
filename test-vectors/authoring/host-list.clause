@@ -1,0 +1,2 @@
+export render-host-list(?hosts: Sequence<Text>): Text
+  "Hosts ({count(?hosts)}):\n{join(["  {?host}\n" for ?host in ?hosts], "")}"

@@ -51,11 +51,11 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
         match value {
             E::Sequence(values) => { for value in values { check(value,bound,false,depth+1,query_inputs)?; } }
             E::Record(fields) => { for value in fields.values() { check(value,bound,false,depth+1,query_inputs)?; } }
-            E::Field(value,_) => check(value,bound,false,depth+1,query_inputs)?,
-            E::SequenceDrop(a,b) => { check(a,bound,false,depth+1,query_inputs)?; check(b,bound,false,depth+1,query_inputs)?; }
+            E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) => check(value,bound,false,depth+1,query_inputs)?,
+            E::SequenceJoin(a,b) | E::SequenceDrop(a,b) => { check(a,bound,false,depth+1,query_inputs)?; check(b,bound,false,depth+1,query_inputs)?; }
             E::Require(a,b,c) => { for value in [a,b,c] { check(value,bound,false,depth+1,query_inputs)?; } }
             E::Foreign { .. } => return Err(ExecutableErrorV1::MalformedProgram),
-            E::Let { binding, value, body } => {
+            E::Let { binding, value, body } | E::SequenceMap { binding, source: value, body } => {
                 if pattern { return Err(ExecutableErrorV1::MalformedProgram); }
                 check(value, bound, false, depth + 1, query_inputs)?;
                 let mut nested = bound.clone();

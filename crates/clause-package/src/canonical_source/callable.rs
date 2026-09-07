@@ -60,7 +60,12 @@ pub(super) fn foreign_accesses(
                     collect(argument, contracts);
                 }
             }
-            E::Let { value, body, .. } => {
+            E::Let { value, body, .. }
+            | E::SequenceMap {
+                source: value,
+                body,
+                ..
+            } => {
                 collect(value, contracts);
                 collect(body, contracts);
             }
@@ -74,7 +79,8 @@ pub(super) fn foreign_accesses(
                     collect(value, contracts);
                 }
             }
-            E::SequenceDrop(a, b)
+            E::SequenceJoin(a, b)
+            | E::SequenceDrop(a, b)
             | E::Concatenate(a, b)
             | E::Equal(a, b)
             | E::GreaterThan(a, b)
@@ -93,9 +99,11 @@ pub(super) fn foreign_accesses(
                 collect(b, contracts);
                 collect(c, contracts);
             }
-            E::Field(value, _) | E::SquareRoot(value) | E::TextTransform(_, value) => {
-                collect(value, contracts)
-            }
+            E::SequenceCount(value)
+            | E::ScalarText(value)
+            | E::Field(value, _)
+            | E::SquareRoot(value)
+            | E::TextTransform(_, value) => collect(value, contracts),
             _ => {}
         }
     }
@@ -138,6 +146,8 @@ pub(super) fn read(
     let designation = denotation_designation_bytes(name.trim(), origin)?;
     if [
         b"drop".as_slice(),
+        b"count",
+        b"join",
         b"require",
         b"if".as_slice(),
         b"sqrt",
@@ -363,7 +373,7 @@ pub(super) fn text_template(source: &str) -> Option<(CanonicalScalarExpressionV1
                     current: "",
                     interpolate: true,
                 };
-                parts.push(parser.comparison()?);
+                parts.push(E::ScalarText(Box::new(parser.comparison()?)));
                 parser.skip_spaces();
                 if parser.cursor != parser.source.len() {
                     return None;
@@ -481,6 +491,7 @@ impl Expansion<'_> {
                         lower(
                             expression,
                             &definition.arguments,
+                            &BTreeMap::new(),
                             definition.expression_origin,
                             self,
                             0,
@@ -547,6 +558,32 @@ fn bind_body(
                 .map(|(k, v)| Ok((k.clone(), *recur(v)?)))
                 .collect::<Result<_, CanonicalSourceErrorV1>>()?,
         ),
+        E::SequenceCount(a) => E::SequenceCount(recur(a)?),
+        E::ScalarText(a) => E::ScalarText(recur(a)?),
+        E::SequenceJoin(a, b) => E::SequenceJoin(recur(a)?, recur(b)?),
+        E::SequenceMap {
+            binding,
+            source,
+            body,
+        } => {
+            let source = recur(source)?;
+            let fresh = expansion.binding(origin)?;
+            let mut nested = locals.clone();
+            nested.insert(*binding, fresh);
+            let body = Box::new(bind_body(
+                body,
+                actual,
+                &nested,
+                expansion,
+                origin,
+                depth + 1,
+            )?);
+            E::SequenceMap {
+                binding: fresh,
+                source,
+                body,
+            }
+        }
         E::SequenceDrop(a, b) => E::SequenceDrop(recur(a)?, recur(b)?),
         E::Field(a, k) => E::Field(recur(a)?, k.clone()),
         E::Require(a, b, c) => E::Require(recur(a)?, recur(b)?, recur(c)?),
@@ -618,6 +655,7 @@ fn bind_body(
 fn lower(
     expression: &CanonicalScalarExpressionV1,
     arguments: &[CanonicalCallableArgumentV1],
+    locals: &BTreeMap<Vec<u8>, (u16, CanonicalValueTypeV1)>,
     origin: CanonicalSourceOriginV1,
     expansion: &mut Expansion<'_>,
     depth: usize,
@@ -630,7 +668,8 @@ fn lower(
         reason: "unresolved or unsupported pure expression",
     };
     expansion.consume(origin, depth)?;
-    let mut recur = |e| lower(e, arguments, origin, expansion, depth + 1, mode).map(Box::new);
+    let mut recur =
+        |e| lower(e, arguments, locals, origin, expansion, depth + 1, mode).map(Box::new);
     Ok(match expression {
         S::Sequence(values) => E::Sequence(
             values
@@ -644,6 +683,47 @@ fn lower(
                 .map(|(k, v)| Ok((k.clone(), *recur(v)?)))
                 .collect::<Result<_, CanonicalSourceErrorV1>>()?,
         ),
+        S::SequenceCount(a) => E::SequenceCount(recur(a)?),
+        S::ScalarText(a) => E::ScalarText(recur(a)?),
+        S::SequenceJoin(a, b) => E::SequenceJoin(recur(a)?, recur(b)?),
+        S::SequenceMap {
+            binding,
+            source,
+            body,
+        } => {
+            let source = recur(source)?;
+            let argument_types = arguments
+                .iter()
+                .map(|a| a.value_kind.clone())
+                .collect::<Vec<_>>();
+            let binding_types = locals.values().cloned().collect();
+            let CanonicalValueTypeV1::Sequence(element) =
+                expression_kind(&source, &argument_types, &binding_types, 0, mode)
+                    .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?
+            else {
+                return Err(CanonicalSourceErrorV1::InvalidCallable {
+                    origin,
+                    reason: "mapping requires an ordered sequence",
+                });
+            };
+            let fresh = expansion.binding(origin)?;
+            let mut nested = locals.clone();
+            nested.insert(binding.clone(), (fresh, *element));
+            let body = Box::new(lower(
+                body,
+                arguments,
+                &nested,
+                origin,
+                expansion,
+                depth + 1,
+                mode,
+            )?);
+            E::SequenceMap {
+                binding: fresh,
+                source,
+                body,
+            }
+        }
         S::SequenceDrop(a, b) => E::SequenceDrop(recur(a)?, recur(b)?),
         S::Field(a, k) => E::Field(recur(a)?, k.clone()),
         S::Require(a, b, c) => E::Require(recur(a)?, recur(b)?, recur(c)?),
@@ -653,7 +733,7 @@ fn lower(
         } => {
             let values = actual
                 .iter()
-                .map(|a| lower(a, arguments, origin, expansion, depth + 1, mode))
+                .map(|a| lower(a, arguments, locals, origin, expansion, depth + 1, mode))
                 .collect::<Result<Vec<_>, _>>()?;
             let index = *expansion.indices.get(designation).ok_or(
                 CanonicalSourceErrorV1::InvalidCallable {
@@ -683,7 +763,7 @@ fn lower(
                         .iter()
                         .map(|a| a.value_kind.clone())
                         .collect::<Vec<_>>(),
-                    &BTreeMap::new(),
+                    &locals.values().cloned().collect(),
                     0,
                     mode,
                 )
@@ -721,6 +801,7 @@ fn lower(
         S::Number(n) => E::Constant(CanonicalScalarValueV1::Number(*n)),
         S::Boolean(b) => E::Constant(CanonicalScalarValueV1::Boolean(*b)),
         S::Text(t) => E::Constant(CanonicalScalarValueV1::Text(t.clone())),
+        S::Parameter(name) if locals.contains_key(name) => E::Binding(locals[name].0),
         S::Parameter(name) => E::Argument(
             u16::try_from(
                 arguments
@@ -865,6 +946,43 @@ fn expression_kind(
                 })
                 .collect::<Result<_, &'static str>>()?,
         ),
+        E::SequenceMap {
+            binding,
+            source,
+            body,
+        } => {
+            let T::Sequence(element) = recur(source)? else {
+                return Err("mapping requires an ordered sequence");
+            };
+            let mut nested = bindings.clone();
+            if nested.insert(*binding, *element).is_some() {
+                return Err("duplicate lexical binding");
+            }
+            T::Sequence(Box::new(expression_kind(
+                body,
+                arguments,
+                &nested,
+                depth + 1,
+                mode,
+            )?))
+        }
+        E::SequenceCount(value) => {
+            if !matches!(recur(value)?, T::Sequence(_)) {
+                return Err("count requires an ordered sequence");
+            }
+            K::Number.into()
+        }
+        E::SequenceJoin(value, separator) => {
+            require(value, &T::Sequence(Box::new(K::Text.into())))?;
+            require(separator, &K::Text.into())?;
+            K::Text.into()
+        }
+        E::ScalarText(value) => {
+            if !matches!(recur(value)?, T::Scalar(K::Text | K::Boolean | K::Number)) {
+                return Err("interpolation requires Text, Bool or F64");
+            }
+            K::Text.into()
+        }
         E::SequenceDrop(value, count) => {
             require(count, &K::Number.into())?;
             let kind = recur(value)?;

@@ -70,7 +70,7 @@ fn pure_callable_checks_bindings_types_and_effects() {
     for source in [
         "export f(?x: Text): Bool\n  ?x\n",
         "export f(?x: Text): Text\n  ?missing\n",
-        "export f(?x: F64): Text\n  \"{?x}\"\n",
+        "export f(?x: Sequence<Text>): Text\n  \"{?x}\"\n",
         "export f(?x: Text): Text\n  include\n    ?x output ?x\n",
         "export f(?x: Text, ?x: Text): Text\n  ?x\n",
     ] {

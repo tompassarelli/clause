@@ -868,6 +868,10 @@ pub enum ExecutableExpressionV1 {
     Let { binding: u16, value: Box<Self>, body: Box<Self> },
     Sequence(Vec<Self>),
     SequenceDrop(Box<Self>, Box<Self>),
+    SequenceCount(Box<Self>),
+    SequenceJoin(Box<Self>, Box<Self>),
+    ScalarText(Box<Self>),
+    SequenceMap { binding: u16, source: Box<Self>, body: Box<Self> },
     Record(BTreeMap<Vec<u8>, Self>),
     Field(Box<Self>, Vec<u8>),
     Require(Box<Self>, Box<Self>, Box<Self>),
@@ -1240,6 +1244,14 @@ fn lower_canonical_expression(
         },
         CanonicalExecutableExpressionV1::Sequence(values) => ExecutableExpressionV1::Sequence(values.iter().map(|v| lower_canonical_expression(v, slots, depth + 1)).collect::<Result<_, _>>()?),
         CanonicalExecutableExpressionV1::Record(fields) => ExecutableExpressionV1::Record(fields.iter().map(|(k, v)| Ok((k.clone(), lower_canonical_expression(v, slots, depth + 1)?))).collect::<Result<_, ExecutableErrorV1>>()?),
+        CanonicalExecutableExpressionV1::SequenceMap { binding, source, body } => ExecutableExpressionV1::SequenceMap {
+            binding: *binding,
+            source: Box::new(lower_canonical_expression(source, slots, depth + 1)?),
+            body: Box::new(lower_canonical_expression(body, slots, depth + 1)?),
+        },
+        CanonicalExecutableExpressionV1::SequenceCount(value) => ExecutableExpressionV1::SequenceCount(Box::new(lower_canonical_expression(value, slots, depth + 1)?)),
+        CanonicalExecutableExpressionV1::ScalarText(value) => ExecutableExpressionV1::ScalarText(Box::new(lower_canonical_expression(value, slots, depth + 1)?)),
+        CanonicalExecutableExpressionV1::SequenceJoin(a, b) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::SequenceJoin(a, b) }
         CanonicalExecutableExpressionV1::SequenceDrop(a, b) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::SequenceDrop(a, b) }
         CanonicalExecutableExpressionV1::Field(a, field) => ExecutableExpressionV1::Field(Box::new(lower_canonical_expression(a, slots, depth + 1)?), field.clone()),
         CanonicalExecutableExpressionV1::Require(a, b, c) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::Require(a, b, Box::new(lower_canonical_expression(c, slots, depth + 1)?)) }
@@ -1834,7 +1846,7 @@ fn lower_scalar_expression(
         ))
     };
     Ok(match expression {
-        CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
+        CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceMap { .. } | CanonicalScalarExpressionV1::SequenceCount(_) | CanonicalScalarExpressionV1::ScalarText(_) | CanonicalScalarExpressionV1::SequenceJoin(..) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Call { .. } => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             let (yes, no) = pair(yes, no)?;
@@ -5899,10 +5911,11 @@ fn validate_value_expression(
         E::Sequence(values) => values.iter().collect(),
         E::Record(fields) => fields.values().collect(),
         E::Field(value,_) => vec![value],
-        E::SequenceDrop(a,b) => vec![a,b],
+        E::SequenceJoin(a,b) | E::SequenceDrop(a,b) => vec![a,b],
+        E::SequenceCount(value) | E::ScalarText(value) => vec![value],
         E::Require(a,b,c) => vec![a,b,c],
         E::Foreign { .. } => return Err(ExecutableErrorV1::MalformedProgram),
-        E::Let { value, body, .. } => vec![value, body],
+        E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => vec![value, body],
         E::Sum { inputs, predicates, value } => {
             if predicates.is_empty() || predicates.len() > MAX_PROGRAM_ITEMS {
                 return Err(ExecutableErrorV1::MalformedProgram);
@@ -6494,6 +6507,45 @@ fn evaluate(
         },
         E::Sequence(values) => Ok(ExecutableValueV1::Sequence(values.iter().map(|v| evaluate(v, slots, arguments, context)).collect::<Result<_, _>>()?)),
         E::Record(fields) => Ok(ExecutableValueV1::Record(fields.iter().map(|(k, v)| Ok((k.clone(), evaluate(v, slots, arguments, context)?))).collect::<Result<_, ExecutableErrorV1>>()?)),
+        E::SequenceMap { binding, source, body } => {
+            let ExecutableValueV1::Sequence(values) = evaluate(source, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
+            let mut bindings = context.bindings.cloned().unwrap_or_default();
+            let mut result = Vec::with_capacity(values.len());
+            for value in values {
+                bindings.insert(*binding, value);
+                result.push(evaluate(body, slots, arguments, EvaluationContextV1 { bindings: Some(&bindings), ..context })?);
+            }
+            Ok(ExecutableValueV1::Sequence(result))
+        }
+        E::SequenceCount(value) => {
+            let ExecutableValueV1::Sequence(values) = evaluate(value, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
+            ExecutableValueV1::number(values.len() as f64)
+        }
+        E::SequenceJoin(value, separator) => {
+            let ExecutableValueV1::Sequence(values) = evaluate(value, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
+            let ExecutableValueV1::Text(separator) = evaluate(separator, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
+            let mut result = String::new();
+            for (index, value) in values.into_iter().enumerate() {
+                let ExecutableValueV1::Text(value) = value else { return Err(ExecutableErrorV1::TypeMismatch); };
+                if index > 0 { result.push_str(separator.as_str()); }
+                result.push_str(value.as_str());
+                if result.len() > MAX_EXECUTABLE_TEXT_BYTES { return Err(ExecutableErrorV1::ResourceLimit); }
+            }
+            ExecutableValueV1::text(&result)
+        }
+        E::ScalarText(value) => {
+            let value = evaluate(value, slots, arguments, context)?;
+            match value {
+                ExecutableValueV1::Text(_) => Ok(value),
+                ExecutableValueV1::Boolean(value) => ExecutableValueV1::text(if value { "true" } else { "false" }),
+                ExecutableValueV1::Number(bits) => {
+                    let value = f64::from_bits(bits);
+                    if !value.is_finite() { return Err(ExecutableErrorV1::NumericDomain); }
+                    ExecutableValueV1::text(&if value == 0.0 { "0".to_owned() } else { value.to_string() })
+                }
+                _ => Err(ExecutableErrorV1::TypeMismatch),
+            }
+        }
         E::SequenceDrop(value, count) => {
             let ExecutableValueV1::Sequence(values) = evaluate(value, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
             let count = evaluate(count, slots, arguments, context)?.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
@@ -7124,6 +7176,13 @@ fn encode_expression(
         E::Sequence(values) => { bytes.push(37); encode_count(bytes,values.len())?; for value in values { encode_expression(bytes,value)?; } }
         E::Record(fields) => { bytes.push(38); encode_count(bytes,fields.len())?; for (name,value) in fields { encode_count(bytes,name.len())?; bytes.extend_from_slice(name); encode_expression(bytes,value)?; } }
         E::SequenceDrop(a,b) => encode_binary(bytes,39,a,b)?,
+        E::SequenceCount(value) => { bytes.push(42); encode_expression(bytes,value)?; }
+        E::SequenceJoin(a,b) => encode_binary(bytes,43,a,b)?,
+        E::ScalarText(value) => { bytes.push(44); encode_expression(bytes,value)?; }
+        E::SequenceMap { binding, source, body } => {
+            bytes.push(45); bytes.extend_from_slice(&binding.to_le_bytes());
+            encode_expression(bytes,source)?; encode_expression(bytes,body)?;
+        }
         E::Field(value,name) => { bytes.push(40); encode_expression(bytes,value)?; encode_count(bytes,name.len())?; bytes.extend_from_slice(name); }
         E::Require(a,b,c) => encode_ternary(bytes,41,a,b,c)?,
         E::Foreign { .. } => return Err(ExecutableErrorV1::UnsupportedPhysicalTarget),
@@ -7470,6 +7529,10 @@ impl<'a> Decoder<'a> {
                 for _ in 0..count { let length=self.count()?; let name=self.take(length)?.to_vec(); let value=self.expression(next)?; if fields.insert(name,value).is_some() { return Err(ExecutableErrorV1::MalformedProgram); } }
                 E::Record(fields)
             }
+            42 => E::SequenceCount(Box::new(self.expression(next)?)),
+            43 => E::SequenceJoin(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
+            44 => E::ScalarText(Box::new(self.expression(next)?)),
+            45 => E::SequenceMap { binding: self.u16()?, source: Box::new(self.expression(next)?), body: Box::new(self.expression(next)?) },
             39 => E::SequenceDrop(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
             40 => { let value=Box::new(self.expression(next)?); let length=self.count()?; E::Field(value,self.take(length)?.to_vec()) }
             41 => E::Require(Box::new(self.expression(next)?),Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
