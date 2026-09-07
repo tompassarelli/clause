@@ -180,6 +180,15 @@ query syntax, browser behavior, or any performance target.
 The next implementation work follows dependency order; later application work
 may proceed when it consumes only already-running semantics.
 
+Extensible source languages have precedent in systems such as
+[Racket](https://docs.racket-lang.org/guide/languages.html). Clause's unproved
+combination is carrying independently authored Readings through the same
+checking, affine lifetime analysis, native/Wasm resource guarantees, and
+verified trust chain while remaining pleasant to author. Evidence for any one
+piece does not establish those seams. The early frontend slice below tests
+extension and checking; its later physical realization must expose allocation
+and timing costs instead of assuming custom notation preserves them.
+
 ### One frontend
 
 Replace built-in construct and vocabulary cases with one deterministic,
@@ -197,13 +206,16 @@ semantic edits. Clause-defined algebraic data and exhaustive matching must
 accept complete cases and reject missing and unreachable cases through the
 same mechanism.
 
-The next domain-vocabulary proof is pending: express an existing Greywrought
-movement action through a new checked sentence shape with bindings and an
-effect, using only Clause-authored declarations and transformations. Execute
-the action and query its consequences through the same semantic core; reject
-an invalid binding, and change the domain rule in one authored place without
-maintaining a second implementation. Existing custom Reading examples do not
-establish this complete extensibility claim.
+The next domain-vocabulary proof is pending: have an author other than the
+frontend implementer express an existing Greywrought movement action through
+a new checked sentence shape with bindings and an effect, using only
+Clause-authored declarations and transformations. Execute the action and query
+its consequences through the same semantic core; reject an invalid binding,
+and change the domain rule in one authored place without maintaining a second
+implementation. This is an early gate before broad language expansion, not a
+reason to stop existing consumer repairs. Existing custom Reading examples do
+not establish this complete extensibility claim. A separate agent can exercise
+the extension contract; human domain-expert usability remains unproved.
 
 The Nix and JavaScript authoring slices must also earn their notation in small
 executing consumer examples before expansion. Compare each with its host
@@ -212,6 +224,12 @@ places an ordinary rule change touches. Concise function notation can serve
 that goal as well as a domain phrase. A preferred small slice is evidence for
 that slice; domain-expert usability and general extensibility remain separate
 claims to establish.
+
+After that consumer slice works, try one small piece of Clause's own
+foundation vocabulary as checked declarations and derive its corresponding
+reference description from those declarations. This is a deferred experiment
+in avoiding duplicated definitions, not a claim that generated prose proves
+the semantics or a prerequisite for the first usable frontend.
 
 ### Relations, definitions, and collections
 
