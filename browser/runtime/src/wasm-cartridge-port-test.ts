@@ -1755,3 +1755,21 @@ test.test("compact scalar edits dispatch only the transaction with captured cust
   expect(transaction).toEqual([67, 69, 88, 49, 255]);
   port.disposeSession(started.session);
 });
+
+
+test.test("direct hex request custody preserves every octet and strict transport checks", () => {
+  const bytes = minimal_cwr1_bang();
+  const hex = bytes.map(byte => byte.toString(16).padStart(2, "0")).join("");
+  const request = wasm.decodeProcessRequestHex(hex);
+  expect(typeof request.bytes).toBe("string");
+  expect(Object.isFrozen(request)).toBe(true);
+  const port = wasm["create-wasm-cartridge-port"](module_for_bang([opened_event_bang(), cse_header_bang(1, 6)], []), policy());
+  const started = startSession(port, acceptPackage(port, request).acceptedPackage);
+  port.disposeSession(started.session);
+  const octets = wasm.decodeProcessRequestHex(Array.from({length: 256}, (_, byte) => byte.toString(16).padStart(2, "0")).join(" "));
+  expect(typeof octets.bytes === "string" && Array.from(octets.bytes, value => value.charCodeAt(0))).toEqual(Array.from({length:256}, (_, byte) => byte));
+  expect(() => wasm.decodeProcessRequestHex("0")).toThrow("incomplete byte");
+  expect(() => wasm.decodeProcessRequestHex("AA")).toThrow("non-hex unit");
+  expect(() => wasm.decodeProcessRequestHex(" ")).toThrow("empty");
+  expect(() => wasm.decodeProcessRequestHex("00".repeat(4 * 1024 * 1024 + 1))).toThrow("byte bound");
+});

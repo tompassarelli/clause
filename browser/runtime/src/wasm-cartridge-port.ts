@@ -104,7 +104,7 @@ interface SessionHandle {
 
 export interface ExactProcessRequest {
   readonly _tag: "ExactProcessRequest";
-  readonly bytes: ExactBytes;
+  readonly bytes: CanonicalBytes;
 }
 
 export interface ExactProcessObservation {
@@ -411,12 +411,12 @@ export type ProjectedValue =
   | readonly ProjectedValue[]
   | ProjectedObject;
 
-function decode_hex_transport(
+function decode_hex_octets(
   source: unknown,
   label: string,
   maximumBytes: number,
   maximumSourceUnits: number,
-): ExactBytes {
+): number[] {
   if (typeof source !== "string") throw new Error(`${label} hex transport must be text`);
   if (source.length === 0 || source.length > maximumSourceUnits) {
     throw new Error(`${label} hex transport is outside its source bound`);
@@ -441,7 +441,17 @@ function decode_hex_transport(
   }
   if (high >= 0) throw new Error(`${label} hex transport has an incomplete byte`);
   if (bytes.length === 0) throw new Error(`${label} hex transport is empty`);
-  return retain_decoded_bytes(bytes);
+  return bytes;
+}
+
+function decode_hex_transport(source: unknown, label: string, maximumBytes: number, maximumSourceUnits: number): ExactBytes {
+  return retain_decoded_bytes(decode_hex_octets(source, label, maximumBytes, maximumSourceUnits));
+}
+
+/** Decode a bounded cartridge directly to immutable request custody. */
+export function decodeProcessRequestHex(source: unknown): ExactProcessRequest {
+  const bytes = decode_hex_octets(source, "CWR1", cwr1_max_bytes, cwr1_hex_max_source_units);
+  return Object.freeze({ _tag: "ExactProcessRequest", bytes: byteTextDecoder.decode(new Uint16Array(bytes)) });
 }
 
 function decode_cwr1_hex(source: unknown): ExactBytes {
@@ -452,11 +462,11 @@ function decode_cet1_hex(source: unknown): ExactBytes {
   return decode_hex_transport(source, "CET1", cet1_max_bytes, 3 * cet1_max_bytes);
 }
 
-function ExactProcessRequest(bytes: ExactBytes): ExactProcessRequest {
+function ExactProcessRequest(bytes: ExactBytes): ExactProcessRequest & { readonly bytes: ExactBytes } {
   return Object.freeze({ _tag: "ExactProcessRequest", bytes });
 }
 
-function exactprocessrequest_bytes(r: ExactProcessRequest): ExactBytes {
+function exactprocessrequest_bytes(r: ExactProcessRequest): CanonicalBytes {
   return r.bytes;
 }
 
@@ -646,9 +656,15 @@ function require_request_bytes(request: unknown): string {
   if (
     typeof request !== "object" ||
     request === null ||
-    !("bytes" in request) ||
-    !Array.isArray(request.bytes) || request.bytes.length < 1 || request.bytes.length > cwr1_max_bytes
+    !("bytes" in request)
   ) {
+    throw new Error("cartridge request must carry bounded exact bytes");
+  }
+  if (typeof request.bytes === "string") {
+    if (!binary_text_p(request.bytes, cwr1_max_bytes)) throw new Error("cartridge request must carry bounded exact bytes");
+    return request.bytes;
+  }
+  if (!Array.isArray(request.bytes) || request.bytes.length < 1 || request.bytes.length > cwr1_max_bytes) {
     throw new Error("cartridge request must carry bounded exact bytes");
   }
   return exact_bytes_to_binary_text(request.bytes);

@@ -78,7 +78,7 @@ function checked_referent(value) {
     }
     throw new Error("referent identity is malformed");
 }
-function decode_hex_transport(source, label, maximumBytes, maximumSourceUnits) {
+function decode_hex_octets(source, label, maximumBytes, maximumSourceUnits) {
     if (typeof source !== "string")
         throw new Error(`${label} hex transport must be text`);
     if (source.length === 0 || source.length > maximumSourceUnits) {
@@ -109,7 +109,15 @@ function decode_hex_transport(source, label, maximumBytes, maximumSourceUnits) {
         throw new Error(`${label} hex transport has an incomplete byte`);
     if (bytes.length === 0)
         throw new Error(`${label} hex transport is empty`);
-    return retain_decoded_bytes(bytes);
+    return bytes;
+}
+function decode_hex_transport(source, label, maximumBytes, maximumSourceUnits) {
+    return retain_decoded_bytes(decode_hex_octets(source, label, maximumBytes, maximumSourceUnits));
+}
+/** Decode a bounded cartridge directly to immutable request custody. */
+export function decodeProcessRequestHex(source) {
+    const bytes = decode_hex_octets(source, "CWR1", cwr1_max_bytes, cwr1_hex_max_source_units);
+    return Object.freeze({ _tag: "ExactProcessRequest", bytes: byteTextDecoder.decode(new Uint16Array(bytes)) });
 }
 function decode_cwr1_hex(source) {
     return decode_hex_transport(source, "CWR1", cwr1_max_bytes, cwr1_hex_max_source_units);
@@ -247,8 +255,15 @@ function require_request_bytes(request) {
     try {
         if (typeof request !== "object" ||
             request === null ||
-            !("bytes" in request) ||
-            !Array.isArray(request.bytes) || request.bytes.length < 1 || request.bytes.length > cwr1_max_bytes) {
+            !("bytes" in request)) {
+            throw new Error("cartridge request must carry bounded exact bytes");
+        }
+        if (typeof request.bytes === "string") {
+            if (!binary_text_p(request.bytes, cwr1_max_bytes))
+                throw new Error("cartridge request must carry bounded exact bytes");
+            return request.bytes;
+        }
+        if (!Array.isArray(request.bytes) || request.bytes.length < 1 || request.bytes.length > cwr1_max_bytes) {
             throw new Error("cartridge request must carry bounded exact bytes");
         }
         return exact_bytes_to_binary_text(request.bytes);

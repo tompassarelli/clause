@@ -5,7 +5,7 @@ export type ExactBytes = readonly number[];
 type CanonicalBytes = ExactBytes | string;
 export interface ExactProcessRequest {
     readonly _tag: "ExactProcessRequest";
-    readonly bytes: ExactBytes;
+    readonly bytes: CanonicalBytes;
 }
 export interface ExactProcessObservation {
     readonly _tag: "ExactProcessObservation";
@@ -165,10 +165,14 @@ export type ProjectedReferent = Readonly<{
 }>;
 declare function checked_referent(value: unknown): ProjectedReferent;
 export type ProjectedValue = number | boolean | string | readonly ProjectedValue[] | ProjectedObject;
+/** Decode a bounded cartridge directly to immutable request custody. */
+export declare function decodeProcessRequestHex(source: unknown): ExactProcessRequest;
 declare function decode_cwr1_hex(source: unknown): ExactBytes;
 declare function decode_cet1_hex(source: unknown): ExactBytes;
-declare function ExactProcessRequest(bytes: ExactBytes): ExactProcessRequest;
-declare function exactprocessrequest_bytes(r: ExactProcessRequest): ExactBytes;
+declare function ExactProcessRequest(bytes: ExactBytes): ExactProcessRequest & {
+    readonly bytes: ExactBytes;
+};
+declare function exactprocessrequest_bytes(r: ExactProcessRequest): CanonicalBytes;
 declare function ExactProcessObservation(bytes: ExactBytes): ExactProcessObservation;
 declare function exactprocessobservation_bytes(r: ExactProcessObservation): ExactBytes;
 declare function Cwo1Observation(observationId: ExactBytes, stateRevisionId: ExactBytes, values: readonly (number | boolean)[]): Cwo1Observation;

@@ -197,7 +197,7 @@ async function start(): Promise<void> {
   const policy = schedulePolicy();
   const port = wasm["create-wasm-cartridge-port"](module, policy);
   const accepted = completed<workbench.PackageCheck>(done =>
-    port.acceptPackage(wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](generation.cwr1)), done));
+    port.acceptPackage(wasm.decodeProcessRequestHex(generation.cwr1), done));
   if (accepted._tag !== "PackageAccepted") throw new Error(accepted.reason);
   const started = completed<workbench.SessionCompletion>(done =>
     port.startSession(accepted.acceptedPackage, generation.generation, done));
@@ -423,7 +423,7 @@ async function start(): Promise<void> {
       module,
       session,
       nextGeneration.generation,
-      wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](nextGeneration.cwr1)),
+      wasm.decodeProcessRequestHex(nextGeneration.cwr1),
       wasm["decode-cet1-hex"](nextGeneration.cet1),
       policy,
     );
