@@ -212,7 +212,6 @@ pub(super) fn sum(
     let query_reads = std::cell::RefCell::new(Vec::new());
     let query_context = EvaluationContextV1 { reads: context.reads.map(|_| &query_reads), ..context };
     let plan = scalar_plan(value, query_context)?;
-    let memo = plan.as_ref().map(|plan| plan.memo());
     let mut visits = 0;
     let mut total = 0.0;
     for (matched, accepted) in match_sum(predicates, configuration, &inputs,
@@ -224,6 +223,7 @@ pub(super) fn sum(
         }
         if accepted {
             let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
+            let memo = plan.as_ref().map(|plan| plan.memo());
             let contribution = evaluate(plan.as_ref().map_or(value, |plan| plan.expression.as_ref()), configuration, &inputs,
                 EvaluationContextV1 { bindings: Some(&matched.bindings), scalar_memo: memo.as_ref(), ..query_context })?;
             total += contribution.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
@@ -681,10 +681,10 @@ fn match_rule_from(
             active = next.into_values().collect();
         } else {
             let plan = if capture { None } else { scalar_plan(predicate, context)? };
-            let memo = plan.as_ref().map(|plan| plan.memo());
             let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
             let mut next = Vec::new();
             for mut matched in active {
+                let memo = plan.as_ref().map(|plan| plan.memo());
                 let evaluated = evaluate_for_trace(
                     plan.as_ref().map_or(predicate, |plan| plan.expression.as_ref()),
                     configuration,

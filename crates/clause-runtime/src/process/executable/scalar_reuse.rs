@@ -56,15 +56,13 @@ impl ScalarPlan {
     }
 
     pub fn memo(&self) -> ScalarMemo<'_> {
-        ScalarMemo { plan: self, values: std::cell::RefCell::new(vec![None; self.nodes.len()]),
-            touched: std::cell::RefCell::new(Vec::new()) }
+        ScalarMemo { plan: self, values: std::cell::RefCell::new(vec![None; self.nodes.len()]) }
     }
 }
 
 pub(super) struct ScalarMemo<'a> {
     plan: &'a ScalarPlan,
     values: std::cell::RefCell<Vec<Option<ExecutableValueV1>>>,
-    touched: std::cell::RefCell<Vec<usize>>,
 }
 
 impl ScalarMemo<'_> {
@@ -72,10 +70,6 @@ impl ScalarMemo<'_> {
         configuration: &[ExecutableSlotV1], arguments: &[ExecutableValueV1], context: EvaluationContextV1)
         -> Result<ExecutableValueV1, ExecutableErrorV1> {
         debug_assert!(std::ptr::eq(expression, self.plan.expression.as_ref()));
-        {
-            let mut values = self.values.borrow_mut();
-            for index in self.touched.borrow_mut().drain(..) { values[index] = None; }
-        }
         self.node(self.plan.root, configuration, arguments, EvaluationContextV1 { scalar_memo: None, ..context })
     }
 
@@ -114,10 +108,7 @@ impl ScalarMemo<'_> {
                 ExecutableValueV1::number(value.clamp(lower, upper))?
             },
         };
-        if self.plan.nodes[index].1 {
-            self.values.borrow_mut()[index] = Some(value.clone());
-            self.touched.borrow_mut().push(index);
-        }
+        if self.plan.nodes[index].1 { self.values.borrow_mut()[index] = Some(value.clone()); }
         Ok(value)
     }
 }
