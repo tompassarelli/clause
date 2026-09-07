@@ -4,6 +4,12 @@ use super::*;
 pub(super) struct ProjectionPlan {
     node: Node,
     has_roles: bool,
+    cache: Mutex<Option<Cached>>,
+}
+
+enum Cached {
+    Value(ExecutableValueV1, Term),
+    Triple(Term),
 }
 
 enum Node {
@@ -26,20 +32,20 @@ impl ProjectionPlan {
             if kind != ExecutableValueKindV1::RelationTable { return Err(ExecutableErrorV1::MalformedProgram); }
             let binding = bindings.get(&role).ok_or(ExecutableErrorV1::MalformedProgram)?;
             let subject = projected_referent_value_v1(subject)?.ok_or(ExecutableErrorV1::MalformedProgram)?;
-            return Ok(Self { node: Node::Row(template.scope(), binding.slot, ExecutableValueV1::Referent(subject)), has_roles: true });
+            return Ok(Self { node: Node::Row(template.scope(), binding.slot, ExecutableValueV1::Referent(subject)), has_roles: true, cache: Mutex::new(None) });
         }
         if let Some(atom) = template.as_atom() {
             return if let Some((role, kind)) = projection_role(atom)? {
                 let binding = *bindings.get(&role).ok_or(ExecutableErrorV1::MalformedProgram)?;
                 if binding.value_kind != kind { return Err(ExecutableErrorV1::TypeMismatch); }
-                Ok(Self { node: Node::State(template.scope(), binding), has_roles: true })
-            } else { Ok(Self { node: Node::Static(template.clone()), has_roles: false }) };
+                Ok(Self { node: Node::State(template.scope(), binding), has_roles: true, cache: Mutex::new(None) })
+            } else { Ok(Self { node: Node::Static(template.clone()), has_roles: false, cache: Mutex::new(None) }) };
         }
         let [left, operator, right] = template.as_triple().ok_or(ExecutableErrorV1::MalformedProgram)?.slots();
         let field = left.as_atom().is_some_and(|atom| atom.kind() == b"clause/js-field-v1");
         let children = [Self::compile(left, bindings)?, Self::compile(operator, bindings)?, Self::compile(right, bindings)?];
         let has_roles = children.iter().any(|child| child.has_roles);
-        Ok(Self { node: if has_roles { Node::Triple(Box::new(children), field) } else { Node::Static(template.clone()) }, has_roles })
+        Ok(Self { node: if has_roles { Node::Triple(Box::new(children), field) } else { Node::Static(template.clone()) }, has_roles, cache: Mutex::new(None) })
     }
 
     fn row<'a>(slot: u16, configuration: &'a [ExecutableSlotV1]) -> Result<&'a ExecutableRelationTableV1, ExecutableErrorV1> {
@@ -58,6 +64,16 @@ impl ProjectionPlan {
         })
     }
 
+    fn cached_value(&self, scope: TermScope, value: ExecutableValueV1) -> Result<Term, ExecutableErrorV1> {
+        let mut cache = self.cache.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+        if let Some(Cached::Value(previous, term)) = cache.as_ref() {
+            if previous == &value { return Ok(term.clone()); }
+        }
+        let term = projected_value_term(scope, value.clone())?;
+        *cache = Some(Cached::Value(value, term.clone()));
+        Ok(term)
+    }
+
     pub fn realize(&self, configuration: &[ExecutableSlotV1]) -> Result<Term, ExecutableErrorV1> {
         match &self.node {
             Node::Static(term) => Ok(term.clone()),
@@ -65,19 +81,25 @@ impl ProjectionPlan {
                 let slot = configuration.get(usize::from(binding.slot)).ok_or(ExecutableErrorV1::UnknownSlot(binding.slot))?;
                 let value = slot.value().ok_or(ExecutableErrorV1::MissingState)?;
                 if value.kind() != binding.value_kind { return Err(ExecutableErrorV1::TypeMismatch); }
-                projected_value_term(*scope, value.clone())
+                self.cached_value(*scope, value.clone())
             }
             Node::Row(scope, slot, subject) => {
                 let table = Self::row(*slot, configuration)?;
                 if !table.present(subject)? { return Err(ExecutableErrorV1::MissingState); }
-                projected_value_term(*scope, table.read(subject)?)
+                self.cached_value(*scope, table.read(subject)?)
             }
             Node::Triple(children, field) => {
                 if *field && children[1].has_roles && !children[1].present(configuration)? {
                     return children[2].realize(configuration);
                 }
-                Term::triple([children[0].realize(configuration)?, children[1].realize(configuration)?, children[2].realize(configuration)?])
-                    .map_err(|_| ExecutableErrorV1::MalformedProgram)
+                let values = [children[0].realize(configuration)?, children[1].realize(configuration)?, children[2].realize(configuration)?];
+                let mut cache = self.cache.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+                if let Some(Cached::Triple(term)) = cache.as_ref() {
+                    if term.as_triple().is_some_and(|triple| triple.slots() == values.each_ref()) { return Ok(term.clone()); }
+                }
+                let term = Term::triple(values).map_err(|_| ExecutableErrorV1::MalformedProgram)?;
+                *cache = Some(Cached::Triple(term.clone()));
+                Ok(term)
             }
         }
     }
@@ -121,9 +143,11 @@ mod tests {
         for value in [2.0, 9.0] {
             table.put(&subject, number(value + 1.0)).unwrap();
             let present = [ExecutableSlotV1::Present(number(value)), ExecutableSlotV1::Present(ExecutableValueV1::RelationTable(table.clone()))];
-            assert_eq!(plan.realize(&present).unwrap(), projection_object(scope, vec![
+            let actual = plan.realize(&present).unwrap();
+            assert_eq!(actual, projection_object(scope, vec![
                 (b"fixed".to_vec(), literal(7.0)), (b"state".to_vec(), literal(value)), (b"row".to_vec(), literal(value + 1.0)),
             ]).unwrap());
+            assert_eq!(plan.realize(&present).unwrap(), actual);
         }
         assert_eq!(plan.realize(&absent).unwrap(), projection_object(scope, vec![(b"fixed".to_vec(), literal(7.0))]).unwrap());
     }
