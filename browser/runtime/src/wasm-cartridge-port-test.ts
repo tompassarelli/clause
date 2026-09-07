@@ -1773,3 +1773,24 @@ test.test("direct hex request custody preserves every octet and strict transport
   expect(() => wasm.decodeProcessRequestHex(" ")).toThrow("empty");
   expect(() => wasm.decodeProcessRequestHex("00".repeat(4 * 1024 * 1024 + 1))).toThrow("byte bound");
 });
+
+
+test.test("projection cursor preserves object field custody and rejects malformed tails", () => {
+  const text = (value: string) => projected_atom_node("clause/process-projected-text-v1", [...new TextEncoder().encode(value)]);
+  const end = projected_atom_node("clause/js-object-end-v1", []);
+  const field = (key: string, value: number[], rest: number[]) => projected_triple_node(
+    projected_atom_node("clause/js-field-v1", [...new TextEncoder().encode(key)]), value, rest);
+  const frame = (term: number[]) => new Array<number>(64).fill(0).concat(term);
+  const valid = field("__proto__", text("ordinary"), field("constructor", text("data"), end));
+  const projected = wasm["decode-projected-term-frame"](frame(valid));
+  if (typeof projected !== "object" || projected === null) throw new Error("expected projected object");
+  expect(Object.getPrototypeOf(projected)).toBe(Object.prototype);
+  expect(Object.hasOwn(projected, "__proto__")).toBe(true);
+  expect(Object.isFrozen(projected)).toBe(true);
+  expect(projected).toEqual(JSON.parse('{"__proto__":"ordinary","constructor":"data"}'));
+  expect(() => wasm["decode-projected-term-frame"](frame(field("x", text("a"), field("x", text("b"), end))))).toThrow("duplicated");
+  expect(() => wasm["decode-projected-term-frame"](frame(field("x", text("a"), projected_atom_node("clause/js-array-end-v1", []))))).toThrow("invalid terminator");
+  expect(() => wasm["decode-projected-term-frame"](frame(valid).concat(0))).toThrow("trailing bytes");
+  const malformed = frame(valid); malformed[malformed.length - 1] = 1;
+  expect(() => wasm["decode-projected-term-frame"](malformed)).toThrow("equality contract");
+});

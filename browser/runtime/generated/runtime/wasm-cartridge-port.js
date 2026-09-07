@@ -1324,119 +1324,6 @@ function utf8_text(bytes, label) {
         throw new Error(concatenate(label, " is not canonical UTF-8"));
     }
 }
-function decode_term_node(bytes, offset, depth) {
-    if (depth > cse1_projected_term_max_depth) {
-        (() => {
-            throw new Error("projected Term exceeds its depth bound");
-        })();
-    }
-    const tag_end = require_range(bytes, offset, 1, "projected Term node");
-    const tag = byte_at(bytes, offset);
-    return tag === 0
-        ? (() => {
-            const kind = parse_canonical_blob(bytes, tag_end, "projected Atom kind");
-            const payload = parse_canonical_blob(bytes, kind.next, "projected Atom payload");
-            const equality_end = require_range(bytes, payload.next, 1, "projected Atom equality");
-            if (!equivalent(byte_at(bytes, payload.next), 0)) {
-                (() => {
-                    throw new Error("projected Atom equality contract is invalid");
-                })();
-            }
-            return {
-                node: { kind: "atom", atomKind: kind.bytes, payload: payload.bytes },
-                next: equality_end,
-            };
-        })()
-        : tag === 1
-            ? (() => {
-                const left = decode_term_node(bytes, tag_end, depth + 1);
-                const operator = decode_term_node(bytes, left.next, depth + 1);
-                const right = decode_term_node(bytes, operator.next, depth + 1);
-                return {
-                    node: {
-                        kind: "triple",
-                        slots: [left.node, operator.node, right.node],
-                    },
-                    next: right.next,
-                };
-            })()
-            : (() => {
-                throw new Error("projected Term node tag is invalid");
-            })();
-}
-function decode_canonical_term(bytes, maximumBytes = cse1_max_bytes) {
-    const envelope_source = workbench["workbench-byte-envelope-source"](bytes);
-    const source = envelope_source === null ? bytes : envelope_source;
-    if ((typeof source === "string" && source.length <= maximumBytes) ||
-        exact_byte_array_p(source, maximumBytes)) {
-        const node_start = require_range(source, 0, 2 * identity_bytes, "projected Term scope");
-        const result = decode_term_node(source, node_start, 0);
-        if (!equivalent(result.next, source.length)) {
-            (() => {
-                throw new Error("projected Term has trailing bytes");
-            })();
-        }
-        return result.node;
-    }
-    else {
-        return (() => {
-            throw new Error("projected Term bytes are outside the CSE1 bound");
-        })();
-    }
-}
-function atom_kind_text(node) {
-    if (node.kind !== "atom")
-        throw new Error("projected realization expected an Atom");
-    return ascii_text(node.atomKind, "projected Atom kind");
-}
-function projected_number(payload) {
-    return equivalent(payload.length, 8)
-        ? finite_f64(payload, 0)
-        : (() => {
-            throw new Error("projected F64 payload is invalid");
-        })();
-}
-function realize_object(realize_node, first) {
-    let node = first;
-    const fields = [];
-    const keys = new Set();
-    while (node.kind === "triple") {
-        const [field, value, rest] = node.slots;
-        if (field.kind !== "atom" ||
-            atom_kind_text(field) !== "clause/js-field-v1") {
-            throw new Error("projected object entry lacks a field Atom");
-        }
-        const key = ascii_text(field.payload, "projected field");
-        if (keys.has(key)) {
-            throw new Error("projected object field is duplicated");
-        }
-        keys.add(key);
-        fields.push([key, realize_node(value)]);
-        node = rest;
-    }
-    if (atom_kind_text(node) !== "clause/js-object-end-v1") {
-        throw new Error("projected object has an invalid terminator");
-    }
-    // Object.fromEntries defines own data properties without invoking the
-    // legacy __proto__ setter; freezing prevents later prototype mutation.
-    return Object.freeze(Object.fromEntries(fields));
-}
-function realize_array(realize_node, first) {
-    let node = first;
-    const values = [];
-    while (node.kind === "triple") {
-        const [item, value, rest] = node.slots;
-        if (item.kind !== "atom" || atom_kind_text(item) !== "clause/js-item-v1") {
-            throw new Error("projected array entry lacks an item Atom");
-        }
-        values.push(realize_node(value));
-        node = rest;
-    }
-    if (atom_kind_text(node) !== "clause/js-array-end-v1") {
-        throw new Error("projected array has an invalid terminator");
-    }
-    return Object.freeze(values);
-}
 // Passive transport only: these are exact runtime table rows, not an evaluator
 // or a host-owned collection of game objects. No labels become identities.
 function projected_scalar_order(a, b, kind) {
@@ -1560,84 +1447,152 @@ function projected_table(payload) {
     return Object.freeze({ kind: "relation-table", subjectDomain, valueKind, cardinality, total,
         ...(valueDomain === undefined ? {} : { valueDomain }), rows: Object.freeze(rows) });
 }
-function projected_set(node) {
-    if (node.kind !== "triple")
-        throw new Error("invalid projected set");
-    const [header, tree, end] = node.slots;
-    if (header.kind !== "atom" || header.payload.length !== 1 || ![0, 1, 2, 6, 8].includes(byte_at(header.payload, 0)) ||
-        end.kind !== "atom" || atom_kind_text(end) !== "clause/process-projected-set-end-v1" || end.payload.length !== 0)
-        throw new Error("invalid projected set header");
-    const values = [];
-    const kind = byte_at(header.payload, 0);
-    const visit = (tree, depth) => {
-        if (depth > 32 || values.length > 65535)
-            throw new Error("projected set exceeds bounds");
-        if (tree.kind === "atom") {
-            if (atom_kind_text(tree) !== "clause/process-projected-set-end-v1" || tree.payload.length !== 0)
-                throw new Error("invalid projected set tree");
-            return;
-        }
-        visit(tree.slots[0], depth + 1);
-        const leaf = tree.slots[1];
-        const expected = new Map([[0, "clause/process-projected-f64-v1"], [1, "clause/process-projected-bool-v1"], [2, "clause/process-projected-symbol-v1"], [6, "clause/process-projected-text-v1"], [8, "clause/process-projected-referent-v1"]]);
-        if (leaf.kind !== "atom" || atom_kind_text(leaf) !== expected.get(kind))
-            throw new Error("wrong projected set kind");
-        const value = realize_projection_node(leaf);
-        if (values.length && projected_scalar_order(values[values.length - 1], value, kind) >= 0)
-            throw new Error("noncanonical projected set");
-        values.push(value);
-        visit(tree.slots[2], depth + 1);
-    };
-    visit(tree, 0);
-    return Object.freeze(values);
+function realize_projected_atom(kind, payload) {
+    if (kind === "clause/js-object-end-v1" && payload.length === 0)
+        return Object.freeze({});
+    if (kind === "clause/js-array-end-v1" && payload.length === 0)
+        return Object.freeze([]);
+    if (kind === "clause/process-projected-f64-v1") {
+        if (payload.length !== 8)
+            throw new Error("projected F64 payload is invalid");
+        return finite_f64(payload, 0);
+    }
+    if (kind === "clause/process-projected-bool-v1") {
+        const value = byte_at(payload, 0);
+        if (payload.length !== 1 || value > 1)
+            throw new Error("projected Boolean payload is invalid");
+        return value === 1;
+    }
+    if (kind === "clause/process-projected-symbol-v1")
+        return ascii_text(payload, "projected symbol");
+    if (kind === "clause/process-projected-text-v1")
+        return utf8_text(payload, "projected Text");
+    if (kind === "clause/process-projected-relation-table-v1")
+        return projected_table(payload);
+    if (kind === "clause/process-projected-referent-v1") {
+        if (payload.length === 9 && byte_at(payload, 4) === 0)
+            return checked_referent({ kind: "referent", domain: little_u32(payload, 0), identity: { kind: "declared", value: little_u32(payload, 5) } });
+        if (payload.length === 37 && byte_at(payload, 4) === 1)
+            return checked_referent({ kind: "referent", domain: little_u32(payload, 0), identity: { kind: "created", value: frozen_byte_range(payload, 5, 37) } });
+        throw new Error("projected referent is malformed");
+    }
+    throw new Error("projected scalar Atom is not realizable");
 }
-function realize_projection_node(node) {
-    if (node.kind === "atom") {
-        const kind = atom_kind_text(node);
-        const payload = node.payload;
-        if (kind === "clause/js-object-end-v1" && payload.length === 0)
-            return Object.freeze({});
-        if (kind === "clause/js-array-end-v1" && payload.length === 0)
-            return Object.freeze([]);
-        if (kind === "clause/process-projected-f64-v1")
-            return projected_number(payload);
-        if (kind === "clause/process-projected-bool-v1") {
-            const value = byte_at(payload, 0);
-            if (payload.length !== 1 || value === undefined || value > 1) {
-                throw new Error("projected Boolean payload is invalid");
+class ProjectionCursor {
+    bytes;
+    offset = 2 * identity_bytes;
+    constructor(bytes) {
+        this.bytes = bytes;
+        require_range(bytes, 0, this.offset, "projected Term scope");
+    }
+    tag(depth) {
+        if (depth > cse1_projected_term_max_depth)
+            throw new Error("projected Term exceeds its depth bound");
+        require_range(this.bytes, this.offset, 1, "projected Term node");
+        const tag = byte_at(this.bytes, this.offset++);
+        if (tag > 1)
+            throw new Error("projected Term node tag is invalid");
+        return tag;
+    }
+    atomPayload() {
+        const kind = parse_canonical_blob(this.bytes, this.offset, "projected Atom kind");
+        const payload = parse_canonical_blob(this.bytes, kind.next, "projected Atom payload");
+        this.offset = require_range(this.bytes, payload.next, 1, "projected Atom equality");
+        if (byte_at(this.bytes, payload.next) !== 0)
+            throw new Error("projected Atom equality contract is invalid");
+        return { kind: ascii_text(kind.bytes, "projected Atom kind"), payload: payload.bytes };
+    }
+    atom(depth) {
+        if (this.tag(depth) !== 0)
+            throw new Error("projected realization expected an Atom");
+        return this.atomPayload();
+    }
+    value(depth) {
+        if (this.tag(depth) === 0) {
+            const atom = this.atomPayload();
+            return realize_projected_atom(atom.kind, atom.payload);
+        }
+        let head = this.atom(depth + 1);
+        if (head.kind === "clause/process-projected-set-v1")
+            return this.set(head.payload, depth);
+        const object = head.kind === "clause/js-field-v1";
+        if (!object && head.kind !== "clause/js-item-v1")
+            throw new Error("projected Term lacks a realizable shape");
+        const fields = [];
+        const values = [];
+        const keys = new Set();
+        for (;;) {
+            if (object) {
+                if (head.kind !== "clause/js-field-v1")
+                    throw new Error("projected object entry lacks a field Atom");
+                const key = ascii_text(head.payload, "projected field");
+                if (keys.has(key))
+                    throw new Error("projected object field is duplicated");
+                keys.add(key);
+                fields.push([key, this.value(depth + 1)]);
             }
-            return value === 1;
+            else {
+                if (head.kind !== "clause/js-item-v1")
+                    throw new Error("projected array entry lacks an item Atom");
+                values.push(this.value(depth + 1));
+            }
+            depth += 1;
+            if (this.tag(depth) === 0) {
+                const end = this.atomPayload();
+                if (end.kind !== (object ? "clause/js-object-end-v1" : "clause/js-array-end-v1")) {
+                    throw new Error(object ? "projected object has an invalid terminator" : "projected array has an invalid terminator");
+                }
+                // Own data properties preserve __proto__ as an ordinary field.
+                return object ? Object.freeze(Object.fromEntries(fields)) : Object.freeze(values);
+            }
+            head = this.atom(depth + 1);
         }
-        if (kind === "clause/process-projected-symbol-v1")
-            return ascii_text(payload, "projected symbol");
-        if (kind === "clause/process-projected-text-v1")
-            return utf8_text(payload, "projected Text");
-        if (kind === "clause/process-projected-relation-table-v1")
-            return projected_table(payload);
-        if (kind === "clause/process-projected-referent-v1") {
-            const bytes = Array.from({ length: payload.length }, (_, index) => byte_at(payload, index));
-            if (payload.length === 9 && byte_at(payload, 4) === 0)
-                return checked_referent({ kind: "referent", domain: little_u32(bytes, 0), identity: { kind: "declared", value: little_u32(bytes, 5) } });
-            if (payload.length === 37 && byte_at(payload, 4) === 1)
-                return checked_referent({ kind: "referent", domain: little_u32(bytes, 0), identity: { kind: "created", value: frozen_byte_range(bytes, 5, 37) } });
-            throw new Error("projected referent is malformed");
-        }
-        throw new Error("projected scalar Atom is not realizable");
     }
-    else {
-        const head = node.slots[0];
-        const kind = atom_kind_text(head);
-        if (kind === "clause/process-projected-set-v1")
-            return projected_set(node);
-        if (kind === "clause/js-field-v1")
-            return realize_object(realize_projection_node, node);
-        if (kind === "clause/js-item-v1")
-            return realize_array(realize_projection_node, node);
-        throw new Error("projected Term lacks a realizable shape");
+    set(payload, depth) {
+        const kinds = new Map([[0, "clause/process-projected-f64-v1"], [1, "clause/process-projected-bool-v1"], [2, "clause/process-projected-symbol-v1"], [6, "clause/process-projected-text-v1"], [8, "clause/process-projected-referent-v1"]]);
+        if (payload.length !== 1 || !kinds.has(byte_at(payload, 0)))
+            throw new Error("invalid projected set header");
+        const kind = byte_at(payload, 0), values = [];
+        const end = (atom) => {
+            if (atom.kind !== "clause/process-projected-set-end-v1" || atom.payload.length !== 0)
+                throw new Error("invalid projected set tree");
+        };
+        const visit = (depth, treeDepth) => {
+            if (treeDepth > 32 || values.length > 65535)
+                throw new Error("projected set exceeds bounds");
+            if (this.tag(depth) === 0) {
+                end(this.atomPayload());
+                return;
+            }
+            visit(depth + 1, treeDepth + 1);
+            const leaf = this.atom(depth + 1);
+            if (leaf.kind !== kinds.get(kind))
+                throw new Error("wrong projected set kind");
+            const value = realize_projected_atom(leaf.kind, leaf.payload);
+            if (values.length && projected_scalar_order(values[values.length - 1], value, kind) >= 0)
+                throw new Error("noncanonical projected set");
+            values.push(value);
+            visit(depth + 1, treeDepth + 1);
+        };
+        visit(depth + 1, 0);
+        end(this.atom(depth + 1));
+        return Object.freeze(values);
     }
+}
+function decode_projected_value(bytes, maximumBytes) {
+    const envelope = workbench["workbench-byte-envelope-source"](bytes);
+    const source = envelope === null ? bytes : envelope;
+    if (!((typeof source === "string" && source.length <= maximumBytes) || exact_byte_array_p(source, maximumBytes))) {
+        throw new Error("projected Term bytes are outside the CSE1 bound");
+    }
+    const cursor = new ProjectionCursor(source);
+    const value = cursor.value(0);
+    if (cursor.offset !== source.length)
+        throw new Error("projected Term has trailing bytes");
+    return value;
 }
 function decode_projected_term_frame(bytes) {
-    return realize_projection_node(decode_canonical_term(bytes));
+    return decode_projected_value(bytes, cse1_max_bytes);
 }
 function is_wasm_session(value) {
     return (typeof value === "object" &&
@@ -2084,19 +2039,19 @@ function diagnosticModule(module) {
 export function projectSession(module, incomingSession) {
     const session = require_live_session(incomingSession);
     const bytes = diagnosticModule(module).clause_session_v1_project_bulk(session.handle.slot, session.handle.generation);
-    return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+    return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), 1024 * 1024);
 }
 export function explainSession(module, incomingSession, entry) {
     const session = require_live_session(incomingSession);
     if (!Number.isInteger(entry) || entry < 0 || entry > 65535)
         throw new Error("explanation entry is invalid");
     const bytes = diagnosticModule(module).clause_session_v1_explain_bulk(session.handle.slot, session.handle.generation, entry);
-    return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+    return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), 1024 * 1024);
 }
 export function sourceContinuity(module, incomingSession) {
     const session = require_live_session(incomingSession);
     const bytes = diagnosticModule(module).clause_session_v1_source_continuity_bulk(session.handle.slot, session.handle.generation);
-    return realize_projection_node(decode_canonical_term(byteTextDecoder.decode(new Uint16Array(bytes)), source_continuity_max_bytes));
+    return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), source_continuity_max_bytes);
 }
 /** Read-only opaque CIQ1/CIQ2 request: all search and semantic evaluation occurs
  * inside the live Wasm runtime against a retained actual event. */
@@ -2105,7 +2060,7 @@ export function interveneSession(module, incomingSession, query) {
     if (!exact_byte_array_p(query, 64 * 1024))
         throw new Error("intervention query exceeds bound");
     const bytes = diagnosticModule(module).clause_session_v1_intervene_bulk(session.handle.slot, session.handle.generation, new Uint8Array(query));
-    return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+    return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), 1024 * 1024);
 }
 export { checked_referent as checkedProjectedReferent };
 /** Decode exact runtime coordinates; ordinal page keys are not row identities. */
