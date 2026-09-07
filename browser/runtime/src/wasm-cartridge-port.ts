@@ -644,6 +644,10 @@ function cwo1observation_values(
   return r.values;
 }
 
+// Only arrays copied and frozen by this adapter enter this set. A caller's
+// frozen array can still contain accessors whose values change between reads.
+const validated_frozen_bytes = new WeakSet<ExactBytes>();
+
 function exact_byte_array_p(
   bytes: unknown,
   maximum: number,
@@ -654,13 +658,13 @@ function exact_byte_array_p(
     Array.isArray(bytes) &&
     bytes.length >= 1 &&
     bytes.length <= maximum &&
-    bytes.every(
+    (validated_frozen_bytes.has(bytes) || bytes.every(
       (byte: unknown) =>
         typeof byte === "number" &&
         Number.isInteger(byte) &&
         byte >= 0 &&
         byte <= 255,
-    )
+    ))
   );
   } finally { leaveSourceTransferPhase(profile); }
 }
@@ -772,7 +776,12 @@ function frozen_byte_range(
     let index = start;
     while (true) {
       if (index === end) {
-        return Object.freeze(result);
+        const frozen = Object.freeze(result);
+        if (typeof bytes !== "string" && validated_frozen_bytes.has(bytes) &&
+            Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && end <= bytes.length) {
+          validated_frozen_bytes.add(frozen);
+        }
+        return frozen;
       } else {
         result.push(byte_at(bytes, index));
         const _recur_0 = index + 1;
@@ -795,6 +804,7 @@ function canonical_byte_range(
 }
 
 function exact_bytes_to_binary_text(bytes: ExactBytes): string {
+  const validated = validated_frozen_bytes.has(bytes);
   const chunks: string[] = [];
   const chunk_size = 4096;
   for (let start = 0; start < bytes.length; start += chunk_size) {
@@ -802,7 +812,7 @@ function exact_bytes_to_binary_text(bytes: ExactBytes): string {
     let chunk = "";
     for (let index = start; index < end; index += 1) {
       const byte = byte_at(bytes, index);
-      if (!Number.isInteger(byte) || byte < 0 || byte > 255) throw new Error("cartridge byte is not an exact octet");
+      if (!validated && (!Number.isInteger(byte) || byte < 0 || byte > 255)) throw new Error("cartridge byte is not an exact octet");
       chunk += String.fromCharCode(byte);
     }
     chunks.push(chunk);
@@ -1207,11 +1217,12 @@ function dispatch_session_request(
         throw new Error("CSE1 event length is out of bounds");
       })();
     }
-    return exact_byte_array_p(event, cse1_max_bytes)
-      ? Object.freeze(event)
-      : (() => {
-          throw new Error("CSE1 bulk event byte is out of bounds");
-        })();
+    if (!exact_byte_array_p(event, cse1_max_bytes)) {
+      throw new Error("CSE1 bulk event byte is out of bounds");
+    }
+    const frozen = Object.freeze(event);
+    validated_frozen_bytes.add(frozen);
+    return frozen;
   } else {
     return (() => {
       throw new Error(
