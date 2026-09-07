@@ -72,6 +72,9 @@ impl WasmPersistentSessionBoundaryV1 {
             .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
         let mut bytes = MAGIC.to_vec();
         for value in [context, live.exact_open.as_slice(), runtime.as_slice()] {
+            bytes
+                .try_reserve(value.len().checked_add(4).ok_or(WasmProcessStatusV1::ResponseOutOfBounds)?)
+                .map_err(|_| WasmProcessStatusV1::ResponseOutOfBounds)?;
             put_blob(&mut bytes, value)?;
         }
         bytes.extend_from_slice(&handle.generation.to_le_bytes());

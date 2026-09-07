@@ -35,7 +35,9 @@ ordinal_wire!(
 
 fn blob(bytes: &mut Vec<u8>, value: &[u8]) -> Result<(), ExecutableErrorV1> {
     let length = u32::try_from(value.len()).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
-    bytes.len().checked_add(value.len()).and_then(|n| n.checked_add(4)).ok_or(ExecutableErrorV1::ResourceLimit)?;
+    bytes
+        .try_reserve(value.len().checked_add(4).ok_or(ExecutableErrorV1::ResourceLimit)?)
+        .map_err(|_| ExecutableErrorV1::ResourceLimit)?;
     bytes.extend_from_slice(&length.to_le_bytes());
     bytes.extend_from_slice(value);
     Ok(())
