@@ -32,7 +32,7 @@ use clause_runtime::{
 
 const COHERENT_TEMPLATE_CWR1_HEX: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../browser/jump-arena-shell/fixtures/wasm-coherent-game-v1/coherent-game-v1.cwr1.hex"
+    "/../../test-vectors/browser/wasm-coherent-game-v1/coherent-game-v1.cwr1.hex"
 ));
 const MAX_COMMANDS: u64 = 4_096;
 const SOURCE_AUTHORITY_BUDGET_UNITS: u64 = 1_000_000;

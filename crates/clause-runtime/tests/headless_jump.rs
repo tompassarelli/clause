@@ -3593,7 +3593,7 @@ fn shipped_cwr1_has_external_physical_plan_and_successive_issued_admission() {
     let exact = encode_wasm_process_request_v1(&request).expect("browser CWR1 fixture encodes");
     let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../browser/jump-arena-shell/fixtures/wasm-jump-v1/jump-v1.cwr1.hex"
+        "/../../test-vectors/browser/wasm-jump-v1/jump-v1.cwr1.hex"
     );
     if std::env::var_os("CLAUSE_UPDATE_BROWSER_CWR1").is_some() {
         std::fs::write(fixture_path, lowercase_hex_lines(&exact))
@@ -3602,7 +3602,7 @@ fn shipped_cwr1_has_external_physical_plan_and_successive_issued_admission() {
     }
     let tracked = decode_hex(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../browser/jump-arena-shell/fixtures/wasm-jump-v1/jump-v1.cwr1.hex"
+        "/../../test-vectors/browser/wasm-jump-v1/jump-v1.cwr1.hex"
     )));
     assert_eq!(tracked, exact);
     assert_eq!(
@@ -3795,7 +3795,7 @@ fn shipped_collect_cwr1_preserves_clause_owned_scalar_behavior() {
     assert_ne!(base_plan.program, changed_plan.program);
 
     let fixture_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../browser/jump-arena-shell/fixtures/wasm-collect-v1");
+        .join("../../test-vectors/browser/wasm-collect-v1");
     let fixtures = [
         ("collect-plus-1.cwr1.hex", base),
         ("collect-plus-4.cwr1.hex", changed),
@@ -3864,7 +3864,7 @@ fn shipped_symbolic_collect_cwr1_preserves_clause_owned_state() {
     assert_ne!(base_plan.program, changed_plan.program);
 
     let fixture_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../browser/jump-arena-shell/fixtures/wasm-collect-state-v1");
+        .join("../../test-vectors/browser/wasm-collect-state-v1");
     let fixtures = [("collected.cwr1.hex", base), ("spent.cwr1.hex", changed)];
     if std::env::var_os("CLAUSE_UPDATE_BROWSER_SYMBOLIC_COLLECT_CWR1").is_some() {
         std::fs::create_dir_all(&fixture_root)
@@ -3963,7 +3963,7 @@ fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
     );
 
     let fixture_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../browser/jump-arena-shell/fixtures/wasm-gameplay-v1");
+        .join("../../test-vectors/browser/wasm-gameplay-v1");
     let fixtures = [
         ("gameplay-v1.cwr1.hex", request),
         ("gameplay-spent-v1.cwr1.hex", changed_request),
@@ -4030,7 +4030,7 @@ fn shipped_coherent_game_cwr1_carries_objective_hazard_reset_and_spring() {
     );
 
     let fixture_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../browser/jump-arena-shell/fixtures/wasm-coherent-game-v1");
+        .join("../../test-vectors/browser/wasm-coherent-game-v1");
     let fixture_path = fixture_root.join("coherent-game-v1.cwr1.hex");
     let exact =
         encode_wasm_process_request_v1(&request).expect("coherent game CWR1 fixture encodes");

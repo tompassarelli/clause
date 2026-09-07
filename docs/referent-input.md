@@ -105,7 +105,7 @@ cargo test -p clause-workbench --test resident_source --locked -j 2
 cargo run -p clause-workbench --example referent-input-artifact --locked -j 2
 cargo build -p clause-runtime --target wasm32-unknown-unknown --release --locked -j 2
 wasm-bindgen target/wasm32-unknown-unknown/release/clause_runtime.wasm --target web --out-dir target/referent-wasm
-cd browser/jump-arena-shell
+cd browser/runtime
 bun run typecheck
 bun test ./src/referent-input-test.ts
 ```

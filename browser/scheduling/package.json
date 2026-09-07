@@ -1,0 +1,11 @@
+{
+  "name": "clause-scheduling-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "bun ../runtime/node_modules/typescript/bin/tsc --project tsconfig.json --noEmit",
+    "test": "bun test ./src/scheduling-view-test.ts",
+    "test:browser": "bun ./src/scheduling-browser-journey.ts",
+    "serve": "bun ./src/scheduling-server.ts"
+  }
+}
