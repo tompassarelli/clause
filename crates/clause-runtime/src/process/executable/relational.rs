@@ -199,7 +199,7 @@ pub(super) fn sum(
     let mut visits = 0;
     let mut total = 0.0;
     for (matched, accepted) in match_rule(predicates, configuration, &inputs,
-        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits)? {
+        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits, query_context.reads.is_some())? {
         if let Some(reads) = query_context.reads {
             for predicate in &matched.predicates {
                 reads.borrow_mut().extend(predicate.reads.iter().cloned());
@@ -390,9 +390,11 @@ pub(super) fn match_rule(
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
     visits: &mut usize,
+    capture: bool,
 ) -> Result<Vec<(Matched, bool)>, ExecutableErrorV1> {
     let mut active = vec![Matched::default()];
     let mut rejected = Vec::new();
+    let mut rejected_count = 0usize;
     for predicate in predicates {
         if let ExecutableExpressionV1::RelationMatch(slot, subject_pattern, value_pattern) =
             predicate
@@ -523,14 +525,14 @@ pub(super) fn match_rule(
                             continue;
                         }
                         found = true;
-                        matched.predicates.push(EvaluatedValue {
+                        if capture { matched.predicates.push(EvaluatedValue {
                             value: ExecutableValueV1::Boolean(true),
                             reads: vec![ExecutableReadV1::RelationRow(
                                 *slot,
                                 subject.clone(),
                                 value.clone(),
                             )],
-                        });
+                        }); }
                         next.entry(matched.bindings.clone()).or_insert(matched);
                         if next.len() > MAX_MATCHES {
                             return Err(ExecutableErrorV1::ResourceLimit);
@@ -538,7 +540,7 @@ pub(super) fn match_rule(
                 }
                 if !found {
                     let mut incoming = incoming.expect("failed candidates retain their original prefix");
-                    incoming.predicates.push(EvaluatedValue {
+                    if capture { incoming.predicates.push(EvaluatedValue {
                         value: ExecutableValueV1::Boolean(false),
                         reads: vec![ExecutableReadV1::RelationSearch(
                             *slot,
@@ -548,9 +550,10 @@ pub(super) fn match_rule(
                                 .cloned(),
                             *visits - start_visits,
                         )],
-                    });
-                    rejected.push((incoming, false));
-                    if rejected.len() > MAX_MATCHES {
+                    }); }
+                    rejected_count += 1;
+                    if capture { rejected.push((incoming, false)); }
+                    if rejected_count > MAX_MATCHES {
                         return Err(ExecutableErrorV1::ResourceLimit);
                     }
                 }
@@ -559,7 +562,7 @@ pub(super) fn match_rule(
         } else {
             let mut next = Vec::new();
             for mut matched in active {
-                let evaluated = evaluate_with_reads(
+                let evaluated = evaluate_for_trace(
                     predicate,
                     configuration,
                     arguments,
@@ -567,14 +570,16 @@ pub(super) fn match_rule(
                         bindings: Some(&matched.bindings),
                         ..context
                     },
+                    capture,
                 )?;
                 let accepted = boolean(evaluated.value.clone())?;
-                matched.predicates.push(evaluated);
+                if capture { matched.predicates.push(evaluated); }
                 if accepted {
                     next.push(matched);
                 } else {
-                    rejected.push((matched, false));
-                    if rejected.len() > MAX_MATCHES {
+                    rejected_count += 1;
+                    if capture { rejected.push((matched, false)); }
+                    if rejected_count > MAX_MATCHES {
                         return Err(ExecutableErrorV1::ResourceLimit);
                     }
                 }
@@ -895,6 +900,38 @@ mod match_ownership_tests {
     use super::*;
 
     #[test]
+    fn untraced_matches_preserve_rejection_and_visit_limits() {
+        use ExecutableExpressionV1 as E;
+        let table = ExecutableRelationTableV1 {
+            subject_domain: 7, value_kind: ExecutableRelationValueKindV1::Referent,
+            value_domain: Some(7), cardinality: ExecutableRelationCardinalityV1::Many,
+            total: false, rows: Arc::new((0..MAX_MATCHES).map(|index| {
+                let subject = ExecutableReferentV1::declared(7, index as u32);
+                (subject.clone(), BTreeSet::from([ExecutableValueV1::Referent(subject)]).into())
+            }).collect()),
+        };
+        let configuration = [ExecutableValueV1::RelationTable(table).into()];
+        let predicates = [
+            E::RelationMatch(0, Box::new(E::Binding(0)), Box::new(E::Binding(0))),
+            E::Equal(Box::new(E::Binding(0)), Box::new(E::Constant(
+                ExecutableValueV1::Referent(ExecutableReferentV1::declared(7, 0))))),
+            E::RelationMatch(0, Box::new(E::Binding(1)), Box::new(E::Binding(1))),
+            E::Constant(ExecutableValueV1::Boolean(false)),
+        ];
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
+            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+        for capture in [false, true] {
+            let mut visits = 0;
+            assert!(matches!(match_rule(&predicates, &configuration, &[], context,
+                &mut visits, capture), Err(ExecutableErrorV1::ResourceLimit)));
+            assert_eq!(visits, MAX_MATCHES * 2);
+            let mut visits = MAX_JOIN_VISITS;
+            assert!(matches!(match_rule(&predicates[..1], &configuration, &[], context,
+                &mut visits, capture), Err(ExecutableErrorV1::ResourceLimit)));
+        }
+    }
+
+    #[test]
     fn a_failed_final_candidate_restores_the_original_bindings() {
         let subject = ExecutableReferentV1::declared(7, 1);
         let value = ExecutableValueV1::Referent(ExecutableReferentV1::declared(7, 2));
@@ -908,7 +945,7 @@ mod match_ownership_tests {
             Box::new(ExecutableExpressionV1::Binding(0)));
         let results = match_rule(&[predicate], &[ExecutableValueV1::RelationTable(table).into()], &[],
             EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
-                reads: None, sum_queries: None, bindings: None, relational_occurrence: None }, &mut 0).unwrap();
+                reads: None, sum_queries: None, bindings: None, relational_occurrence: None }, &mut 0, true).unwrap();
         assert_eq!(results.len(), 1);
         let (matched, accepted) = &results[0];
         assert!(!accepted);

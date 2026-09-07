@@ -2812,7 +2812,6 @@ struct PreparedCarrierSettlementV1 {
 struct PreparedExecutableStepV1 {
     next_configuration: Vec<ExecutableSlotV1>,
     bridge_step: ExecutableStepV1,
-    trace: ExecutableEvaluationTraceV1,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2846,7 +2845,7 @@ pub struct ExecutableProcessRuntimeV1 {
     suspended_continuation: Option<ContinuationId>,
     pending_effect_intent: Option<EffectIntentId>,
     active_effect_attempt: Option<EffectAttemptId>,
-    recorded_events: BTreeMap<u16, ExecutableRecordedEventV1>,
+    recorded_events: BTreeMap<u16, explanation::RetainedEventV1>,
     source_metadata: Option<Term>,
     source_continuity: Option<ExecutableSourceContinuityV1>,
 }
@@ -4132,20 +4131,19 @@ impl ExecutableProcessRuntimeV1 {
                 let (configuration_ordinal, _) =
                     stage_runtime_ordinal(self.identity_ordinals.next_configuration)
                         .map_err(ExecutableCarrierErrorV1::Executable)?;
-                let mut trace = ExecutableEvaluationTraceV1::default();
+
                 let (next_configuration, bridge_step) = self
                     .prepare_step_traced(
                         occurrence.clone(),
                         step_ordinal,
                         configuration_ordinal,
                         &self.configuration,
-                        Some(&mut trace),
+                        None,
                     )
                     .map_err(ExecutableCarrierErrorV1::Executable)?;
                 PreparedExecutableStepV1 {
                     next_configuration,
                     bridge_step,
-                    trace,
                 }
             };
             if prepared.next_configuration != self.configuration {
@@ -4265,24 +4263,21 @@ impl ExecutableProcessRuntimeV1 {
         let PreparedExecutableStepV1 {
             next_configuration,
             mut bridge_step,
-            trace,
         } = if let Some(prepared) = prepared {
             prepared
         } else {
-            let mut trace = ExecutableEvaluationTraceV1::default();
             let (next_configuration, bridge_step) = self
                 .prepare_step_traced(
                     occurrence,
                     step_ordinal,
                     configuration_ordinal,
                     &self.configuration,
-                    Some(&mut trace),
+                    None,
                 )
                 .map_err(ExecutableCarrierErrorV1::Executable)?;
             PreparedExecutableStepV1 {
                 next_configuration,
                 bridge_step,
-                trace,
             }
         };
         bridge_step.input_observation = Some(occurrence_id);
@@ -4555,7 +4550,6 @@ impl ExecutableProcessRuntimeV1 {
             step_ordinal,
             configuration_ordinal,
             &next_configuration,
-            trace,
         );
         self.configuration = next_configuration;
         self.configuration_id = bridge_step.after;
@@ -4593,15 +4587,14 @@ impl ExecutableProcessRuntimeV1 {
             stage_runtime_ordinal(self.identity_ordinals.next_step)?;
         let (configuration_ordinal, next_configuration_ordinal) =
             stage_runtime_ordinal(self.identity_ordinals.next_configuration)?;
-        let mut trace = ExecutableEvaluationTraceV1::default();
         let (next, step) = self.prepare_step_traced(
             occurrence,
             step_ordinal,
             configuration_ordinal,
             &self.configuration,
-            Some(&mut trace),
+            None,
         )?;
-        self.retain_executed_event(&step, step_ordinal, configuration_ordinal, &next, trace);
+        self.retain_executed_event(&step, step_ordinal, configuration_ordinal, &next);
         self.configuration_id = step.after;
         self.configuration = next;
         self.last_step = Some(step);
@@ -4616,302 +4609,13 @@ impl ExecutableProcessRuntimeV1 {
         step_ordinal: u64,
         configuration_ordinal: u64,
         configuration: &[ExecutableSlotV1],
-        mut trace: Option<&mut ExecutableEvaluationTraceV1>,
+        trace: Option<&mut ExecutableEvaluationTraceV1>,
     ) -> Result<(Vec<ExecutableSlotV1>, ExecutableStepV1), ExecutableErrorV1> {
-        let _profile = source_profile_scope_v1(SourceProfilePhaseV1::StepPreparation);
-        let evaluation = EvaluationContextV1 {
+        StepEvaluator {
+            program: &self.program,
             allocation_root: self.allocation.root,
-            step_ordinal,
-            reads: None,
-            sum_queries: None,
-            bindings: None,
-            relational_occurrence: None,
-        };
-        // Interventions may change the supplied base rows; every rule must
-        // observe their closure, not the retained closure of the old world.
-        let closed;
-        let configuration = if self.program.rules.iter().any(closure::is_derivation) {
-            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::DerivationClosure);
-            closed = closure::close(&self.program, configuration, evaluation, None)?;
-            closed.as_slice()
-        } else { configuration };
-        relational::validate_contracts(configuration)?;
-        let mut selected = Vec::new();
-        let mut selected_targets = BTreeMap::<u16, u8>::new();
-        let mut join_visits = 0;
-        let mut selected_matches = 0_usize;
-        for (rule_index, rule) in self
-            .program
-            .rules
-            .iter()
-            .enumerate()
-            .filter(|(_, rule)| rule.entry == occurrence.entry && !closure::is_derivation(rule))
-        {
-            let structural_match = rule
-                .required_present
-                .iter()
-                .all(|slot| configuration[usize::from(*slot)].value().is_some())
-                && rule
-                    .required_absent
-                    .iter()
-                    .all(|slot| configuration[usize::from(*slot)].value().is_none());
-            let matches = if structural_match {
-                let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RuleMatching);
-                relational::match_rule(
-                    &rule.predicates,
-                    configuration,
-                    &occurrence.arguments,
-                    evaluation,
-                    &mut join_visits,
-                )?
-            } else {
-                vec![(relational::Matched::default(), false)]
-            };
-            for (matched, accepted) in matches {
-                let trace_index = trace.as_ref().map(|trace| trace.rules.len());
-                if let Some(trace) = &mut trace {
-                    let rule_trace = ExecutableRuleEvaluationV1 {
-                        rule: rule_index as u16,
-                        bindings: matched.bindings.clone(),
-                        required_present: rule
-                            .required_present
-                            .iter()
-                            .map(|slot| (*slot, configuration[usize::from(*slot)].value().is_some()))
-                            .collect(),
-                        required_absent: rule
-                            .required_absent
-                            .iter()
-                            .map(|slot| (*slot, configuration[usize::from(*slot)].value().is_none()))
-                            .collect(),
-                        predicates: matched.predicates.into_iter().enumerate()
-                            .map(|(index, evaluated)| evaluated.retain(ExecutableExpressionReferenceV1::new(
-                                &self.program, rule_index, ExpressionCoordinate::Predicate(index),
-                            ))).collect(),
-                        selected: accepted,
-                        effects: Vec::new(),
-                    };
-                    trace.push(rule_trace);
-                }
-                if !accepted {
-                    continue;
-                }
-                for (slot, mode) in rule
-                    .assignments
-                    .iter()
-                    .map(|(slot, expression)| {
-                        (
-                            *slot,
-                            match expression {
-                                ExecutableExpressionV1::Accumulate(_) => 1,
-                                ExecutableExpressionV1::RelationEffects(_) => 2,
-                                _ => 0,
-                            },
-                        )
-                    })
-                    .chain(rule.removals.iter().map(|slot| (*slot, 0)))
-                {
-                    if let Some(prior) = selected_targets.insert(slot, mode)
-                        && (mode == 0 || mode != prior)
-                    {
-                        return Err(ExecutableErrorV1::ConflictingStateEffects(slot));
-                    }
-                }
-                if !matched.bindings.is_empty() {
-                    selected_matches += 1;
-                    if selected_matches > 4096 {
-                        return Err(ExecutableErrorV1::ResourceLimit);
-                    }
-                }
-                selected.push((rule_index, rule, matched.bindings, trace_index));
-            }
-        }
-        let state_effects_profile = source_profile_scope_v1(SourceProfilePhaseV1::StateEffects);
-        let mut next = {
-            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ConfigurationClone);
-            configuration.to_vec()
-        };
-        let mut contributions = BTreeMap::<u16, Vec<f64>>::new();
-        let mut row_effects = relational::RowEffects::default();
-        let effect_evaluation_profile =
-            source_profile_scope_v1(SourceProfilePhaseV1::EffectEvaluation);
-        // All effects read this preparation's immutable, closed pre-state.
-        // The context below never reaches closure of the staged next state.
-        let sum_queries = std::cell::RefCell::new(relational::SumQueries::default());
-        for (rule_index, rule, bindings, trace_index) in &selected {
-            let identity = {
-                let _profile =
-                    source_profile_scope_v1(SourceProfilePhaseV1::OccurrenceIdentity);
-                relational::occurrence_identity(evaluation, *rule_index, bindings)?
-            };
-            let evaluation = EvaluationContextV1 {
-                bindings: Some(bindings),
-                sum_queries: Some(&sum_queries),
-                relational_occurrence: (!bindings.is_empty()).then_some(&identity),
-                ..evaluation
-            };
-            for (assignment, (slot, expression)) in rule.assignments.iter().enumerate() {
-                if let ExecutableExpressionV1::RelationEffects(effects) = expression {
-                    for (effect_index, effect) in effects.iter().enumerate() {
-                        let (mode, subject, value) = effect.parts();
-                        let subject = {
-                            let _profile = source_profile_scope_v1(
-                                SourceProfilePhaseV1::EffectSubjectEvaluation,
-                            );
-                            evaluate_with_reads(
-                                subject,
-                                configuration,
-                                &occurrence.arguments,
-                                evaluation,
-                            )?
-                        };
-                        let mut value = {
-                            let _profile = source_profile_scope_v1(
-                                SourceProfilePhaseV1::EffectValueEvaluation,
-                            );
-                            evaluate_with_reads(
-                                value,
-                                configuration,
-                                &occurrence.arguments,
-                                evaluation,
-                            )?
-                        };
-                        {
-                            let _profile = source_profile_scope_v1(
-                                SourceProfilePhaseV1::RowEffectCollection,
-                            );
-                            row_effects.push(
-                                *slot,
-                                mode,
-                                subject.value.clone(),
-                                value.value.clone(),
-                                configuration,
-                            )?;
-                        }
-                        value.reads.extend(subject.reads);
-                        if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
-                            let _profile = source_profile_scope_v1(
-                                SourceProfilePhaseV1::EffectTraceRetention,
-                            );
-                            trace.effect(
-                                *index,
-                                *slot,
-                                mode == 3,
-                                subject.value.as_referent().cloned(),
-                                Some(value.retain(ExecutableExpressionReferenceV1::new(
-                                    &self.program, *rule_index,
-                                    ExpressionCoordinate::RowEffectValue { assignment, effect: effect_index },
-                                ))),
-                            );
-                        }
-                    }
-                    continue;
-                }
-                if let ExecutableExpressionV1::Accumulate(delta) = expression {
-                    let evaluated = {
-                        let _profile = source_profile_scope_v1(
-                            SourceProfilePhaseV1::EffectValueEvaluation,
-                        );
-                        evaluate_with_reads(
-                            delta,
-                            configuration,
-                            &occurrence.arguments,
-                            evaluation,
-                        )?
-                    };
-                    let delta = number(evaluated.value.clone())?;
-                    if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
-                        let _profile = source_profile_scope_v1(
-                            SourceProfilePhaseV1::EffectTraceRetention,
-                        );
-                        trace.effect(*index, *slot, true, None, Some(evaluated.retain(
-                            ExecutableExpressionReferenceV1::new(&self.program, *rule_index, ExpressionCoordinate::Assignment(assignment)),
-                        )));
-                    }
-                    contributions.entry(*slot).or_default().push(delta);
-                    continue;
-                }
-                let evaluated = {
-                    let _profile = source_profile_scope_v1(
-                        SourceProfilePhaseV1::EffectValueEvaluation,
-                    );
-                    evaluate_with_reads(
-                        expression,
-                        configuration,
-                        &occurrence.arguments,
-                        evaluation,
-                    )?
-                };
-                let value = evaluated.value.clone();
-                if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
-                    let _profile =
-                        source_profile_scope_v1(SourceProfilePhaseV1::EffectTraceRetention);
-                    trace.effect(*index, *slot, false, None, Some(evaluated.retain(
-                        ExecutableExpressionReferenceV1::new(&self.program, *rule_index, ExpressionCoordinate::Assignment(assignment)),
-                    )));
-                }
-                let target = next
-                    .get_mut(usize::from(*slot))
-                    .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?;
-                *target = value.into();
-            }
-            for slot in &rule.removals {
-                if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
-                    let _profile =
-                        source_profile_scope_v1(SourceProfilePhaseV1::EffectTraceRetention);
-                    trace.effect(*index, *slot, false, None, None);
-                }
-                let target = next
-                    .get_mut(usize::from(*slot))
-                    .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?;
-                *target = ExecutableSlotV1::Absent(target.kind());
-            }
-        }
-        drop(effect_evaluation_profile);
-        for (slot, mut deltas) in contributions {
-            // Canonical numeric ordering makes the result independent of rule
-            // discovery order. The numeric domain rejects non-finite results.
-            deltas.sort_by(f64::total_cmp);
-            let initial = configuration[usize::from(slot)]
-                .value()
-                .ok_or(ExecutableErrorV1::MissingState)?;
-            let mut value = number(initial.clone())?;
-            for delta in deltas {
-                value += delta;
-                if !value.is_finite() {
-                    return Err(ExecutableErrorV1::NumericDomain);
-                }
-            }
-            next[usize::from(slot)] = ExecutableValueV1::number(value)?.into();
-        }
-        {
-            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RowEffectsApply);
-            row_effects.apply(&mut next)?;
-        }
-        drop(state_effects_profile);
-        if self.program.rules.iter().any(closure::is_derivation) {
-            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::DerivationClosure);
-            next = closure::close(&self.program, &next, evaluation, trace.map(|trace| (&self.program, trace)))?;
-        }
-        relational::validate_contracts(&next)?;
-        let before = self.configuration_id;
-        let after = ConfigurationId::from_bytes(runtime_identity_bytes(
-            self.allocation.root,
-            RuntimeIdentityDomainV1::Configuration,
-            configuration_ordinal,
-        )?);
-        let step = ExecutableStepV1 {
-            id: StepId::from_bytes(runtime_identity_bytes(
-                self.allocation.root,
-                RuntimeIdentityDomainV1::Step,
-                step_ordinal,
-            )?),
-            before,
-            after,
-            input_observation: None,
-            occurrence,
-            rule_applied: !selected.is_empty(),
-        };
-        Ok((next, step))
+            configuration_id: self.configuration_id,
+        }.prepare_step_traced(occurrence, step_ordinal, configuration_ordinal, configuration, trace)
     }
 
     #[expect(
@@ -7613,5 +7317,322 @@ impl<'a> Decoder<'a> {
     }
     fn is_complete(&self) -> bool {
         self.offset == self.bytes.len()
+    }
+}
+
+struct StepEvaluator<'a> {
+    program: &'a Arc<ExecutableProgramV1>,
+    allocation_root: [u8; IDENTITY_BYTES],
+    configuration_id: ConfigurationId,
+}
+
+impl StepEvaluator<'_> {
+    fn prepare_step_traced(
+        &self,
+        occurrence: ExecutableOccurrenceV1,
+        step_ordinal: u64,
+        configuration_ordinal: u64,
+        configuration: &[ExecutableSlotV1],
+        mut trace: Option<&mut ExecutableEvaluationTraceV1>,
+    ) -> Result<(Vec<ExecutableSlotV1>, ExecutableStepV1), ExecutableErrorV1> {
+        let _profile = source_profile_scope_v1(SourceProfilePhaseV1::StepPreparation);
+        let evaluation = EvaluationContextV1 {
+            allocation_root: self.allocation_root,
+            step_ordinal,
+            reads: None,
+            sum_queries: None,
+            bindings: None,
+            relational_occurrence: None,
+        };
+        // Interventions may change the supplied base rows; every rule must
+        // observe their closure, not the retained closure of the old world.
+        let closed;
+        let configuration = if self.program.rules.iter().any(closure::is_derivation) {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::DerivationClosure);
+            closed = closure::close(self.program, configuration, evaluation, None)?;
+            closed.as_slice()
+        } else { configuration };
+        relational::validate_contracts(configuration)?;
+        let mut selected = Vec::new();
+        let mut selected_targets = BTreeMap::<u16, u8>::new();
+        let mut join_visits = 0;
+        let mut selected_matches = 0_usize;
+        for (rule_index, rule) in self
+            .program
+            .rules
+            .iter()
+            .enumerate()
+            .filter(|(_, rule)| rule.entry == occurrence.entry && !closure::is_derivation(rule))
+        {
+            let structural_match = rule
+                .required_present
+                .iter()
+                .all(|slot| configuration[usize::from(*slot)].value().is_some())
+                && rule
+                    .required_absent
+                    .iter()
+                    .all(|slot| configuration[usize::from(*slot)].value().is_none());
+            let matches = if structural_match {
+                let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RuleMatching);
+                relational::match_rule(
+                    &rule.predicates,
+                    configuration,
+                    &occurrence.arguments,
+                    evaluation,
+                    &mut join_visits,
+                    trace.is_some(),
+                )?
+            } else {
+                vec![(relational::Matched::default(), false)]
+            };
+            for (matched, accepted) in matches {
+                let trace_index = trace.as_ref().map(|trace| trace.rules.len());
+                if let Some(trace) = &mut trace {
+                    let rule_trace = ExecutableRuleEvaluationV1 {
+                        rule: rule_index as u16,
+                        bindings: matched.bindings.clone(),
+                        required_present: rule
+                            .required_present
+                            .iter()
+                            .map(|slot| (*slot, configuration[usize::from(*slot)].value().is_some()))
+                            .collect(),
+                        required_absent: rule
+                            .required_absent
+                            .iter()
+                            .map(|slot| (*slot, configuration[usize::from(*slot)].value().is_none()))
+                            .collect(),
+                        predicates: matched.predicates.into_iter().enumerate()
+                            .map(|(index, evaluated)| evaluated.retain(ExecutableExpressionReferenceV1::new(
+                                self.program, rule_index, ExpressionCoordinate::Predicate(index),
+                            ))).collect(),
+                        selected: accepted,
+                        effects: Vec::new(),
+                    };
+                    trace.push(rule_trace);
+                }
+                if !accepted {
+                    continue;
+                }
+                for (slot, mode) in rule
+                    .assignments
+                    .iter()
+                    .map(|(slot, expression)| {
+                        (
+                            *slot,
+                            match expression {
+                                ExecutableExpressionV1::Accumulate(_) => 1,
+                                ExecutableExpressionV1::RelationEffects(_) => 2,
+                                _ => 0,
+                            },
+                        )
+                    })
+                    .chain(rule.removals.iter().map(|slot| (*slot, 0)))
+                {
+                    if let Some(prior) = selected_targets.insert(slot, mode)
+                        && (mode == 0 || mode != prior)
+                    {
+                        return Err(ExecutableErrorV1::ConflictingStateEffects(slot));
+                    }
+                }
+                if !matched.bindings.is_empty() {
+                    selected_matches += 1;
+                    if selected_matches > 4096 {
+                        return Err(ExecutableErrorV1::ResourceLimit);
+                    }
+                }
+                selected.push((rule_index, rule, matched.bindings, trace_index));
+            }
+        }
+        let state_effects_profile = source_profile_scope_v1(SourceProfilePhaseV1::StateEffects);
+        let mut next = {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ConfigurationClone);
+            configuration.to_vec()
+        };
+        let mut contributions = BTreeMap::<u16, Vec<f64>>::new();
+        let mut row_effects = relational::RowEffects::default();
+        let effect_evaluation_profile =
+            source_profile_scope_v1(SourceProfilePhaseV1::EffectEvaluation);
+        // All effects read this preparation's immutable, closed pre-state.
+        // The context below never reaches closure of the staged next state.
+        let sum_queries = std::cell::RefCell::new(relational::SumQueries::default());
+        for (rule_index, rule, bindings, trace_index) in &selected {
+            let identity = {
+                let _profile =
+                    source_profile_scope_v1(SourceProfilePhaseV1::OccurrenceIdentity);
+                relational::occurrence_identity(evaluation, *rule_index, bindings)?
+            };
+            let evaluation = EvaluationContextV1 {
+                bindings: Some(bindings),
+                sum_queries: Some(&sum_queries),
+                relational_occurrence: (!bindings.is_empty()).then_some(&identity),
+                ..evaluation
+            };
+            for (assignment, (slot, expression)) in rule.assignments.iter().enumerate() {
+                if let ExecutableExpressionV1::RelationEffects(effects) = expression {
+                    for (effect_index, effect) in effects.iter().enumerate() {
+                        let (mode, subject, value) = effect.parts();
+                        let subject = {
+                            let _profile = source_profile_scope_v1(
+                                SourceProfilePhaseV1::EffectSubjectEvaluation,
+                            );
+                            evaluate_for_trace(
+                                subject,
+                                configuration,
+                                &occurrence.arguments,
+                                evaluation,
+                                trace.is_some(),
+                            )?
+                        };
+                        let mut value = {
+                            let _profile = source_profile_scope_v1(
+                                SourceProfilePhaseV1::EffectValueEvaluation,
+                            );
+                            evaluate_for_trace(
+                                value,
+                                configuration,
+                                &occurrence.arguments,
+                                evaluation,
+                                trace.is_some(),
+                            )?
+                        };
+                        {
+                            let _profile = source_profile_scope_v1(
+                                SourceProfilePhaseV1::RowEffectCollection,
+                            );
+                            row_effects.push(
+                                *slot,
+                                mode,
+                                subject.value.clone(),
+                                value.value.clone(),
+                                configuration,
+                            )?;
+                        }
+                        value.reads.extend(subject.reads);
+                        if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
+                            let _profile = source_profile_scope_v1(
+                                SourceProfilePhaseV1::EffectTraceRetention,
+                            );
+                            trace.effect(
+                                *index,
+                                *slot,
+                                mode == 3,
+                                subject.value.as_referent().cloned(),
+                                Some(value.retain(ExecutableExpressionReferenceV1::new(
+                                    self.program, *rule_index,
+                                    ExpressionCoordinate::RowEffectValue { assignment, effect: effect_index },
+                                ))),
+                            );
+                        }
+                    }
+                    continue;
+                }
+                if let ExecutableExpressionV1::Accumulate(delta) = expression {
+                    let evaluated = {
+                        let _profile = source_profile_scope_v1(
+                            SourceProfilePhaseV1::EffectValueEvaluation,
+                        );
+                        evaluate_for_trace(
+                            delta,
+                            configuration,
+                            &occurrence.arguments,
+                            evaluation,
+                            trace.is_some(),
+                        )?
+                    };
+                    let delta = number(evaluated.value.clone())?;
+                    if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
+                        let _profile = source_profile_scope_v1(
+                            SourceProfilePhaseV1::EffectTraceRetention,
+                        );
+                        trace.effect(*index, *slot, true, None, Some(evaluated.retain(
+                            ExecutableExpressionReferenceV1::new(self.program, *rule_index, ExpressionCoordinate::Assignment(assignment)),
+                        )));
+                    }
+                    contributions.entry(*slot).or_default().push(delta);
+                    continue;
+                }
+                let evaluated = {
+                    let _profile = source_profile_scope_v1(
+                        SourceProfilePhaseV1::EffectValueEvaluation,
+                    );
+                    evaluate_for_trace(
+                        expression,
+                        configuration,
+                        &occurrence.arguments,
+                        evaluation,
+                        trace.is_some(),
+                    )?
+                };
+                let value = evaluated.value.clone();
+                if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
+                    let _profile =
+                        source_profile_scope_v1(SourceProfilePhaseV1::EffectTraceRetention);
+                    trace.effect(*index, *slot, false, None, Some(evaluated.retain(
+                        ExecutableExpressionReferenceV1::new(self.program, *rule_index, ExpressionCoordinate::Assignment(assignment)),
+                    )));
+                }
+                let target = next
+                    .get_mut(usize::from(*slot))
+                    .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?;
+                *target = value.into();
+            }
+            for slot in &rule.removals {
+                if let (Some(trace), Some(index)) = (&mut trace, trace_index) {
+                    let _profile =
+                        source_profile_scope_v1(SourceProfilePhaseV1::EffectTraceRetention);
+                    trace.effect(*index, *slot, false, None, None);
+                }
+                let target = next
+                    .get_mut(usize::from(*slot))
+                    .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?;
+                *target = ExecutableSlotV1::Absent(target.kind());
+            }
+        }
+        drop(effect_evaluation_profile);
+        for (slot, mut deltas) in contributions {
+            // Canonical numeric ordering makes the result independent of rule
+            // discovery order. The numeric domain rejects non-finite results.
+            deltas.sort_by(f64::total_cmp);
+            let initial = configuration[usize::from(slot)]
+                .value()
+                .ok_or(ExecutableErrorV1::MissingState)?;
+            let mut value = number(initial.clone())?;
+            for delta in deltas {
+                value += delta;
+                if !value.is_finite() {
+                    return Err(ExecutableErrorV1::NumericDomain);
+                }
+            }
+            next[usize::from(slot)] = ExecutableValueV1::number(value)?.into();
+        }
+        {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RowEffectsApply);
+            row_effects.apply(&mut next)?;
+        }
+        drop(state_effects_profile);
+        if self.program.rules.iter().any(closure::is_derivation) {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::DerivationClosure);
+            next = closure::close(self.program, &next, evaluation, trace.map(|trace| (self.program, trace)))?;
+        }
+        relational::validate_contracts(&next)?;
+        let before = self.configuration_id;
+        let after = ConfigurationId::from_bytes(runtime_identity_bytes(
+            self.allocation_root,
+            RuntimeIdentityDomainV1::Configuration,
+            configuration_ordinal,
+        )?);
+        let step = ExecutableStepV1 {
+            id: StepId::from_bytes(runtime_identity_bytes(
+                self.allocation_root,
+                RuntimeIdentityDomainV1::Step,
+                step_ordinal,
+            )?),
+            before,
+            after,
+            input_observation: None,
+            occurrence,
+            rule_applied: !selected.is_empty(),
+        };
+        Ok((next, step))
     }
 }
