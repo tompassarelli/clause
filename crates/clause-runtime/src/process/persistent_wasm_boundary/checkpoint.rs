@@ -2,6 +2,66 @@ use super::*;
 use sha2::{Digest, Sha256};
 
 const MAGIC: &[u8; 4] = b"CWC1";
+const NATIVE_MAGIC: &[u8; 4] = b"CWC2";
+
+// Retaining the immutable allocation prevents address reuse from aliasing a
+// cached digest. Each seal replaces this map with only its current segments.
+#[derive(Default)]
+pub(super) struct NativeCheckpointDigests {
+    segments: std::collections::BTreeMap<(usize, usize), (clause_package::AtomPayloadSegment, [u8; 32])>,
+}
+
+impl NativeCheckpointDigests {
+    fn seal(&mut self, segments: Vec<clause_package::AtomPayloadSegment>) -> Result<Vec<clause_package::AtomPayloadSegment>, WasmProcessStatusV1> {
+        use clause_package::AtomPayloadSegment;
+        let count = u32::try_from(segments.len()).map_err(|_| WasmProcessStatusV1::ResponseOutOfBounds)?;
+        let mut metadata = NATIVE_MAGIC.to_vec();
+        metadata.extend_from_slice(&count.to_le_bytes());
+        let size = segments.len().checked_mul(40).and_then(|n| n.checked_add(32))
+            .ok_or(WasmProcessStatusV1::ResponseOutOfBounds)?;
+        metadata.try_reserve(size).map_err(|_| WasmProcessStatusV1::ResponseOutOfBounds)?;
+        let mut retained = std::collections::BTreeMap::new();
+        for segment in &segments {
+            let bytes = segment.as_bytes();
+            let key = (bytes.as_ptr() as usize, bytes.len());
+            let digest = self.segments.get(&key).map(|(_, digest)| *digest)
+                .unwrap_or_else(|| Sha256::digest(bytes).into());
+            metadata.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+            metadata.extend_from_slice(&digest);
+            retained.insert(key, (segment.clone(), digest));
+        }
+        let root = Sha256::digest(&metadata);
+        metadata.extend_from_slice(&root);
+        self.segments = retained;
+        let mut output = Vec::with_capacity(segments.len() + 1);
+        output.push(AtomPayloadSegment::Bytes(metadata.into()));
+        output.extend(segments);
+        Ok(output)
+    }
+}
+
+fn native_body(bytes: &[u8]) -> Result<&[u8], WasmProcessStatusV1> {
+    let mut d = Decoder::new(bytes);
+    if d.take(4)? != NATIVE_MAGIC { return Err(WasmProcessStatusV1::MalformedRequest); }
+    let count = d.u32()? as usize;
+    let metadata_length = count.checked_mul(40).and_then(|n| n.checked_add(8))
+        .ok_or(WasmProcessStatusV1::MalformedRequest)?;
+    let entries = d.take(metadata_length - 8)?;
+    let root = d.take(32)?;
+    if Sha256::digest(&bytes[..metadata_length]).as_slice() != root {
+        return Err(WasmProcessStatusV1::MalformedRequest);
+    }
+    let body = &bytes[metadata_length + 32..];
+    for entry in entries.chunks_exact(40) {
+        let length = usize::try_from(u64::from_le_bytes(entry[..8].try_into().unwrap()))
+            .map_err(|_| WasmProcessStatusV1::MalformedRequest)?;
+        if Sha256::digest(d.take(length)?).as_slice() != &entry[8..] {
+            return Err(WasmProcessStatusV1::MalformedRequest);
+        }
+    }
+    if !d.is_complete() { return Err(WasmProcessStatusV1::MalformedRequest); }
+    Ok(body)
+}
 
 struct RecordedBoundary<'a> {
     context: &'a [u8],
@@ -16,17 +76,23 @@ struct RecordedBoundary<'a> {
 }
 
 fn decode(bytes: &[u8]) -> Result<RecordedBoundary<'_>, WasmProcessStatusV1> {
-    if bytes.len() < 36 {
-        return Err(WasmProcessStatusV1::MalformedRequest);
-    }
-    let (body, digest) = bytes.split_at(bytes.len() - 32);
-    if Sha256::digest(body).as_slice() != digest {
-        return Err(WasmProcessStatusV1::MalformedRequest);
-    }
+    let body = if bytes.starts_with(NATIVE_MAGIC) {
+        native_body(bytes)?
+    } else {
+        if bytes.len() < 36 || !bytes.starts_with(MAGIC) {
+            return Err(WasmProcessStatusV1::MalformedRequest);
+        }
+        let (body, digest) = bytes.split_at(bytes.len() - 32);
+        if Sha256::digest(body).as_slice() != digest {
+            return Err(WasmProcessStatusV1::MalformedRequest);
+        }
+        &body[4..]
+    };
+    decode_fields(body)
+}
+
+fn decode_fields(body: &[u8]) -> Result<RecordedBoundary<'_>, WasmProcessStatusV1> {
     let mut d = Decoder::new(body);
-    if d.take(4)? != MAGIC {
-        return Err(WasmProcessStatusV1::MalformedRequest);
-    }
     let record = RecordedBoundary {
         context: d.blob(body.len())?,
         exact_open: d.blob(body.len())?,
@@ -85,11 +151,36 @@ impl WasmPersistentSessionBoundaryV1 {
         context: &[u8],
     ) -> Result<Vec<clause_package::AtomPayloadSegment>, WasmProcessStatusV1> {
         use clause_package::AtomPayloadSegment;
+        let mut segments = vec![AtomPayloadSegment::Bytes(MAGIC.as_slice().into())];
+        segments.extend(self.checkpoint_body_segments(handle, context)?);
+        let mut digest = Sha256::new();
+        for segment in &segments { digest.update(segment.as_bytes()); }
+        segments.push(AtomPayloadSegment::Bytes(digest.finalize().to_vec().into()));
+        Ok(segments)
+    }
+
+    /// Export a corruption-sealed native checkpoint, reusing immutable segment
+    /// digests across saves. Concatenation is accepted by `reopen_admitted`.
+    pub fn checkpoint_native_segments(
+        &self,
+        handle: WasmSessionHandleV1,
+        context: &[u8],
+    ) -> Result<Vec<clause_package::AtomPayloadSegment>, WasmProcessStatusV1> {
+        let segments = self.checkpoint_body_segments(handle, context)?;
+        self.checkpoint_digests.lock().map_err(|_| WasmProcessStatusV1::ProcessRejected)?.seal(segments)
+    }
+
+    fn checkpoint_body_segments(
+        &self,
+        handle: WasmSessionHandleV1,
+        context: &[u8],
+    ) -> Result<Vec<clause_package::AtomPayloadSegment>, WasmProcessStatusV1> {
+        use clause_package::AtomPayloadSegment;
         let session = self.captured_session(handle)?;
         let live = self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
         let runtime = session.checkpoint_admitted_segments()
             .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
-        let mut bytes = MAGIC.to_vec();
+        let mut bytes = Vec::new();
         for value in [context, live.exact_open.as_slice()] {
             bytes.try_reserve(value.len().checked_add(4).ok_or(WasmProcessStatusV1::ResponseOutOfBounds)?)
                 .map_err(|_| WasmProcessStatusV1::ResponseOutOfBounds)?;
@@ -106,10 +197,6 @@ impl WasmPersistentSessionBoundaryV1 {
         tail.push(u8::from(live.at_admitted_frontier));
         tail.extend_from_slice(&live.last_input_sequence.to_le_bytes());
         tail.extend_from_slice(&live.last_configuration_revision.to_le_bytes());
-        let mut digest = Sha256::new();
-        for segment in &segments { digest.update(segment.as_bytes()); }
-        digest.update(&tail);
-        tail.extend_from_slice(&digest.finalize());
         segments.push(AtomPayloadSegment::Bytes(tail.into()));
         Ok(segments)
     }
@@ -198,6 +285,35 @@ impl WasmPersistentSessionBoundaryV1 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_seal_checks_segments_even_with_recomputed_metadata_root() {
+        use clause_package::AtomPayloadSegment;
+        let first = AtomPayloadSegment::Bytes(b"first".as_slice().into());
+        let second = AtomPayloadSegment::Bytes(b"other".as_slice().into());
+        let mut cache = NativeCheckpointDigests::default();
+        let segments = cache.seal(vec![first.clone(), second.clone()]).unwrap();
+        let bytes: Vec<u8> = segments.iter().flat_map(|s| s.as_bytes().iter().copied()).collect();
+        assert_eq!(native_body(&bytes).unwrap(), b"firstother");
+        for (start, end) in [(8, 48), (16, 48)] {
+            let mut corrupt = bytes.clone();
+            if start == 8 {
+                let other = corrupt[48..88].to_vec();
+                let original = corrupt[start..end].to_vec();
+                corrupt[start..end].copy_from_slice(&other);
+                corrupt[48..88].copy_from_slice(&original);
+            } else {
+                corrupt[start] ^= 1;
+            }
+            let root = Sha256::digest(&corrupt[..88]);
+            corrupt[88..120].copy_from_slice(&root);
+            assert!(native_body(&corrupt).is_err());
+        }
+        cache.seal(vec![second.clone()]).unwrap();
+        assert_eq!(cache.segments.len(), 1);
+        let retained = &cache.segments.values().next().unwrap().0;
+        assert!(std::ptr::eq(retained.as_bytes(), second.as_bytes()));
+    }
 
     #[test]
     fn checkpoint_envelope_rejects_corruption_and_truncated_blob() {

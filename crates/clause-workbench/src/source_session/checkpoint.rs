@@ -1,6 +1,12 @@
 use super::*;
 
 impl ResidentSourceWorkbenchV1 {
+    /// Native checkpoint segments retain immutable payloads and their corruption
+    /// digests across saves. Publish the complete sequence atomically.
+    pub fn checkpoint_native_segments(&self) -> Result<Vec<clause_package::AtomPayloadSegment>, ResidentSourceWorkbenchErrorV1> {
+        Ok(self.boundary.checkpoint_native_segments(self.generation.handle, &self.checkpoint_context()?)?)
+    }
+
     /// Checkpoint the current admitted world without executing input or effects.
     /// The caller owns atomic storage and trusted file selection. Pending local
     /// work must be admitted first; the checkpoint retains no completed trace.

@@ -296,3 +296,79 @@ fn segmented_checkpoint_reuses_unchanged_text_and_reopens_exactly() {
     // An older retained checkpoint remains exact after advancing the live world.
     assert_eq!(ResidentSourceWorkbenchV1::reopen(SOURCE, &original_bytes).unwrap().project_current_world().unwrap(), before);
 }
+
+#[test]
+fn native_checkpoint_preserves_world_flat_export_and_immutable_segments() {
+    let payload = "retained history ".repeat(8192);
+    let mut w = ResidentSourceWorkbenchV1::open_continuous(SOURCE).unwrap();
+    let before = run(&mut w, b"create-goal", &[text("First"), text(&payload)]);
+    let first = known(&before)[0].clone();
+    let flat = w.checkpoint_admitted().unwrap();
+    let original = w.checkpoint_native_segments().unwrap();
+    let flatten = |segments: &[clause_package::AtomPayloadSegment]| -> Vec<u8> {
+        segments.iter().flat_map(|segment| segment.as_bytes().iter().copied()).collect()
+    };
+    let bytes = flatten(&original);
+    assert_eq!(&bytes[..4], b"CWC2");
+    let reopened = ResidentSourceWorkbenchV1::reopen(SOURCE, &bytes).unwrap();
+    assert_eq!(reopened.generation(), w.generation());
+    assert_eq!(reopened.project_current_world().unwrap(), before);
+    assert_eq!(reopened.checkpoint_admitted().unwrap(), flat);
+    assert_eq!(flatten(&w.checkpoint_native_segments().unwrap()), bytes);
+    let changed = String::from_utf8(SOURCE.to_vec()).unwrap().replace("north-main", "another-north");
+    assert!(ResidentSourceWorkbenchV1::reopen(changed.as_bytes(), &bytes).is_err());
+    let retained = original.iter().find(|segment| segment.as_bytes() == payload.as_bytes()).unwrap();
+    let occurrence = w.handler_occurrence(b"redirect-goal", &[V::Referent(first.clone()), text("Continued")]).unwrap();
+    w.run_occurrences_to_candidate(&[occurrence]).unwrap();
+    assert!(w.checkpoint_native_segments().is_err());
+    w.admit().unwrap();
+    let next = w.checkpoint_native_segments().unwrap();
+    assert!(next.iter().any(|segment| std::ptr::eq(segment.as_bytes(), retained.as_bytes())));
+    let mut reopened = ResidentSourceWorkbenchV1::reopen(SOURCE, &flatten(&next)).unwrap();
+    assert_eq!(reopened.checkpoint_admitted().unwrap(), w.checkpoint_admitted().unwrap());
+    let after = run(&mut reopened, b"create-goal", &[text("Second"), text("Distinct identity")]);
+    let goals = known(&after);
+    assert_eq!(goals.len(), 2);
+    assert!(goals.contains(&first));
+    assert_ne!(goals[0], goals[1]);
+    assert_eq!(ResidentSourceWorkbenchV1::reopen(SOURCE, &bytes).unwrap().project_current_world().unwrap(), before);
+}
+
+#[test]
+fn native_checkpoint_rejects_metadata_order_payload_and_flat_damage() {
+    let w = ResidentSourceWorkbenchV1::open_continuous(SOURCE).unwrap();
+    let segments = w.checkpoint_native_segments().unwrap();
+    let bytes: Vec<u8> = segments.iter().flat_map(|segment| segment.as_bytes().iter().copied()).collect();
+    let rejected = |bytes: &[u8]| {
+        assert!(clause_runtime::wasm_session_checkpoint_context_v1(bytes).is_err());
+        assert!(ResidentSourceWorkbenchV1::reopen(SOURCE, bytes).is_err());
+    };
+    // Magic, count, ordered length, segment digest, root, and each payload.
+    let mut positions = vec![0, 4, 8, 16, segments[0].as_bytes().len() - 1];
+    let mut offset = segments[0].as_bytes().len();
+    for segment in &segments[1..] {
+        if !segment.as_bytes().is_empty() { positions.push(offset); }
+        offset += segment.as_bytes().len();
+    }
+    for position in positions {
+        let mut corrupt = bytes.clone();
+        corrupt[position] ^= 1;
+        rejected(&corrupt);
+    }
+    let mut reordered = bytes.clone();
+    let first = reordered[8..48].to_vec();
+    let second = reordered[48..88].to_vec();
+    reordered[8..48].copy_from_slice(&second);
+    reordered[48..88].copy_from_slice(&first);
+    rejected(&reordered);
+    let mut reordered_payloads = segments.clone();
+    reordered_payloads.swap(1, 2);
+    rejected(&reordered_payloads.iter().flat_map(|segment| segment.as_bytes().iter().copied()).collect::<Vec<_>>());
+    rejected(&bytes[..bytes.len() - 1]);
+    let mut extra = bytes.clone();
+    extra.push(0);
+    rejected(&extra);
+    let mut damaged_flat = w.checkpoint_admitted().unwrap();
+    damaged_flat[3] = b'2';
+    rejected(&damaged_flat);
+}
