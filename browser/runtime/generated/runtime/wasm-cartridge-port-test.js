@@ -467,6 +467,9 @@ test["test"]("projected relation contracts retain required participation", () =>
     expect(() => decode(4)).toThrow("invalid projected relation cardinality");
     expect(() => decode(3, [2, 3])).toThrow("invalid projected row cardinality");
     expect(() => decode(3, [])).toThrow("invalid projected row cardinality");
+    for (const value of [-0, NaN, Infinity, -Infinity]) {
+        expect(() => decode(0, [value])).toThrow("CWO1 number is not canonical finite f64");
+    }
 });
 test["test"]("projected Text realizes exact UTF-8", () => {
     const text = wasm["decode-projected-term-frame"](projected_atom("clause/process-projected-text-v1", [

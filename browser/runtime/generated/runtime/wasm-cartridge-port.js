@@ -1482,22 +1482,23 @@ function projected_scalar_order(a, b, kind) {
 }
 function projected_table(payload) {
     let offset = 0;
-    const take = (count) => {
+    const advance = (count) => {
         if (count < 0 || offset + count > payload.length)
             throw new Error("truncated projected relation table");
-        const value = Array.from({ length: count }, (_, i) => byte_at(payload, offset + i));
+        const start = offset;
         offset += count;
-        return value;
+        return start;
     };
-    const u8 = () => take(1)[0];
-    const u16 = () => { const bytes = take(2); return bytes[0] + bytes[1] * 256; };
-    const u32 = () => little_u32(take(4), 0);
+    const take = (count) => canonical_byte_range(payload, advance(count), offset);
+    const u8 = () => byte_at(payload, advance(1));
+    const u16 = () => little_u16(payload, advance(2));
+    const u32 = () => little_u32(payload, advance(4));
     const referent = () => {
         const domain = u32(), tag = u8();
         if (tag === 0)
             return checked_referent({ kind: "referent", domain, identity: { kind: "declared", value: u32() } });
         if (tag === 1)
-            return checked_referent({ kind: "referent", domain, identity: { kind: "created", value: take(32) } });
+            return checked_referent({ kind: "referent", domain, identity: { kind: "created", value: frozen_byte_range(payload, advance(32), offset) } });
         throw new Error("invalid projected row referent");
     };
     if (payload.length > 1024 * 1024 || u8() !== 6)
@@ -1505,6 +1506,8 @@ function projected_table(payload) {
     const subjectDomain = u32(), valueKind = u8(), optional = u8();
     if (valueKind > 4 || optional > 1)
         throw new Error("invalid projected relation domain");
+    const numericBytes = valueKind === 0 ? typed_bytes(payload) : null;
+    const numericView = numericBytes === null ? null : new DataView(numericBytes.buffer);
     const valueDomain = optional === 1 ? u32() : undefined;
     if ((valueKind === 4) !== (valueDomain !== undefined))
         throw new Error("inconsistent projected relation domain");
@@ -1526,8 +1529,11 @@ function projected_table(payload) {
         for (let i = 0; i < valueCount; ++i) {
             const tag = u8();
             let value;
-            if (valueKind === 0 && tag === 0)
-                value = projected_number(take(8));
+            if (valueKind === 0 && tag === 0 && numericView !== null) {
+                value = numericView.getFloat64(advance(8), true);
+                if (!Number.isFinite(value) || Object.is(value, -0))
+                    throw new Error("CWO1 number is not canonical finite f64");
+            }
             else if (valueKind === 1 && tag === 1) {
                 const bit = u8();
                 if (bit > 1)
