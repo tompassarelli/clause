@@ -1478,11 +1478,17 @@ function realize_projected_atom(kind, payload) {
     }
     throw new Error("projected scalar Atom is not realizable");
 }
+// Only the last completely decoded frame is retained; its keys are bounded
+// by the same CSE1 byte limit as the frame. Reused values are deeply frozen.
+let previousProjectedAtoms = new Map();
 class ProjectionCursor {
     bytes;
+    previousAtoms;
     offset = 2 * identity_bytes;
-    constructor(bytes) {
+    atoms = new Map();
+    constructor(bytes, previousAtoms) {
         this.bytes = bytes;
+        this.previousAtoms = previousAtoms;
         require_range(bytes, 0, this.offset, "projected Term scope");
     }
     tag(depth) {
@@ -1510,7 +1516,19 @@ class ProjectionCursor {
     value(depth) {
         if (this.tag(depth) === 0) {
             const atom = this.atomPayload();
-            return realize_projected_atom(atom.kind, atom.payload);
+            if (this.previousAtoms === undefined || typeof atom.payload !== "string") {
+                return realize_projected_atom(atom.kind, atom.payload);
+            }
+            let current = this.atoms.get(atom.kind);
+            if (current === undefined) {
+                current = new Map();
+                this.atoms.set(atom.kind, current);
+            }
+            let value = current.get(atom.payload) ?? this.previousAtoms.get(atom.kind)?.get(atom.payload);
+            if (value === undefined)
+                value = realize_projected_atom(atom.kind, atom.payload);
+            current.set(atom.payload, value);
+            return value;
         }
         let head = this.atom(depth + 1);
         if (head.kind === "clause/process-projected-set-v1")
@@ -1579,20 +1597,22 @@ class ProjectionCursor {
         return Object.freeze(values);
     }
 }
-function decode_projected_value(bytes, maximumBytes) {
+function decode_projected_value(bytes, maximumBytes, reuseAtoms = false) {
     const envelope = workbench["workbench-byte-envelope-source"](bytes);
     const source = envelope === null ? bytes : envelope;
     if (!((typeof source === "string" && source.length <= maximumBytes) || exact_byte_array_p(source, maximumBytes))) {
         throw new Error("projected Term bytes are outside the CSE1 bound");
     }
-    const cursor = new ProjectionCursor(source);
+    const cursor = new ProjectionCursor(source, reuseAtoms ? previousProjectedAtoms : undefined);
     const value = cursor.value(0);
     if (cursor.offset !== source.length)
         throw new Error("projected Term has trailing bytes");
+    if (reuseAtoms)
+        previousProjectedAtoms = cursor.atoms;
     return value;
 }
 function decode_projected_term_frame(bytes) {
-    return decode_projected_value(bytes, cse1_max_bytes);
+    return decode_projected_value(bytes, cse1_max_bytes, true);
 }
 function is_wasm_session(value) {
     return (typeof value === "object" &&

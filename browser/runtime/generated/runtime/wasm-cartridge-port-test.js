@@ -478,6 +478,23 @@ test["test"]("projected Text realizes exact UTF-8", () => {
     test["expect"](text).toBe("North 🚀");
     test["expect"](() => wasm["decode-projected-term-frame"](projected_atom("clause/process-projected-text-v1", [255]))).toThrow("projected Text is not canonical UTF-8");
 });
+test["test"]("projected frame reuse requires exact validated Atom bytes", () => {
+    const frame = (value) => projected_atom("clause/process-projected-referent-v1", [1, 0, 0, 0, 0, value, 0, 0, 0]);
+    const text = (bytes) => bytes.map(byte => String.fromCharCode(byte)).join("");
+    const original = wasm["decode-projected-term-frame"](text(frame(2)));
+    expect(wasm["decode-projected-term-frame"](text(frame(2)))).toBe(original);
+    const changed = wasm["decode-projected-term-frame"](text(frame(3)));
+    expect(changed).toEqual(wasm["decode-projected-term-frame"](frame(3)));
+    expect(changed).not.toEqual(original);
+    expect(Object.isFrozen(changed)).toBe(true);
+    const malformed = projected_atom("clause/process-projected-referent-v1", [1, 0, 0, 0, 2, 3, 0, 0, 0]);
+    expect(() => wasm["decode-projected-term-frame"](text(malformed))).toThrow("projected referent is malformed");
+    expect(() => wasm["decode-projected-term-frame"](text(frame(3)) + "x")).toThrow("trailing bytes");
+    const mutable = frame(4);
+    const before = wasm["decode-projected-term-frame"](mutable);
+    mutable[mutable.length - 5] = 5;
+    expect(wasm["decode-projected-term-frame"](mutable)).not.toEqual(before);
+});
 test["test"]("projected Term decoding admits transport-bounded depth beyond 64", () => {
     const nesting = 96;
     let term = projected_atom_node("clause/process-projected-text-v1", [111, 107]);
