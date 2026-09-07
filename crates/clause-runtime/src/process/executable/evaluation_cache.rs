@@ -86,6 +86,12 @@ impl Entry {
 fn dependencies(expression: &ExecutableExpressionV1, reads: &mut BTreeSet<u16>) -> bool {
     use ExecutableExpressionV1 as E;
     match expression {
+        E::Sequence(values) => values.iter().fold(true, |pure,value| dependencies(value,reads) & pure),
+        E::Record(fields) => fields.values().fold(true, |pure,value| dependencies(value,reads) & pure),
+        E::Field(value,_) => dependencies(value,reads),
+        E::SequenceDrop(a,b) => dependencies(a,reads) & dependencies(b,reads),
+        E::Require(a,b,c) => dependencies(a,reads) & dependencies(b,reads) & dependencies(c,reads),
+        E::Foreign { .. } => false,
         E::Let { value, body, .. } => dependencies(value, reads) & dependencies(body, reads),
         E::Constant(_) | E::Binding(_) | E::Argument(_) => true,
         E::FreshReferent { .. } => false,

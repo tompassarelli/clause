@@ -170,6 +170,7 @@ fn two_application_snapshot() -> ProgramSnapshotPreimageV2 {
                     authorization_requirements: vec![],
                     dynamic_prerequisites: vec![],
                     contract: ModeContractV2 {
+                        foreign_accesses: vec![],
                         determinism: DeterminismContractV2::Deterministic,
                         result_cardinality: one(),
                         result_order: ResultOrderContractV2::UnorderedFiniteSet,
@@ -966,6 +967,7 @@ fn core_snapshot() -> ProgramSnapshotPreimageV2 {
             }],
         }],
         contract: ModeContractV2 {
+            foreign_accesses: vec![],
             determinism: DeterminismContractV2::Deterministic,
             result_cardinality: one(),
             result_order: ResultOrderContractV2::UnorderedFiniteSet,

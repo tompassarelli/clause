@@ -27,24 +27,30 @@ fn unsupported<T>(message: impl Into<String>) -> Result<T> {
     Err(JavaScriptLoweringErrorV1(message.into()))
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum ValueType {
+    Sequence(Box<Self>),
+    Record(BTreeMap<Vec<u8>, Self>),
     Number,
     Boolean,
     Text,
     Referent(u32),
 }
 impl ValueType {
-    fn descriptor(self) -> String {
+    fn descriptor(&self) -> String {
         match self {
+            Self::Sequence(element) => format!("[\"sequence\",{}]", element.descriptor()),
+            Self::Record(fields) => format!("[\"record\",[{}]]", fields.iter().map(|(key, value)| format!("[{},{}]", quote(std::str::from_utf8(key).expect("checked field")), value.descriptor())).collect::<Vec<_>>().join(",")),
             Self::Number => "[\"number\"]".into(),
             Self::Boolean => "[\"boolean\"]".into(),
             Self::Text => "[\"text\"]".into(),
             Self::Referent(domain) => format!("[\"referent\",{domain}]"),
         }
     }
-    fn declaration(self) -> String {
+    fn declaration(&self) -> String {
         match self {
+            Self::Sequence(element) => format!("ReadonlyArray<{}>", element.declaration()),
+            Self::Record(fields) => format!("{{ {} }}", fields.iter().map(|(key,value)| format!("readonly {}: {}", quote(std::str::from_utf8(key).expect("checked field")), value.declaration())).collect::<Vec<_>>().join("; ")),
             Self::Number => "number".into(),
             Self::Boolean => "boolean".into(),
             Self::Text => "string".into(),
@@ -69,6 +75,32 @@ fn scalar_type(kind: CanonicalScalarValueKindV1) -> Result<ValueType> {
         CanonicalScalarValueKindV1::Boolean => Ok(ValueType::Boolean),
         CanonicalScalarValueKindV1::Text => Ok(ValueType::Text),
         _ => unsupported("JavaScript callables require Text, Number, or Boolean types"),
+    }
+}
+fn callable_type(kind: &CanonicalValueTypeV1) -> Result<ValueType> {
+    match kind {
+        CanonicalValueTypeV1::Scalar(kind) => scalar_type(*kind),
+        CanonicalValueTypeV1::Sequence(element) => Ok(ValueType::Sequence(Box::new(callable_type(element)?))),
+        CanonicalValueTypeV1::Record(fields) => Ok(ValueType::Record(fields.iter().map(|(k,v)| Ok((k.clone(), callable_type(v)?))).collect::<Result<_>>()?)),
+    }
+}
+fn foreign_name(module: &str) -> String {
+    format!("ffi{}", module.as_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>())
+}
+fn foreign_modules(expression: &CanonicalExecutableExpressionV1, modules: &mut BTreeSet<String>) {
+    use CanonicalExecutableExpressionV1 as E;
+    match expression {
+        E::Foreign { binding, arguments } => {
+            modules.insert(binding.module.clone());
+            for value in arguments { foreign_modules(value, modules); }
+        }
+        E::Let { value, body, .. } => { foreign_modules(value, modules); foreign_modules(body, modules); }
+        E::Sequence(values) => { for value in values { foreign_modules(value, modules); } }
+        E::Record(fields) => { for value in fields.values() { foreign_modules(value, modules); } }
+        E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
+        E::Require(a,b,c) | E::Conditional(a,b,c) => { foreign_modules(a,modules); foreign_modules(b,modules); foreign_modules(c,modules); }
+        E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
+        _ => {}
     }
 }
 fn name(bytes: &[u8]) -> Result<&str> {
@@ -134,7 +166,7 @@ impl Lowerer<'_> {
     fn slot(&self, state: &CanonicalStateRefV1) -> Result<usize> {
         self.slots
             .get(state)
-            .copied()
+            .cloned()
             .ok_or_else(|| JavaScriptLoweringErrorV1("unresolved state coordinate".into()))
     }
     fn expression(
@@ -144,10 +176,59 @@ impl Lowerer<'_> {
     ) -> Result<(String, ValueType)> {
         use CanonicalExecutableExpressionV1 as E;
         let result = match expression {
+            E::Sequence(values) => {
+                let element = match &expected { Some(ValueType::Sequence(element)) => Some(element.as_ref().clone()), _ => None };
+                let mut kind = element;
+                let mut emitted = Vec::new();
+                for value in values {
+                    let (value, found) = self.expression(value, kind.clone())?;
+                    kind = Some(found); emitted.push(value);
+                }
+                (format!("Object.freeze([{}])", emitted.join(",")), ValueType::Sequence(Box::new(kind.ok_or_else(|| JavaScriptLoweringErrorV1("untyped empty sequence".into()))?)))
+            }
+            E::Record(fields) => {
+                let mut kinds = BTreeMap::new();
+                let mut emitted = Vec::new();
+                for (key,value) in fields {
+                    let wanted = match &expected { Some(ValueType::Record(fields)) => fields.get(key).cloned(), _ => None };
+                    let (value,kind) = self.expression(value,wanted)?;
+                    kinds.insert(key.clone(),kind);
+                    emitted.push(format!("[{},{}]", quote(name(key)?), value));
+                }
+                (format!("Object.freeze(Object.fromEntries([{}]))", emitted.join(",")), ValueType::Record(kinds))
+            }
+            E::SequenceDrop(value,count) => {
+                let (value,kind) = self.expression(value,expected.clone())?;
+                if !matches!(kind, ValueType::Sequence(_)) { return unsupported("drop requires a sequence"); }
+                let (count,_) = self.expression(count,Some(ValueType::Number))?;
+                (format!("drop({value},{count})"),kind)
+            }
+            E::Field(value,field) => {
+                let (value,ValueType::Record(fields)) = self.expression(value,None)? else { return unsupported("field requires a record"); };
+                let kind=fields.get(field).cloned().ok_or_else(|| JavaScriptLoweringErrorV1("unknown record field".into()))?;
+                (format!("{value}[{}]",quote(name(field)?)),kind)
+            }
+            E::Require(condition,value,message) => {
+                let (condition,_) = self.expression(condition,Some(ValueType::Boolean))?;
+                let (value,kind) = self.expression(value,expected.clone())?;
+                let (message,_) = self.expression(message,Some(ValueType::Text))?;
+                (format!("({condition}?{value}:fail({message}))"),kind)
+            }
+            E::Foreign { binding, arguments } => {
+                binding.check().map_err(|e| JavaScriptLoweringErrorV1(e.into()))?;
+                let values=arguments.iter().zip(&binding.arguments).map(|(value,kind)| self.expression(value,Some(callable_type(kind)?)).map(|v| v.0)).collect::<Result<Vec<_>>>()?;
+                let member=format!("{}[{}]",foreign_name(&binding.module),quote(&binding.member));
+                let value=match binding.operation {
+                    CanonicalForeignOperationV1::Get => member,
+                    CanonicalForeignOperationV1::Call => format!("(0,{member})({})",values.join(",")),
+                };
+                let kind=callable_type(&binding.result)?;
+                (format!("crossing({value},{})",kind.descriptor()),kind)
+            }
             E::Let { binding, value, body } => {
                 let (value, kind) = self.expression(value, None)?;
                 let previous = self.bindings.insert(*binding, kind);
-                let result = self.expression(body, expected);
+                let result = self.expression(body, expected.clone());
                 if let Some(previous) = previous { self.bindings.insert(*binding, previous); }
                 else { self.bindings.remove(binding); }
                 let (body, kind) = result?;
@@ -159,7 +240,7 @@ impl Lowerer<'_> {
                 let entry = self.arguments.get_mut(usize::from(*index)).ok_or_else(|| {
                     JavaScriptLoweringErrorV1("argument ordinal exceeds handler arity".into())
                 })?;
-                let kind = match (*entry, expected) {
+                let kind = match (entry.clone(), expected.clone()) {
                     (Some(a), Some(b)) if a != b => {
                         return unsupported("inconsistent argument type");
                     }
@@ -170,15 +251,12 @@ impl Lowerer<'_> {
                         );
                     }
                 };
-                *entry = Some(kind);
+                *entry = Some(kind.clone());
                 (format!("args[{index}]"), kind)
             }
             E::Binding(index) => (
                 format!("b{index}"),
-                *self
-                    .bindings
-                    .get(index)
-                    .ok_or_else(|| JavaScriptLoweringErrorV1("unbound rule variable".into()))?,
+                self.bindings.get(index).cloned().ok_or_else(|| JavaScriptLoweringErrorV1("unbound rule variable".into()))?,
             ),
             E::ReferentFacet {
                 value,
@@ -188,9 +266,9 @@ impl Lowerer<'_> {
                 // The facet is justified by checked membership, not JavaScript coercion.
                 let input_type = match value.as_ref() {
                     E::Argument(index) => {
-                        self.arguments.get(usize::from(*index)).copied().flatten()
+                        self.arguments.get(usize::from(*index)).cloned().flatten()
                     }
-                    E::Binding(index) => self.bindings.get(index).copied(),
+                    E::Binding(index) => self.bindings.get(index).cloned(),
                     _ => None,
                 }
                 .unwrap_or(ValueType::Referent(domain.get()));
@@ -228,7 +306,7 @@ impl Lowerer<'_> {
             }
             E::Equal(a, b) => {
                 let (a, kind) = self.expression(a, None)?;
-                let (b, _) = self.expression(b, Some(kind))?;
+                let (b, _) = self.expression(b, Some(kind.clone()))?;
                 (format!("equal({a},{b})"), ValueType::Boolean)
             }
             E::Not(value) => {
@@ -237,8 +315,8 @@ impl Lowerer<'_> {
             }
             E::Conditional(condition, yes, no) => {
                 let (condition, _) = self.expression(condition, Some(ValueType::Boolean))?;
-                let (yes, kind) = self.expression(yes, expected)?;
-                let (no, _) = self.expression(no, Some(kind))?;
+                let (yes, kind) = self.expression(yes, expected.clone())?;
+                let (no, _) = self.expression(no, Some(kind.clone()))?;
                 (format!("({condition}?{yes}:{no})"), kind)
             }
             E::SquareRoot(value) => {
@@ -290,7 +368,7 @@ impl Lowerer<'_> {
         output: ValueType,
         function: &str,
     ) -> Result<(String, ValueType)> {
-        let (a, _) = self.expression(a, Some(input))?;
+        let (a, _) = self.expression(a, Some(input.clone()))?;
         let (b, _) = self.expression(b, Some(input))?;
         Ok((format!("{function}({a},{b})"), output))
     }
@@ -303,7 +381,7 @@ impl Lowerer<'_> {
         use CanonicalExecutableExpressionV1 as E;
         if let E::Binding(index) = pattern {
             if !self.bindings.contains_key(index) {
-                self.bindings.insert(*index, kind);
+                self.bindings.insert(*index, kind.clone());
                 return Ok(format!("const b{index}={candidate};\n"));
             }
         }
@@ -321,8 +399,8 @@ impl Lowerer<'_> {
                 }
             }
             let input_type = match value.as_ref() {
-                E::Binding(index) => self.bindings.get(index).copied(),
-                E::Argument(index) => self.arguments.get(usize::from(*index)).copied().flatten(),
+                E::Binding(index) => self.bindings.get(index).cloned(),
+                E::Argument(index) => self.arguments.get(usize::from(*index)).cloned().flatten(),
                 _ => None,
             }
             .unwrap_or(ValueType::Referent(domain.get()));
@@ -587,7 +665,7 @@ pub fn lower_javascript_v1(
             .arguments
             .iter()
             .map(|kind| {
-                kind.ok_or_else(|| {
+                kind.clone().ok_or_else(|| {
                     JavaScriptLoweringErrorV1("unused or unresolved handler argument type".into())
                 })
             })
@@ -643,7 +721,10 @@ pub fn lower_javascript_v1(
     } else {
         export_names.insert("createSession".to_string());
     }
+    let mut imports = BTreeSet::new();
     for (ordinal, callable) in package.callables.iter().enumerate() {
+        check_canonical_callable_v1(callable).map_err(|e| JavaScriptLoweringErrorV1(format!("{e:?}")))?;
+        foreign_modules(&callable.expression, &mut imports);
         let designation = name(&callable.designation)?;
         if callable.exported && !export_names.insert(designation.to_string()) {
             return unsupported("duplicate JavaScript export name");
@@ -651,21 +732,21 @@ pub fn lower_javascript_v1(
         let types = callable
             .arguments
             .iter()
-            .map(|argument| scalar_type(argument.value_kind))
+            .map(|argument| callable_type(&argument.value_kind))
             .collect::<Result<Vec<_>>>()?;
-        let result = scalar_type(callable.result_kind)?;
+        let result = callable_type(&callable.result_kind)?;
         // Pure callables cannot access session state or rule-local bindings.
         let mut pure = Lowerer {
             slots: BTreeMap::new(),
             tables: Vec::new(),
             bindings: BTreeMap::new(),
-            arguments: types.iter().copied().map(Some).collect(),
+            arguments: types.iter().cloned().map(Some).collect(),
         };
-        let (expression, _) = pure.expression(&callable.expression, Some(result))?;
+        let (expression, _) = pure.expression(&callable.expression, Some(result.clone()))?;
         let validation = types
             .iter()
             .enumerate()
-            .map(|(index, kind)| format!("validate(args[{index}],{});\n", kind.descriptor()))
+            .map(|(index, kind)| format!("args[{index}]=crossing(args[{index}],{});\n", kind.descriptor()))
             .collect::<String>();
         module.push_str(&format!(
             "function callable{ordinal}(...args){{\nif(args.length!=={})fail(\"ArgumentCount\");\n{validation}const result={expression};\nvalidate(result,{});\nreturn result;\n}}\n",
@@ -689,6 +770,8 @@ pub fn lower_javascript_v1(
             ));
         }
     }
+    let imports = imports.iter().map(|source| format!("import * as {} from {};\n", foreign_name(source), quote(source))).collect::<String>();
+    module.insert_str(0, &imports);
     Ok(JavaScriptArtifactsV1 {
         module,
         declarations,
@@ -697,7 +780,12 @@ pub fn lower_javascript_v1(
 
 const RUNTIME: &str = r#"
 function fail(code){throw new Error(code);}
-function equal(a,b){return a===b||(a!==null&&b!==null&&typeof a==='object'&&typeof b==='object'&&a.domain===b.domain&&a.identity===b.identity);}
+function equal(a,b){
+ if(a===b)return true;
+ if(a===null||b===null||typeof a!=='object'||typeof b!=='object'||Array.isArray(a)!==Array.isArray(b))return false;
+ if(Array.isArray(a))return a.length===b.length&&a.every((v,i)=>equal(v,b[i]));
+ const keys=Object.keys(a);return keys.length===Object.keys(b).length&&keys.every(k=>Object.hasOwn(b,k)&&equal(a[k],b[k]));
+}
 function finite(value){if(typeof value!=='number'||!Number.isFinite(value))fail('NumericDomain');return value===0?0:value;}
 function text(value){if(typeof value!=='string'||!value.isWellFormed()||new TextEncoder().encode(value).length>16777216)fail('TextDomain');return value;}
 function validate(value,kind){
@@ -706,9 +794,18 @@ function validate(value,kind){
  case 'text':text(value);break;
  case 'boolean':if(typeof value!=='boolean')fail('TypeMismatch');break;
  case 'referent':if(value===null||typeof value!=='object'||value.domain!==kind[1]||!Number.isInteger(value.identity)||value.identity<=0||value.identity>4294967295)fail('TypeMismatch');break;
+ case 'sequence':if(!Array.isArray(value))fail('TypeMismatch');for(let i=0;i<value.length;i++){if(!Object.hasOwn(value,i))fail('TypeMismatch');validate(value[i],kind[1]);}break;
+ case 'record':if(value===null||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==kind[1].length)fail('TypeMismatch');for(const [key,type] of kind[1]){if(!Object.hasOwn(value,key))fail('TypeMismatch');validate(value[key],type);}break;
  default:fail('TypeMismatch');
  }
 }
+function crossing(value,kind){
+ validate(value,kind);
+ if(kind[0]==='sequence')return Object.freeze(value.map(v=>crossing(v,kind[1])));
+ if(kind[0]==='record')return Object.freeze(Object.fromEntries(kind[1].map(([key,type])=>[key,crossing(value[key],type)])));
+ return value;
+}
+function drop(value,count){if(!Number.isFinite(count)||!Number.isInteger(count)||count<0)fail('NumericDomain');return Object.freeze(value.slice(count));}
 function facet(value,domain,members){if(value===null||typeof value!=='object')return undefined;if(value.domain===domain)return value;if(members.includes(value.identity))return Object.freeze({domain,identity:value.identity});return undefined;}
 function requireFacet(value,domain,members){const result=facet(value,domain,members);if(result===undefined)fail('TypeMismatch');return result;}
 function concatenate(a,b){return text(text(a)+text(b));}

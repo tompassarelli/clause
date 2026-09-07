@@ -229,6 +229,9 @@ pub struct DynamicPrerequisiteRequirementPreimageV2 {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ModeContractV2 {
+    /// Exact foreign accesses reachable under this Mode. These are unresolved
+    /// host obligations, never capability tokens or attempted effects.
+    pub foreign_accesses: Vec<crate::CanonicalForeignBindingV1>,
     pub determinism: DeterminismContractV2,
     pub result_cardinality: CardinalityV2,
     pub result_order: ResultOrderContractV2,
@@ -249,7 +252,7 @@ pub struct ModeContractV2 {
 impl ModeContractV2 {
     #[must_use]
     pub fn is_pure(&self) -> bool {
-        self.state_delta_domain.is_none() && self.effect_intents.is_empty()
+        self.state_delta_domain.is_none() && self.effect_intents.is_empty() && self.foreign_accesses.is_empty()
     }
 
     #[must_use]
@@ -897,6 +900,8 @@ fn validate_mode_contract(
     mode: &ModePreimageV2,
 ) -> Result<(), FormationErrorV2> {
     let contract = &mode.contract;
+    validate_set(&contract.foreign_accesses,"foreign access contracts")?;
+    for access in &contract.foreign_accesses { access.check().map_err(FormationErrorV2::InvalidForeignAccess)?; }
     validate_cardinality(contract.result_cardinality)?;
     if let ResultOrderContractV2::SelectedBy(strategy) = contract.result_order {
         require_formation(indexes, strategy)?;
@@ -1922,6 +1927,7 @@ fn resolve_dependency(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FormationErrorV2 {
+    InvalidForeignAccess(&'static str),
     CanonicalEncoding(CanonicalEncodeError),
     NonCanonicalSet(&'static str),
     TooManyItems {
@@ -2054,6 +2060,7 @@ mod tests {
             authorization_requirements: vec![],
             dynamic_prerequisites: vec![],
             contract: ModeContractV2 {
+                foreign_accesses: vec![],
                 determinism: DeterminismContractV2::Deterministic,
                 result_cardinality: ONE,
                 result_order: ResultOrderContractV2::UnorderedFiniteSet,

@@ -20,7 +20,11 @@ use crate::process::{CheckedProcessPackage, ProcessPackageV2};
 use crate::term::{EqualityContract, Term, TermError, TermScope};
 
 mod callable;
-pub use callable::{CanonicalCallableV1, CanonicalCallableArgumentV1, check_canonical_callable_v1};
+mod value_type;
+mod foreign;
+pub use value_type::CanonicalValueTypeV1;
+pub use foreign::{CanonicalForeignBindingV1, CanonicalForeignOperationV1, CanonicalForeignFailureV1};
+pub use callable::{CanonicalCallableV1, CanonicalCallableArgumentV1, CanonicalCallableModeV1, check_canonical_callable_v1};
 mod scalar_laws;
 use scalar_laws::*;
 mod live_edit;
@@ -238,9 +242,11 @@ pub enum CanonicalScalarValueV1 {
     Text(String),
     Referent(CanonicalReferentV1),
     RelationTable(CanonicalRelationTableV1),
+    Sequence(Vec<Self>),
+    Record(BTreeMap<Vec<u8>, Self>),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CanonicalScalarValueKindV1 {
     Number,
     Boolean,
@@ -248,6 +254,8 @@ pub enum CanonicalScalarValueKindV1 {
     Text,
     Referent,
     RelationTable,
+    Sequence,
+    Record,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -324,6 +332,12 @@ pub struct CanonicalStateCellV1 {
 pub enum CanonicalExecutableExpressionV1 {
     /// Evaluate the value once, then evaluate the body in its lexical binding scope.
     Let { binding: u16, value: Box<Self>, body: Box<Self> },
+    Sequence(Vec<Self>),
+    SequenceDrop(Box<Self>, Box<Self>),
+    Record(BTreeMap<Vec<u8>, Self>),
+    Field(Box<Self>, Vec<u8>),
+    Require(Box<Self>, Box<Self>, Box<Self>),
+    Foreign { binding: Box<CanonicalForeignBindingV1>, arguments: Vec<Self> },
     ContainsText(Box<Self>, Box<Self>),
     TextTransform(CanonicalTextTransformV1, Box<Self>),
     StartsWith(Box<Self>, Box<Self>),
@@ -515,6 +529,11 @@ pub enum CanonicalTextTransformV1 {
 pub enum CanonicalScalarExpressionV1 {
     /// Parsed pure definition application; eliminated by checked callable expansion.
     Call { designation: Vec<u8>, arguments: Vec<Self> },
+    Sequence(Vec<Self>),
+    SequenceDrop(Box<Self>, Box<Self>),
+    Record(BTreeMap<Vec<u8>, Self>),
+    Field(Box<Self>, Vec<u8>),
+    Require(Box<Self>, Box<Self>, Box<Self>),
     ContainsText(Box<Self>, Box<Self>),
     TextTransform(CanonicalTextTransformV1, Box<Self>),
     StartsWith(Box<Self>, Box<Self>),
@@ -1507,7 +1526,7 @@ pub fn read_canonical_source_with_declared_frontend_v1(
             start: block[0].start as u64,
             end: last.end as u64,
         };
-        if let Some((definition, relation)) = callable::read(block, origin)? {
+        if let Some((definition, relation)) = callable::read(block, origin, &scalar_laws.declarations)? {
             callables.push(definition);
             items.push(CstItem { origin, kind: CstKind::Relation(relation) });
             continue;
@@ -4254,6 +4273,8 @@ fn checked_source_state_cells(
                     let state =
                         state_ref_for_origin(cst, plan, item.origin, Some(field.name.as_slice()))?;
                     let value_kind = match field.value {
+                        CanonicalScalarValueV1::Sequence(_) => CanonicalScalarValueKindV1::Sequence,
+                        CanonicalScalarValueV1::Record(_) => CanonicalScalarValueKindV1::Record,
                         CanonicalScalarValueV1::Number(_) => CanonicalScalarValueKindV1::Number,
                         CanonicalScalarValueV1::Boolean(_) => CanonicalScalarValueKindV1::Boolean,
                         CanonicalScalarValueV1::Symbol(_) => CanonicalScalarValueKindV1::Symbol,
@@ -4506,6 +4527,11 @@ fn canonical_scalar_executable_expression(
     };
     Ok(match expression {
         CanonicalScalarExpressionV1::Call { .. } => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
+        CanonicalScalarExpressionV1::Sequence(_)
+        | CanonicalScalarExpressionV1::SequenceDrop(_, _)
+        | CanonicalScalarExpressionV1::Record(_)
+        | CanonicalScalarExpressionV1::Field(_, _)
+        | CanonicalScalarExpressionV1::Require(_, _, _) => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             let (yes, no) = pair(yes, no)?;
             CanonicalExecutableExpressionV1::Conditional(Box::new(
@@ -4892,6 +4918,11 @@ fn relational_scalar_expression(
     };
     Ok(match expression {
         CanonicalScalarExpressionV1::Call { .. } => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
+        CanonicalScalarExpressionV1::Sequence(_)
+        | CanonicalScalarExpressionV1::SequenceDrop(_, _)
+        | CanonicalScalarExpressionV1::Record(_)
+        | CanonicalScalarExpressionV1::Field(_, _)
+        | CanonicalScalarExpressionV1::Require(_, _, _) => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             let domain = expected_domain.or_else(|| relational::expression_domain(yes, domains))
                 .or_else(|| relational::expression_domain(no, domains));
@@ -6361,6 +6392,10 @@ pub fn elaborate_canonical_source_package_v1(
                         authorization_requirements: vec![],
                         dynamic_prerequisites: vec![],
                         contract: ModeContractV2 {
+                            foreign_accesses: cst.callables.iter()
+                                .find(|callable| callable.designation == relation.designation)
+                                .map(|callable| callable::foreign_accesses(&callable.expression))
+                                .unwrap_or_default(),
                             determinism: DeterminismContractV2::Deterministic,
                             result_cardinality: mode.cardinality.as_contract(),
                             result_order: ResultOrderContractV2::UnorderedFiniteSet,
@@ -8926,6 +8961,68 @@ impl ScalarExpressionParser<'_> {
     }
 
     fn primary(&mut self) -> Option<CanonicalScalarExpressionV1> {
+        let mut value=self.primary_value()?;
+        while self.interpolate && self.take_exact(b".") {
+            let start=self.cursor;
+            while self.source.get(self.cursor).is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c,b'-' | b'_')) { self.cursor+=1; }
+            if start==self.cursor { return None; }
+            value=CanonicalScalarExpressionV1::Field(Box::new(value),self.source[start..self.cursor].to_vec());
+        }
+        Some(value)
+    }
+
+    fn primary_value(&mut self) -> Option<CanonicalScalarExpressionV1> {
+        use CanonicalScalarExpressionV1 as E;
+        self.skip_spaces();
+        if self.take_exact(b"[") {
+            let mut values = Vec::new();
+            self.skip_spaces();
+            if !self.take_exact(b"]") {
+                loop {
+                    values.push(self.comparison()?);
+                    self.skip_spaces();
+                    if self.take_exact(b"]") { break; }
+                    self.take_exact(b",").then_some(())?;
+                }
+            }
+            return Some(E::Sequence(values));
+        }
+        if self.take_exact(b"{") {
+            let mut fields = BTreeMap::new();
+            self.skip_spaces();
+            if !self.take_exact(b"}") {
+                loop {
+                    self.skip_spaces();
+                    let start = self.cursor;
+                    while self.source.get(self.cursor).is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_')) { self.cursor += 1; }
+                    if self.cursor == start { return None; }
+                    let name = self.source[start..self.cursor].to_vec();
+                    self.skip_spaces();
+                    self.take_exact(b":").then_some(())?;
+                    if fields.insert(name, self.comparison()?).is_some() { return None; }
+                    self.skip_spaces();
+                    if self.take_exact(b"}") { break; }
+                    self.take_exact(b",").then_some(())?;
+                }
+            }
+            return Some(E::Record(fields));
+        }
+        for builtin in [b"drop(".as_slice(), b"require("] {
+            if self.take_exact(builtin) {
+                let a = Box::new(self.comparison()?);
+                self.skip_spaces(); self.take_exact(b",").then_some(())?;
+                let b = Box::new(self.comparison()?);
+                let value = match builtin {
+                    b"drop(" => E::SequenceDrop(a, b),
+                    _ => {
+                        self.skip_spaces(); self.take_exact(b",").then_some(())?;
+                        E::Require(a, b, Box::new(self.comparison()?))
+                    }
+                };
+                self.skip_spaces(); self.take_exact(b")").then_some(())?;
+                return Some(value);
+            }
+        }
         self.skip_spaces();
         for (prefix, operation) in [
             (b"trim(".as_slice(), CanonicalTextTransformV1::Trim),
@@ -9013,7 +9110,8 @@ impl ScalarExpressionParser<'_> {
         }
         while let Some(byte) = self.source.get(self.cursor)
             && !byte.is_ascii_whitespace()
-            && !matches!(*byte, b'+' | b'*' | b'/' | b'(' | b')' | b',')
+            && !(self.interpolate && *byte == b'.' && self.source.get(start) == Some(&b'?'))
+            && !matches!(*byte, b'+' | b'*' | b'/' | b'(' | b')' | b',' | b']' | b'}')
             && !matches!(*byte, b'>' | b'<' | b'=' | b'!')
         {
             self.cursor += 1;
@@ -9118,6 +9216,20 @@ fn collect_scalar_expression_parameters(
 ) {
     match expression {
         CanonicalScalarExpressionV1::Call { arguments, .. } => { for value in arguments { collect_scalar_expression_parameters(value, parameters); } },
+        CanonicalScalarExpressionV1::Sequence(values) => {
+            for value in values { collect_scalar_expression_parameters(value, parameters); }
+        }
+        CanonicalScalarExpressionV1::Record(fields) => {
+            for value in fields.values() { collect_scalar_expression_parameters(value, parameters); }
+        }
+        CanonicalScalarExpressionV1::Field(value, _) => collect_scalar_expression_parameters(value, parameters),
+        CanonicalScalarExpressionV1::SequenceDrop(a, b) => {
+            collect_scalar_expression_parameters(a, parameters);
+            collect_scalar_expression_parameters(b, parameters);
+        }
+        CanonicalScalarExpressionV1::Require(a, b, c) => {
+            for value in [a, b, c] { collect_scalar_expression_parameters(value, parameters); }
+        }
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             for value in [condition, yes, no] {
                 collect_scalar_expression_parameters(value, parameters);
@@ -10204,6 +10316,16 @@ fn application_semantic_bytes(role: &[u8], object: &CanonicalScalarValueV1) -> V
 
 fn append_scalar_semantic_bytes(bytes: &mut Vec<u8>, value: &CanonicalScalarValueV1) {
     match value {
+        CanonicalScalarValueV1::Sequence(values) => {
+            bytes.push(4);
+            bytes.extend_from_slice(&(values.len() as u64).to_be_bytes());
+            for value in values { append_scalar_semantic_bytes(bytes, value); }
+        }
+        CanonicalScalarValueV1::Record(fields) => {
+            bytes.push(5);
+            bytes.extend_from_slice(&(fields.len() as u64).to_be_bytes());
+            for (name, value) in fields { frame_bytes(bytes, name); append_scalar_semantic_bytes(bytes, value); }
+        }
         CanonicalScalarValueV1::Number(number) => {
             bytes.push(0);
             bytes.extend_from_slice(&number.to_be_bytes());
@@ -10588,6 +10710,11 @@ fn scalar_expression_matches_kind(
     let initial = expected;
     match expression {
         CanonicalScalarExpressionV1::Call { .. } => false,
+        CanonicalScalarExpressionV1::Sequence(_)
+        | CanonicalScalarExpressionV1::SequenceDrop(_, _)
+        | CanonicalScalarExpressionV1::Record(_)
+        | CanonicalScalarExpressionV1::Field(_, _)
+        | CanonicalScalarExpressionV1::Require(_, _, _) => false,
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             matches(condition, &CanonicalScalarValueV1::Boolean(false))
                 && matches(yes, expected) && matches(no, expected)

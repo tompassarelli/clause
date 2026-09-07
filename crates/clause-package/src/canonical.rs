@@ -1,4 +1,5 @@
 use std::fmt;
+use crate::{CanonicalForeignBindingV1, CanonicalForeignOperationV1, CanonicalForeignFailureV1, CanonicalValueTypeV1, CanonicalScalarValueKindV1};
 
 use crate::authority::{
     JudgmentAuthorityScope, RevisionJudgmentAuthorityGrant, RevisionStateAdmissionGrant,
@@ -146,6 +147,7 @@ impl ProgramSnapshotPreimageV2 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalEncodeError {
+    InvalidForeignContract(&'static str),
     LengthExceedsU32 { field: &'static str, length: usize },
     ListTooLong { count: usize, maximum: u32 },
     TermDepthExceeded { maximum: usize },
@@ -163,6 +165,7 @@ impl std::error::Error for CanonicalEncodeError {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalDecodeError {
+    InvalidForeignContract { offset: usize, reason: &'static str },
     UnexpectedEof {
         offset: usize,
         needed: usize,
@@ -1378,21 +1381,192 @@ wire_struct!(DynamicPrerequisiteRequirementPreimageV2 {
     cardinality,
     cause_projection,
 });
-wire_struct!(ModeContractV2 {
-    determinism,
-    result_cardinality,
-    result_order,
-    failure_domain,
-    state_delta_domain,
-    budget_exhaustion_domain,
-    effect_intents,
-    formation_checks,
-    productivity,
-    scheduling_requirements,
-    resource_requirements,
-    capability_requirements,
-    continuation,
-});
+
+impl Wire for CanonicalForeignBindingV1 {
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
+        self.check().map_err(CanonicalEncodeError::InvalidForeignContract)?;
+        encoder.blob("foreign module", self.module.as_bytes())?;
+        encoder.blob("foreign member", self.member.as_bytes())?;
+        encoder.u8(match self.operation { CanonicalForeignOperationV1::Call => 0, CanonicalForeignOperationV1::Get => 1 });
+        encoder.u8(match self.failure { CanonicalForeignFailureV1::Throw => 0 });
+        self.arguments.encode(encoder)?;
+        self.result.encode(encoder)
+    }
+    fn decode(cursor: &mut Cursor<'_>) -> Result<Self, CanonicalDecodeError> {
+        let offset=cursor.offset();
+        let invalid=|reason| CanonicalDecodeError::InvalidForeignContract { offset,reason };
+        let module=String::from_utf8(cursor.blob()?).map_err(|_| invalid("foreign module must be UTF-8"))?;
+        let member=String::from_utf8(cursor.blob()?).map_err(|_| invalid("foreign member must be UTF-8"))?;
+        let operation=match cursor.u8()? { 0 => CanonicalForeignOperationV1::Call, 1 => CanonicalForeignOperationV1::Get, found => return Err(unknown_tag(offset,"foreign operation",found)) };
+        let failure=match cursor.u8()? { 0 => CanonicalForeignFailureV1::Throw, found => return Err(unknown_tag(offset,"foreign failure",found)) };
+        let binding=Self { module,member,operation,failure,arguments: Vec::decode(cursor)?, result: CanonicalValueTypeV1::decode(cursor)? };
+        binding.check().map_err(invalid)?;
+        Ok(binding)
+    }
+}
+
+impl Wire for CanonicalValueTypeV1 {
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
+        self.check().map_err(CanonicalEncodeError::InvalidForeignContract)?;
+        fn encode(kind: &CanonicalValueTypeV1, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
+            use CanonicalValueTypeV1 as T;
+            use CanonicalScalarValueKindV1 as K;
+            match kind {
+                T::Scalar(kind) => encoder.u8(match kind {
+                    K::Number => 0, K::Boolean => 1, K::Symbol => 2, K::Text => 3,
+                    K::Referent => 4, K::RelationTable => 5,
+                    K::Sequence | K::Record => return Err(CanonicalEncodeError::InvalidForeignContract("composite kind needs recursive type")),
+                }),
+                T::Sequence(element) => { encoder.u8(6); encode(element,encoder)?; }
+                T::Record(fields) => {
+                    encoder.u8(7);
+                    if fields.len() > MAX_LIST_ITEMS as usize { return Err(CanonicalEncodeError::ListTooLong { count: fields.len(), maximum: MAX_LIST_ITEMS }); }
+                    encoder.u32(fields.len() as u32);
+                    for (name,value) in fields { encoder.blob("record field",name)?; encode(value,encoder)?; }
+                }
+            }
+            Ok(())
+        }
+        encode(self,encoder)
+    }
+    fn decode(cursor: &mut Cursor<'_>) -> Result<Self, CanonicalDecodeError> {
+        fn decode(cursor: &mut Cursor<'_>, depth: usize) -> Result<CanonicalValueTypeV1, CanonicalDecodeError> {
+            use CanonicalValueTypeV1 as T;
+            use CanonicalScalarValueKindV1 as K;
+            let offset=cursor.offset();
+            if depth >= 64 { return Err(CanonicalDecodeError::TermDepthExceeded { offset }); }
+            cursor.charge_nodes(1)?;
+            let value=match cursor.u8()? {
+                0 => K::Number.into(), 1 => K::Boolean.into(), 2 => K::Symbol.into(),
+                3 => K::Text.into(), 4 => K::Referent.into(), 5 => K::RelationTable.into(),
+                6 => T::Sequence(Box::new(decode(cursor,depth+1)?)),
+                7 => {
+                    let count=cursor.u32()?;
+                    if count > MAX_LIST_ITEMS { return Err(CanonicalDecodeError::ListTooLong { offset,count }); }
+                    let mut fields=std::collections::BTreeMap::new();
+                    for _ in 0..count {
+                        let name=cursor.blob()?;
+                        if fields.last_key_value().is_some_and(|(previous,_)| previous >= &name) { return Err(CanonicalDecodeError::NonCanonical(CanonicalEncodeError::NonCanonicalOrder("record fields"))); }
+                        let value=decode(cursor,depth+1)?;
+                        fields.insert(name,value);
+                    }
+                    T::Record(fields)
+                }
+                found => return Err(unknown_tag(offset,"value type",found)),
+            };
+            Ok(value)
+        }
+        decode(cursor,0)
+    }
+}
+
+impl Wire for ModeContractV2 {
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
+        // Tags 0/1 carry a contract without foreign accesses. Tag 2 carries
+        // the nonempty access set before the independent determinism field.
+        if !self.foreign_accesses.is_empty() {
+            ensure_sorted(&self.foreign_accesses,"foreign access contracts")?;
+            encoder.u8(2);
+            self.foreign_accesses.encode(encoder)?;
+        }
+        self.determinism.encode(encoder)?;
+        self.result_cardinality.encode(encoder)?;
+        self.result_order.encode(encoder)?;
+        self.failure_domain.encode(encoder)?;
+        self.state_delta_domain.encode(encoder)?;
+        self.budget_exhaustion_domain.encode(encoder)?;
+        self.effect_intents.encode(encoder)?;
+        self.formation_checks.encode(encoder)?;
+        self.productivity.encode(encoder)?;
+        self.scheduling_requirements.encode(encoder)?;
+        self.resource_requirements.encode(encoder)?;
+        self.capability_requirements.encode(encoder)?;
+        self.continuation.encode(encoder)
+    }
+    fn decode(cursor: &mut Cursor<'_>) -> Result<Self, CanonicalDecodeError> {
+        let offset=cursor.offset();
+        let (foreign_accesses,determinism)=match cursor.u8()? {
+            0 => (vec![],DeterminismContractV2::Deterministic),
+            1 => (vec![],DeterminismContractV2::ExplicitlyNondeterministic),
+            2 => {
+                let accesses=Vec::<CanonicalForeignBindingV1>::decode(cursor)?;
+                if accesses.is_empty() { return Err(CanonicalDecodeError::InvalidForeignContract { offset,reason: "tagged foreign contract must be nonempty" }); }
+                ensure_sorted(&accesses,"foreign access contracts").map_err(CanonicalDecodeError::NonCanonical)?;
+                (accesses,DeterminismContractV2::decode(cursor)?)
+            }
+            found => return Err(unknown_tag(offset,"ModeContractV2",found)),
+        };
+        Ok(Self {
+            foreign_accesses,determinism,
+            result_cardinality: Wire::decode(cursor)?,
+            result_order: Wire::decode(cursor)?,
+            failure_domain: Wire::decode(cursor)?,
+            state_delta_domain: Wire::decode(cursor)?,
+            budget_exhaustion_domain: Wire::decode(cursor)?,
+            effect_intents: Wire::decode(cursor)?,
+            formation_checks: Wire::decode(cursor)?,
+            productivity: Wire::decode(cursor)?,
+            scheduling_requirements: Wire::decode(cursor)?,
+            resource_requirements: Wire::decode(cursor)?,
+            capability_requirements: Wire::decode(cursor)?,
+            continuation: Wire::decode(cursor)?,
+        })
+    }
+}
+
+#[cfg(test)]
+mod foreign_mode_contract_tests {
+    use super::*;
+    fn contract() -> ModeContractV2 {
+        ModeContractV2 {
+            foreign_accesses: vec![], determinism: DeterminismContractV2::Deterministic,
+            result_cardinality: CardinalityV2 { minimum: 1,maximum: Some(1) },
+            result_order: ResultOrderContractV2::UnorderedFiniteSet,
+            failure_domain: None,state_delta_domain: None,budget_exhaustion_domain: None,
+            effect_intents: vec![],formation_checks: vec![],
+            productivity: ProductivityContractV2 { kind: ProductivityKindV2::Partial,obligations: vec![] },
+            scheduling_requirements: vec![],resource_requirements: vec![],capability_requirements: vec![],
+            continuation: ContinuationContractV2::TerminalOnly { may_cancel: false },
+        }
+    }
+    fn bytes(value: &ModeContractV2) -> Vec<u8> {
+        let mut encoder=Encoder::new(); value.encode(&mut encoder).unwrap(); encoder.finish().unwrap()
+    }
+    #[test]
+    fn foreign_mode_contract_retains_exact_recursive_access_and_unique_encoding() {
+        let mut value=contract();
+        let empty=bytes(&value);
+        assert_eq!(empty[0],0);
+        assert_eq!(ModeContractV2::decode(&mut Cursor::new(&empty)).unwrap(),value);
+        assert!(value.is_function());
+        value.foreign_accesses.push(CanonicalForeignBindingV1 {
+            module: "node:process".into(),member: "argv".into(),
+            operation: CanonicalForeignOperationV1::Get,failure: CanonicalForeignFailureV1::Throw,
+            arguments: vec![],result: CanonicalValueTypeV1::Sequence(Box::new(CanonicalScalarValueKindV1::Text.into())),
+        });
+        let encoded=bytes(&value);
+        assert_eq!(encoded[0],2);
+        assert_eq!(ModeContractV2::decode(&mut Cursor::new(&encoded)).unwrap(),value);
+        assert!(!value.is_pure());
+        value.foreign_accesses[0].result=CanonicalValueTypeV1::Record(std::collections::BTreeMap::from([
+            (b"status".to_vec(),CanonicalScalarValueKindV1::Number.into()),
+            (b"message".to_vec(),CanonicalScalarValueKindV1::Text.into()),
+        ]));
+        let record=bytes(&value);
+        assert_ne!(record,encoded);
+        assert_eq!(ModeContractV2::decode(&mut Cursor::new(&record)).unwrap(),value);
+        let mut empty_tag=vec![2,0,0,0,0]; empty_tag.extend(empty);
+        assert!(ModeContractV2::decode(&mut Cursor::new(&empty_tag)).is_err());
+        assert!(ModeContractV2::decode(&mut Cursor::new(&[3])).is_err());
+        let access=value.foreign_accesses[0].clone();
+        for accesses in [vec![access.clone(),access.clone()],{
+            let mut earlier=access.clone(); earlier.module="a".into(); vec![access,earlier]
+        }] {
+            let mut encoder=Encoder::new(); encoder.u8(2); accesses.encode(&mut encoder).unwrap();
+            assert!(ModeContractV2::decode(&mut Cursor::new(&encoder.finish().unwrap())).is_err());
+        }
+    }
+}
 wire_struct!(ModePreimageV2 {
     id,
     schema,
@@ -3059,6 +3233,7 @@ fn validate_snapshot_order(
                 )?;
             }
             ensure_sorted(&mode.contract.effect_intents, "effect intents")?;
+            ensure_sorted(&mode.contract.foreign_accesses, "foreign access contracts")?;
             ensure_sorted(&mode.contract.formation_checks, "formation check targets")?;
             ensure_sorted(
                 &mode.contract.productivity.obligations,

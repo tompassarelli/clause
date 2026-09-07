@@ -1371,6 +1371,7 @@ fn effect_process_package(message: &[u8]) -> clause_package::CheckedProcessPacka
             .collect(),
     });
     let common_contract = q::ModeContractV2 {
+        foreign_accesses: vec![],
         determinism: q::DeterminismContractV2::Deterministic,
         result_cardinality: one,
         result_order: q::ResultOrderContractV2::UnorderedFiniteSet,

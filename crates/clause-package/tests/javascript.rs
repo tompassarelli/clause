@@ -5,6 +5,40 @@ use clause_package::*;
 
 const COMMAND_TEXT: &[u8] = include_bytes!("../../../test-vectors/authoring/command-text.clause");
 
+#[test]
+fn foreign_cli_reads_actual_bun_argv_and_preserves_typed_crossings_and_failures() {
+    let directory=std::env::temp_dir().join(format!("clause-js-foreign-{}",std::process::id()));
+    std::fs::create_dir(&directory).unwrap();
+    let source=include_bytes!("../../../test-vectors/authoring/foreign-cli.clause");
+    let artifacts=write_module(&directory,"foreign.mjs",&checked(source));
+    assert!(artifacts.declarations.contains("ReadonlyArray<string>"));
+    assert!(artifacts.declarations.contains("readonly \"message\": string"));
+    assert!(artifacts.declarations.contains("readonly \"status\": number"));
+    std::fs::write(directory.join("run.mjs"),"import {run} from './foreign.mjs'; process.exitCode=run();\n").unwrap();
+    let output=Command::new("bun").arg(directory.join("run.mjs")).args(["module","add"]).output().expect("Bun required for foreign execution");
+    assert_eq!(output.status.code(),Some(1));
+    assert!(output.stdout.is_empty());
+    assert_eq!(String::from_utf8(output.stderr).unwrap(),"firn: 'module add' requires a leaf node\nUsage: firn module add <name>\n  scaffold a minimal module (.bnix + .nix)\n");
+    let boundary=b"export foreign mismatch(): Text\n  get: \"argv\"\n  from: \"node:process\"\n  failure: throw\n\nforeign write(?fd: F64, ?message: Text): F64\n  call: \"writeSync\"\n  from: \"node:fs\"\n  failure: throw\n\nexport procedure throwing(): F64\n  write(-1, \"\")\n";
+    write_module(&directory,"boundary.mjs",&checked(boundary));
+    std::fs::write(directory.join("check.mjs"),r#"
+import {dispatch} from './foreign.mjs';
+import {mismatch,throwing} from './boundary.mjs';
+function reject(f){try{f();}catch(error){return error;}throw Error('expected rejection');}
+for(const value of [[],['add','module'],['module','add','name'],['module','module'],['module','add','add'],[true]])reject(()=>dispatch(value));
+reject(()=>dispatch());
+const result=dispatch(['module','add']);
+if(result.status!==1||!Object.isFrozen(result))throw Error('typed result');
+reject(mismatch);
+if(!reject(throwing).code)throw Error('foreign failure identity was lost');
+"#).unwrap();
+    let output=Command::new("bun").arg(directory.join("check.mjs")).output().unwrap();
+    assert!(output.status.success(),"{}",String::from_utf8_lossy(&output.stderr));
+    assert!(output.stdout.is_empty()&&output.stderr.is_empty());
+    for name in ["foreign.mjs","boundary.mjs","run.mjs","check.mjs"] { std::fs::remove_file(directory.join(name)).unwrap(); }
+    std::fs::remove_dir(directory).unwrap();
+}
+
 fn checked(source: &[u8]) -> CanonicalSourcePackageSliceV1 {
     let cst = read_canonical_source_v1(source).unwrap();
     let plan = plan_independent_canonical_source_allocations_v1(
@@ -177,9 +211,9 @@ fn pure_callable_exports_source_name_and_checks_finite_arguments_and_results() {
     divide.designation = b"quotient".to_vec();
     divide.arguments.truncate(2);
     for argument in &mut divide.arguments {
-        argument.value_kind = CanonicalScalarValueKindV1::Number;
+        argument.value_kind = CanonicalScalarValueKindV1::Number.into();
     }
-    divide.result_kind = CanonicalScalarValueKindV1::Number;
+    divide.result_kind = CanonicalScalarValueKindV1::Number.into();
     divide.expression = CanonicalExecutableExpressionV1::Divide(
         Box::new(CanonicalExecutableExpressionV1::Argument(0)),
         Box::new(CanonicalExecutableExpressionV1::Argument(1)),

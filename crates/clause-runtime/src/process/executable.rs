@@ -124,6 +124,8 @@ impl RuntimeIdentityOrdinalsV1 {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ExecutableValueV1 {
+    Sequence(Vec<Self>),
+    Record(BTreeMap<Vec<u8>, Self>),
     Number(u64),
     Boolean(bool),
     Symbol(ExecutableSymbolV1),
@@ -234,6 +236,8 @@ pub enum ExecutableValueKindV1 {
     Referent = 8,
     ReferentSet = 9,
     RelationTable = 10,
+    Sequence = 11,
+    Record = 12,
 }
 
 impl ExecutableValueKindV1 {
@@ -250,6 +254,7 @@ impl ExecutableValueKindV1 {
             | Self::TextSet
             | Self::ReferentSet
             | Self::RelationTable => None,
+            Self::Sequence | Self::Record => None,
         }
     }
 }
@@ -571,6 +576,8 @@ impl ExecutableValueV1 {
     #[must_use]
     pub const fn kind(&self) -> ExecutableValueKindV1 {
         match self {
+            Self::Sequence(_) => ExecutableValueKindV1::Sequence,
+            Self::Record(_) => ExecutableValueKindV1::Record,
             Self::Number(_) => ExecutableValueKindV1::Number,
             Self::Boolean(_) => ExecutableValueKindV1::Boolean,
             Self::Symbol(_) => ExecutableValueKindV1::Symbol,
@@ -587,6 +594,7 @@ impl ExecutableValueV1 {
                 ExecutableValueKindV1::TextSet
                 | ExecutableValueKindV1::ReferentSet
                 | ExecutableValueKindV1::RelationTable => unreachable!(),
+                ExecutableValueKindV1::Sequence | ExecutableValueKindV1::Record => unreachable!(),
             },
             Self::Referent(_) => ExecutableValueKindV1::Referent,
             Self::RelationTable(_) => ExecutableValueKindV1::RelationTable,
@@ -714,6 +722,7 @@ impl ExecutableValueV1 {
             | Self::Text(_)
             | Self::Referent(_)
             | Self::RelationTable(_)
+            | Self::Sequence(_) | Self::Record(_)
             | Self::Set(_) => None,
         }
     }
@@ -727,6 +736,7 @@ impl ExecutableValueV1 {
             | Self::Text(_)
             | Self::Referent(_)
             | Self::RelationTable(_)
+            | Self::Sequence(_) | Self::Record(_)
             | Self::Set(_) => None,
         }
     }
@@ -744,6 +754,7 @@ impl ExecutableValueV1 {
             | Self::Text(_)
             | Self::Referent(_)
             | Self::RelationTable(_)
+            | Self::Sequence(_) | Self::Record(_)
             | Self::Set(_) => None,
         }
     }
@@ -761,6 +772,7 @@ impl ExecutableValueV1 {
             | Self::Symbol(_)
             | Self::Referent(_)
             | Self::RelationTable(_)
+            | Self::Sequence(_) | Self::Record(_)
             | Self::Set(_) => None,
         }
     }
@@ -774,6 +786,7 @@ impl ExecutableValueV1 {
             | Self::Symbol(_)
             | Self::Text(_)
             | Self::RelationTable(_)
+            | Self::Sequence(_) | Self::Record(_)
             | Self::Set(_) => None,
         }
     }
@@ -853,6 +866,12 @@ pub fn decode_executable_occurrence_v1(
 pub enum ExecutableExpressionV1 {
     /// Evaluate the value once, then evaluate the body in its lexical binding scope.
     Let { binding: u16, value: Box<Self>, body: Box<Self> },
+    Sequence(Vec<Self>),
+    SequenceDrop(Box<Self>, Box<Self>),
+    Record(BTreeMap<Vec<u8>, Self>),
+    Field(Box<Self>, Vec<u8>),
+    Require(Box<Self>, Box<Self>, Box<Self>),
+    Foreign { binding: Box<clause_package::CanonicalForeignBindingV1>, arguments: Vec<Self> },
     ContainsText(Box<Self>, Box<Self>),
     TextTransform(CanonicalTextTransformV1, Box<Self>),
     StartsWith(Box<Self>, Box<Self>),
@@ -1152,16 +1171,16 @@ fn canonical_cell_initially_present(cell: &CanonicalStateCellV1) -> bool {
 /// Native refinement of one checked pure callable; no world slots or effects.
 #[derive(Clone, Debug)]
 pub struct ExecutableCallableV1 {
-    arguments: Vec<ExecutableValueKindV1>,
-    result: ExecutableValueKindV1,
+    arguments: Vec<clause_package::CanonicalValueTypeV1>,
+    result: clause_package::CanonicalValueTypeV1,
     expression: ExecutableExpressionV1,
 }
 
 pub fn lower_canonical_callable_v1(callable: &CanonicalCallableV1) -> Result<ExecutableCallableV1, ExecutableErrorV1> {
     check_canonical_callable_v1(callable).map_err(|_| ExecutableErrorV1::TypeMismatch)?;
     Ok(ExecutableCallableV1 {
-        arguments: callable.arguments.iter().map(|a| lower_scalar_value_kind(a.value_kind)).collect(),
-        result: lower_scalar_value_kind(callable.result_kind),
+        arguments: callable.arguments.iter().map(|a| a.value_kind.clone()).collect(),
+        result: callable.result_kind.clone(),
         expression: lower_canonical_expression(&callable.expression, &BTreeMap::new(), 0)?,
     })
 }
@@ -1171,15 +1190,26 @@ impl ExecutableCallableV1 {
     /// Arity/type errors and ordinary bounded expression failures return errors.
     pub fn invoke(&self, arguments: &[ExecutableValueV1]) -> Result<ExecutableValueV1, ExecutableErrorV1> {
         if arguments.len() != self.arguments.len()
-            || arguments.iter().zip(&self.arguments).any(|(a, k)| a.kind() != *k) {
+            || arguments.iter().zip(&self.arguments).any(|(a, k)| !value_has_type(a, k)) {
             return Err(ExecutableErrorV1::TypeMismatch);
         }
         let value = evaluate(&self.expression, &[], arguments, EvaluationContextV1 {
             allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None,
             sum_queries: None, bindings: None, relational_occurrence: None,
         })?;
-        if value.kind() != self.result { return Err(ExecutableErrorV1::TypeMismatch); }
+        if !value_has_type(&value, &self.result) { return Err(ExecutableErrorV1::TypeMismatch); }
         Ok(value)
+    }
+}
+
+fn value_has_type(value: &ExecutableValueV1, kind: &clause_package::CanonicalValueTypeV1) -> bool {
+    use clause_package::CanonicalValueTypeV1 as T;
+    match (value, kind) {
+        (ExecutableValueV1::Number(bits), T::Scalar(clause_package::CanonicalScalarValueKindV1::Number)) => f64::from_bits(*bits).is_finite(),
+        (ExecutableValueV1::Sequence(values), T::Sequence(element)) => values.iter().all(|v| value_has_type(v, element)),
+        (ExecutableValueV1::Record(values), T::Record(fields)) => values.len() == fields.len() && fields.iter().all(|(k,t)| values.get(k).is_some_and(|v| value_has_type(v,t))),
+        (_, T::Scalar(kind)) => !matches!(kind, clause_package::CanonicalScalarValueKindV1::Sequence | clause_package::CanonicalScalarValueKindV1::Record) && value.kind() == lower_scalar_value_kind(*kind),
+        _ => false,
     }
 }
 
@@ -1205,6 +1235,12 @@ fn lower_canonical_expression(
             value: Box::new(lower_canonical_expression(value, slots, depth + 1)?),
             body: Box::new(lower_canonical_expression(body, slots, depth + 1)?),
         },
+        CanonicalExecutableExpressionV1::Sequence(values) => ExecutableExpressionV1::Sequence(values.iter().map(|v| lower_canonical_expression(v, slots, depth + 1)).collect::<Result<_, _>>()?),
+        CanonicalExecutableExpressionV1::Record(fields) => ExecutableExpressionV1::Record(fields.iter().map(|(k, v)| Ok((k.clone(), lower_canonical_expression(v, slots, depth + 1)?))).collect::<Result<_, ExecutableErrorV1>>()?),
+        CanonicalExecutableExpressionV1::SequenceDrop(a, b) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::SequenceDrop(a, b) }
+        CanonicalExecutableExpressionV1::Field(a, field) => ExecutableExpressionV1::Field(Box::new(lower_canonical_expression(a, slots, depth + 1)?), field.clone()),
+        CanonicalExecutableExpressionV1::Require(a, b, c) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::Require(a, b, Box::new(lower_canonical_expression(c, slots, depth + 1)?)) }
+        CanonicalExecutableExpressionV1::Foreign { binding, arguments } => ExecutableExpressionV1::Foreign { binding: binding.clone(), arguments: arguments.iter().map(|v| lower_canonical_expression(v, slots, depth + 1)).collect::<Result<_, _>>()? },
         CanonicalExecutableExpressionV1::Conditional(condition, yes, no) => {
             let (yes, no) = pair(yes, no)?;
             ExecutableExpressionV1::Conditional(Box::new(
@@ -1792,6 +1828,7 @@ fn lower_scalar_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Call { .. } => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             let (yes, no) = pair(yes, no)?;
@@ -1870,6 +1907,8 @@ fn lower_scalar_value(
     value: &CanonicalScalarValueV1,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     match value {
+        CanonicalScalarValueV1::Sequence(values) => Ok(ExecutableValueV1::Sequence(values.iter().map(lower_scalar_value).collect::<Result<_, _>>()?)),
+        CanonicalScalarValueV1::Record(fields) => Ok(ExecutableValueV1::Record(fields.iter().map(|(k, v)| Ok((k.clone(), lower_scalar_value(v)?))).collect::<Result<_, ExecutableErrorV1>>()?)),
         CanonicalScalarValueV1::Number(bits) => Ok(ExecutableValueV1::Number(*bits)),
         CanonicalScalarValueV1::Boolean(value) => Ok(ExecutableValueV1::Boolean(*value)),
         CanonicalScalarValueV1::Symbol(value) => ExecutableValueV1::symbol(value),
@@ -1929,6 +1968,8 @@ const fn lower_scalar_value_kind(
     kind: clause_package::CanonicalScalarValueKindV1,
 ) -> ExecutableValueKindV1 {
     match kind {
+        clause_package::CanonicalScalarValueKindV1::Sequence => ExecutableValueKindV1::Sequence,
+        clause_package::CanonicalScalarValueKindV1::Record => ExecutableValueKindV1::Record,
         clause_package::CanonicalScalarValueKindV1::Number => ExecutableValueKindV1::Number,
         clause_package::CanonicalScalarValueKindV1::Boolean => ExecutableValueKindV1::Boolean,
         clause_package::CanonicalScalarValueKindV1::Symbol => ExecutableValueKindV1::Symbol,
@@ -3189,6 +3230,9 @@ impl ExecutableProcessRuntimeV1 {
             let record = constitution
                 .mode_by_id(mode)
                 .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
+            if !record.contract.foreign_accesses.is_empty() {
+                return Err(ExecutableCarrierErrorV1::UnsupportedSurface);
+            }
             if record.contract.state_delta_domain.is_some()
                 || !record.contract.effect_intents.is_empty()
             {
@@ -3231,8 +3275,7 @@ impl ExecutableProcessRuntimeV1 {
                 let record = constitution
                     .mode_by_id(candidate)
                     .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
-                if record.contract.state_delta_domain.is_none()
-                    && record.contract.effect_intents.is_empty()
+                if record.contract.is_pure()
                     && record
                         .contract
                         .formation_checks
@@ -5498,6 +5541,8 @@ impl ExecutableProcessRuntimeV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExecutableErrorV1 {
+    UnboundForeign,
+    RequirementFailed(ExecutableTextV1),
     SourceContinuityRejected(&'static str),
     MalformedPhysicalPlan,
     UnsupportedPhysicalTarget,
@@ -5845,6 +5890,12 @@ fn validate_value_expression(
     }
     use ExecutableExpressionV1 as E;
     let children: Vec<&E> = match expression {
+        E::Sequence(values) => values.iter().collect(),
+        E::Record(fields) => fields.values().collect(),
+        E::Field(value,_) => vec![value],
+        E::SequenceDrop(a,b) => vec![a,b],
+        E::Require(a,b,c) => vec![a,b,c],
+        E::Foreign { .. } => return Err(ExecutableErrorV1::MalformedProgram),
         E::Let { value, body, .. } => vec![value, body],
         E::Sum { inputs, predicates, value } => {
             if predicates.is_empty() || predicates.len() > MAX_PROGRAM_ITEMS {
@@ -6097,6 +6148,7 @@ fn projected_scalar_value_term(
 ) -> Result<Term, ExecutableErrorV1> {
     let mut payload = SegmentedBytes::default();
     let kind = match value {
+        ExecutableValueV1::Sequence(_) | ExecutableValueV1::Record(_) => return Err(ExecutableErrorV1::UnsupportedPhysicalTarget),
         ExecutableValueV1::Number(bits) => { payload.extend_from_slice(&bits.to_le_bytes()); PROJECTED_NUMBER_KIND }
         ExecutableValueV1::Boolean(value) => { payload.push(u8::from(*value)); PROJECTED_BOOLEAN_KIND }
         ExecutableValueV1::Symbol(value) => { payload.extend_from_slice(value.as_bytes()); PROJECTED_SYMBOL_KIND }
@@ -6434,6 +6486,28 @@ fn evaluate(
             bindings.insert(*binding, value);
             evaluate(body, slots, arguments, EvaluationContextV1 { bindings: Some(&bindings), ..context })
         },
+        E::Sequence(values) => Ok(ExecutableValueV1::Sequence(values.iter().map(|v| evaluate(v, slots, arguments, context)).collect::<Result<_, _>>()?)),
+        E::Record(fields) => Ok(ExecutableValueV1::Record(fields.iter().map(|(k, v)| Ok((k.clone(), evaluate(v, slots, arguments, context)?))).collect::<Result<_, ExecutableErrorV1>>()?)),
+        E::SequenceDrop(value, count) => {
+            let ExecutableValueV1::Sequence(values) = evaluate(value, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
+            let count = evaluate(count, slots, arguments, context)?.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
+            if !count.is_finite() || count < 0.0 || count.fract() != 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
+            let count = if count >= values.len() as f64 { values.len() } else { count as usize };
+            Ok(ExecutableValueV1::Sequence(values.into_iter().skip(count).collect()))
+        }
+        E::Field(value, field) => {
+            let ExecutableValueV1::Record(mut fields) = evaluate(value, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
+            fields.remove(field).ok_or(ExecutableErrorV1::TypeMismatch)
+        }
+        E::Require(condition, value, message) => {
+            if evaluate(condition, slots, arguments, context)?.as_boolean().ok_or(ExecutableErrorV1::TypeMismatch)? {
+                evaluate(value, slots, arguments, context)
+            } else {
+                let ExecutableValueV1::Text(message) = evaluate(message, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
+                Err(ExecutableErrorV1::RequirementFailed(message))
+            }
+        }
+        E::Foreign { .. } => Err(ExecutableErrorV1::UnboundForeign),
         E::Constant(value) => Ok(value.clone()),
         E::Sum {
             inputs,
@@ -6940,6 +7014,14 @@ pub(super) fn encode_value(
     value: &ExecutableValueV1,
 ) -> Result<(), ExecutableErrorV1> {
     match value {
+        ExecutableValueV1::Sequence(values) => {
+            bytes.push(8); encode_count(bytes,values.len())?;
+            for value in values { encode_value(bytes,value)?; }
+        }
+        ExecutableValueV1::Record(fields) => {
+            bytes.push(9); encode_count(bytes,fields.len())?;
+            for (name,value) in fields { encode_count(bytes,name.len())?; bytes.extend_from_slice(name); encode_value(bytes,value)?; }
+        }
         ExecutableValueV1::Number(bits) => {
             bytes.push(0);
             bytes.extend_from_slice(&bits.to_le_bytes());
@@ -7033,6 +7115,12 @@ fn encode_expression(
 ) -> Result<(), ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
     match expression {
+        E::Sequence(values) => { bytes.push(37); encode_count(bytes,values.len())?; for value in values { encode_expression(bytes,value)?; } }
+        E::Record(fields) => { bytes.push(38); encode_count(bytes,fields.len())?; for (name,value) in fields { encode_count(bytes,name.len())?; bytes.extend_from_slice(name); encode_expression(bytes,value)?; } }
+        E::SequenceDrop(a,b) => encode_binary(bytes,39,a,b)?,
+        E::Field(value,name) => { bytes.push(40); encode_expression(bytes,value)?; encode_count(bytes,name.len())?; bytes.extend_from_slice(name); }
+        E::Require(a,b,c) => encode_ternary(bytes,41,a,b,c)?,
+        E::Foreign { .. } => return Err(ExecutableErrorV1::UnsupportedPhysicalTarget),
         E::Let { binding, value, body } => {
             bytes.push(36);
             bytes.extend_from_slice(&binding.to_le_bytes());
@@ -7236,7 +7324,17 @@ impl<'a> Decoder<'a> {
         (0..count).map(|_| self.value()).collect()
     }
     fn value(&mut self) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+        self.value_at_depth(0)
+    }
+    fn value_at_depth(&mut self, depth: usize) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+        if depth >= MAX_EXPRESSION_DEPTH { return Err(ExecutableErrorV1::ResourceLimit); }
         match self.byte()? {
+            8 => { let count=self.count()?; Ok(ExecutableValueV1::Sequence((0..count).map(|_| self.value_at_depth(depth+1)).collect::<Result<_,_>>()?)) }
+            9 => {
+                let count=self.count()?; let mut fields=BTreeMap::new();
+                for _ in 0..count { let length=self.count()?; let name=self.take(length)?.to_vec(); let value=self.value_at_depth(depth+1)?; if fields.insert(name,value).is_some() { return Err(ExecutableErrorV1::MalformedProgram); } }
+                Ok(ExecutableValueV1::Record(fields))
+            }
             0 => {
                 let value = f64::from_bits(self.u64()?);
                 ExecutableValueV1::number(value)
@@ -7360,6 +7458,16 @@ impl<'a> Decoder<'a> {
         use ExecutableExpressionV1 as E;
         let next = depth + 1;
         Ok(match self.byte()? {
+            37 => { let count=self.count()?; E::Sequence((0..count).map(|_| self.expression(next)).collect::<Result<_,_>>()?) }
+            38 => {
+                let count=self.count()?; let mut fields=BTreeMap::new();
+                for _ in 0..count { let length=self.count()?; let name=self.take(length)?.to_vec(); let value=self.expression(next)?; if fields.insert(name,value).is_some() { return Err(ExecutableErrorV1::MalformedProgram); } }
+                E::Record(fields)
+            }
+            39 => E::SequenceDrop(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
+            40 => { let value=Box::new(self.expression(next)?); let length=self.count()?; E::Field(value,self.take(length)?.to_vec()) }
+            41 => E::Require(Box::new(self.expression(next)?),Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
+
             0 => E::Constant(self.value()?),
             1 => E::Slot(self.u16()?),
             2 => E::Argument(self.u16()?),

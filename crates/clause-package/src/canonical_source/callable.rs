@@ -3,16 +3,17 @@ use super::*;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalCallableArgumentV1 {
     pub designation: Vec<u8>,
-    pub value_kind: CanonicalScalarValueKindV1,
+    pub value_kind: CanonicalValueTypeV1,
 }
 
-/// One pure, deterministic, single-result direction of a named relation.
+/// One typed single-result direction, with a checked function/procedure allowance.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalCallableV1 {
     pub designation: Vec<u8>,
     pub exported: bool,
+    pub mode: CanonicalCallableModeV1,
     pub arguments: Vec<CanonicalCallableArgumentV1>,
-    pub result_kind: CanonicalScalarValueKindV1,
+    pub result_kind: CanonicalValueTypeV1,
     pub expression: CanonicalExecutableExpressionV1,
     pub origin: CanonicalSourceOriginV1,
 }
@@ -21,9 +22,10 @@ pub struct CanonicalCallableV1 {
 pub(super) struct CallableCst {
     designation: Vec<u8>,
     exported: bool,
+    mode: CanonicalCallableModeV1,
     arguments: Vec<CanonicalCallableArgumentV1>,
-    result_kind: CanonicalScalarValueKindV1,
-    expression: CanonicalScalarExpressionV1,
+    result_kind: CanonicalValueTypeV1,
+    body: CallableBodyCst,
     origin: CanonicalSourceOriginV1,
     expression_origin: CanonicalSourceOriginV1,
 }
@@ -38,22 +40,94 @@ pub(super) fn productions(
     )
 }
 
-fn kind(name: &str) -> Option<CanonicalScalarValueKindV1> {
-    Some(match name.trim() {
-        "Text" => CanonicalScalarValueKindV1::Text,
-        "F64" => CanonicalScalarValueKindV1::Number,
-        "Bool" => CanonicalScalarValueKindV1::Boolean,
-        _ => return None,
-    })
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CanonicalCallableModeV1 {
+    Function,
+    Procedure,
+}
+
+/// Reachable foreign contracts are static obligations, not attempt occurrences
+/// or an execution order. Repeated uses retain one obligation here.
+pub(super) fn foreign_accesses(
+    expression: &CanonicalExecutableExpressionV1,
+) -> Vec<CanonicalForeignBindingV1> {
+    use CanonicalExecutableExpressionV1 as E;
+    fn collect(expression: &E, contracts: &mut BTreeSet<CanonicalForeignBindingV1>) {
+        match expression {
+            E::Foreign { binding, arguments } => {
+                contracts.insert(binding.as_ref().clone());
+                for argument in arguments {
+                    collect(argument, contracts);
+                }
+            }
+            E::Let { value, body, .. } => {
+                collect(value, contracts);
+                collect(body, contracts);
+            }
+            E::Sequence(values) => {
+                for value in values {
+                    collect(value, contracts);
+                }
+            }
+            E::Record(fields) => {
+                for value in fields.values() {
+                    collect(value, contracts);
+                }
+            }
+            E::SequenceDrop(a, b)
+            | E::Concatenate(a, b)
+            | E::Equal(a, b)
+            | E::GreaterThan(a, b)
+            | E::LessThanOrEqual(a, b)
+            | E::Add(a, b)
+            | E::Subtract(a, b)
+            | E::Multiply(a, b)
+            | E::Divide(a, b)
+            | E::ContainsText(a, b)
+            | E::StartsWith(a, b) => {
+                collect(a, contracts);
+                collect(b, contracts);
+            }
+            E::Require(a, b, c) | E::Conditional(a, b, c) => {
+                collect(a, contracts);
+                collect(b, contracts);
+                collect(c, contracts);
+            }
+            E::Field(value, _) | E::SquareRoot(value) | E::TextTransform(_, value) => {
+                collect(value, contracts)
+            }
+            _ => {}
+        }
+    }
+    let mut contracts = BTreeSet::new();
+    collect(expression, &mut contracts);
+    contracts.into_iter().collect()
+}
+
+#[derive(Clone, Debug)]
+enum CallableBodyCst {
+    Expressions(Vec<CanonicalScalarExpressionV1>),
+    Foreign(CanonicalForeignBindingV1),
 }
 
 pub(super) fn read(
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
+    declarations: &[CstItem],
 ) -> Result<Option<(CallableCst, RelationCst)>, CanonicalSourceErrorV1> {
     let head = block[0].text;
     let exported = head.starts_with("export ");
     let head = head.strip_prefix("export ").unwrap_or(head);
+    let foreign = head.starts_with("foreign ");
+    let mode = if foreign || head.starts_with("procedure ") {
+        CanonicalCallableModeV1::Procedure
+    } else {
+        CanonicalCallableModeV1::Function
+    };
+    let head = head
+        .strip_prefix("foreign ")
+        .or_else(|| head.strip_prefix("procedure "))
+        .unwrap_or(head);
     if !exported && !(head.contains('(') && head.contains("):")) {
         return Ok(None);
     }
@@ -63,6 +137,8 @@ pub(super) fn read(
         .ok_or_else(|| error("expected a named typed callable"))?;
     let designation = denotation_designation_bytes(name.trim(), origin)?;
     if [
+        b"drop".as_slice(),
+        b"require",
         b"if".as_slice(),
         b"sqrt",
         b"trim",
@@ -79,7 +155,9 @@ pub(super) fn read(
     let (parameters, result) = signature
         .split_once("):")
         .ok_or_else(|| error("expected a result type"))?;
-    let result_kind = kind(result).ok_or_else(|| error("unsupported result type"))?;
+    let result_kind =
+        value_type::resolve(result.trim().as_bytes(), declarations, &mut BTreeSet::new())
+            .map_err(error)?;
     let mut arguments = Vec::new();
     let mut roles = Vec::new();
     let mut names = BTreeSet::new();
@@ -96,7 +174,9 @@ pub(super) fn read(
         if !names.insert(name.clone()) {
             return Err(error("duplicate argument binding"));
         }
-        let value_kind = kind(domain).ok_or_else(|| error("unsupported argument type"))?;
+        let value_kind =
+            value_type::resolve(domain.trim().as_bytes(), declarations, &mut BTreeSet::new())
+                .map_err(error)?;
         roles.push(RelationRoleCst {
             name: name.clone(),
             domain: domain.trim().as_bytes().to_vec(),
@@ -117,38 +197,65 @@ pub(super) fn read(
         domain: result.trim().as_bytes().to_vec(),
         origin,
     });
-    let body = block
-        .iter()
-        .skip(1)
-        .filter(|line| !line.text.trim().is_empty())
-        .collect::<Vec<_>>();
-    let [body] = body.as_slice() else {
-        return Err(error("a pure callable requires one expression"));
+    let expression_origin = CanonicalSourceOriginV1 {
+        start: block.get(1).map_or(origin.start, |line| line.start as u64),
+        ..origin
     };
-    let expression_origin = line_origin(origin.artifact, **body);
-    let mut parser = ScalarExpressionParser {
-        source: body.text.as_bytes(),
-        cursor: 0,
-        current: "",
-        interpolate: true,
+    let body = if foreign {
+        let (operation, failure, module, member) = foreign::read_abi(&block[1..])
+            .ok_or_else(|| error("invalid foreign ABI declaration"))?;
+        let binding = CanonicalForeignBindingV1 {
+            operation,
+            failure,
+            module,
+            member,
+            arguments: arguments.iter().map(|a| a.value_kind.clone()).collect(),
+            result: result_kind.clone(),
+        };
+        binding.check().map_err(error)?;
+        CallableBodyCst::Foreign(binding)
+    } else {
+        let source = block
+            .iter()
+            .skip(1)
+            .map(|line| line.text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut parser = ScalarExpressionParser {
+            source: source.as_bytes(),
+            cursor: 0,
+            current: "",
+            interpolate: true,
+        };
+        let mut expressions = Vec::new();
+        loop {
+            expressions.push(
+                parser
+                    .comparison()
+                    .ok_or_else(|| error("unsupported callable expression"))?,
+            );
+            parser.skip_spaces();
+            if parser.cursor == parser.source.len() {
+                break;
+            }
+            let trailing = &source[..parser.cursor];
+            let gap = trailing.trim_end_matches(char::is_whitespace).len();
+            if mode != CanonicalCallableModeV1::Procedure || !trailing[gap..].contains('\n') {
+                return Err(error(
+                    "multiple expressions require separate procedure lines",
+                ));
+            }
+        }
+        CallableBodyCst::Expressions(expressions)
     };
-    let expression = parser
-        .comparison()
-        .ok_or(CanonicalSourceErrorV1::InvalidCallable {
-            origin: expression_origin,
-            reason: "unsupported pure expression",
-        })?;
-    parser.skip_spaces();
-    if parser.cursor != parser.source.len() {
-        return Err(error("unsupported pure expression"));
-    }
     let callable = CallableCst {
         expression_origin,
         designation: designation.clone(),
         exported,
+        mode,
         arguments,
         result_kind,
-        expression,
+        body,
         origin,
     };
     let known = callable
@@ -156,7 +263,11 @@ pub(super) fn read(
         .iter()
         .map(|a| a.designation.clone())
         .collect::<Vec<_>>();
-    let mut canonical = b"pure given".to_vec();
+    let mut canonical = if mode == CanonicalCallableModeV1::Function {
+        b"pure given".to_vec()
+    } else {
+        b"procedure given".to_vec()
+    };
     for name in &known {
         canonical.push(b' ');
         canonical.extend(name);
@@ -356,18 +467,44 @@ impl Expansion<'_> {
         }
         let definitions = self.definitions;
         let definition = &definitions[index];
-        let expression = lower(
-            &definition.expression,
-            &definition.arguments,
-            definition.expression_origin,
-            self,
-            0,
-        )?;
+        let expression = match &definition.body {
+            CallableBodyCst::Expressions(expressions) => {
+                let mut expressions = expressions
+                    .iter()
+                    .map(|expression| {
+                        lower(
+                            expression,
+                            &definition.arguments,
+                            definition.expression_origin,
+                            self,
+                            0,
+                            definition.mode,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut body = expressions.pop().expect("parsed nonempty procedure body");
+                for value in expressions.into_iter().rev() {
+                    body = CanonicalExecutableExpressionV1::Let {
+                        binding: self.binding(definition.expression_origin)?,
+                        value: Box::new(value),
+                        body: Box::new(body),
+                    };
+                }
+                body
+            }
+            CallableBodyCst::Foreign(binding) => CanonicalExecutableExpressionV1::Foreign {
+                binding: Box::new(binding.clone()),
+                arguments: (0..definition.arguments.len())
+                    .map(|i| CanonicalExecutableExpressionV1::Argument(i as u16))
+                    .collect(),
+            },
+        };
         let callable = CanonicalCallableV1 {
             designation: definition.designation.clone(),
             exported: definition.exported,
+            mode: definition.mode,
             arguments: definition.arguments.clone(),
-            result_kind: definition.result_kind,
+            result_kind: definition.result_kind.clone(),
             expression,
             origin: definition.origin,
         };
@@ -392,6 +529,28 @@ fn bind_body(
     expansion.consume(origin, depth)?;
     let mut recur = |e| bind_body(e, actual, locals, expansion, origin, depth + 1).map(Box::new);
     Ok(match expression {
+        E::Sequence(values) => E::Sequence(
+            values
+                .iter()
+                .map(|v| recur(v).map(|v| *v))
+                .collect::<Result<_, _>>()?,
+        ),
+        E::Record(fields) => E::Record(
+            fields
+                .iter()
+                .map(|(k, v)| Ok((k.clone(), *recur(v)?)))
+                .collect::<Result<_, CanonicalSourceErrorV1>>()?,
+        ),
+        E::SequenceDrop(a, b) => E::SequenceDrop(recur(a)?, recur(b)?),
+        E::Field(a, k) => E::Field(recur(a)?, k.clone()),
+        E::Require(a, b, c) => E::Require(recur(a)?, recur(b)?, recur(c)?),
+        E::Foreign { binding, arguments } => E::Foreign {
+            binding: binding.clone(),
+            arguments: arguments
+                .iter()
+                .map(|v| recur(v).map(|v| *v))
+                .collect::<Result<_, _>>()?,
+        },
         E::Let {
             binding,
             value,
@@ -456,6 +615,7 @@ fn lower(
     origin: CanonicalSourceOriginV1,
     expansion: &mut Expansion<'_>,
     depth: usize,
+    mode: CanonicalCallableModeV1,
 ) -> Result<CanonicalExecutableExpressionV1, CanonicalSourceErrorV1> {
     use CanonicalExecutableExpressionV1 as E;
     use CanonicalScalarExpressionV1 as S;
@@ -464,15 +624,30 @@ fn lower(
         reason: "unresolved or unsupported pure expression",
     };
     expansion.consume(origin, depth)?;
-    let mut recur = |e| lower(e, arguments, origin, expansion, depth + 1).map(Box::new);
+    let mut recur = |e| lower(e, arguments, origin, expansion, depth + 1, mode).map(Box::new);
     Ok(match expression {
+        S::Sequence(values) => E::Sequence(
+            values
+                .iter()
+                .map(|v| recur(v).map(|v| *v))
+                .collect::<Result<_, _>>()?,
+        ),
+        S::Record(fields) => E::Record(
+            fields
+                .iter()
+                .map(|(k, v)| Ok((k.clone(), *recur(v)?)))
+                .collect::<Result<_, CanonicalSourceErrorV1>>()?,
+        ),
+        S::SequenceDrop(a, b) => E::SequenceDrop(recur(a)?, recur(b)?),
+        S::Field(a, k) => E::Field(recur(a)?, k.clone()),
+        S::Require(a, b, c) => E::Require(recur(a)?, recur(b)?, recur(c)?),
         S::Call {
             designation,
             arguments: actual,
         } => {
             let values = actual
                 .iter()
-                .map(|a| lower(a, arguments, origin, expansion, depth + 1))
+                .map(|a| lower(a, arguments, origin, expansion, depth + 1, mode))
                 .collect::<Result<Vec<_>, _>>()?;
             let index = *expansion.indices.get(designation).ok_or(
                 CanonicalSourceErrorV1::InvalidCallable {
@@ -481,6 +656,14 @@ fn lower(
                 },
             )?;
             let callee = expansion.compile(index, origin)?;
+            if mode == CanonicalCallableModeV1::Function
+                && callee.mode == CanonicalCallableModeV1::Procedure
+            {
+                return Err(CanonicalSourceErrorV1::InvalidCallable {
+                    origin,
+                    reason: "procedure call is forbidden in a pure callable",
+                });
+            }
             if values.len() != callee.arguments.len() {
                 return Err(CanonicalSourceErrorV1::InvalidCallable {
                     origin,
@@ -490,9 +673,13 @@ fn lower(
             for (value, parameter) in values.iter().zip(&callee.arguments) {
                 if expression_kind(
                     value,
-                    &arguments.iter().map(|a| a.value_kind).collect::<Vec<_>>(),
+                    &arguments
+                        .iter()
+                        .map(|a| a.value_kind.clone())
+                        .collect::<Vec<_>>(),
                     &BTreeMap::new(),
                     0,
+                    mode,
                 )
                 .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?
                     != parameter.value_kind
@@ -554,8 +741,7 @@ fn lower(
     })
 }
 
-/// Checks the pure scalar subset and declared argument/result contracts.
-/// Effects, state access and unresolved arguments reject even in hand-built IR.
+/// Checks the declared recursive contracts and the selected Mode's effect allowance.
 pub fn check_canonical_callable_v1(
     callable: &CanonicalCallableV1,
 ) -> Result<(), CanonicalSourceErrorV1> {
@@ -563,32 +749,35 @@ pub fn check_canonical_callable_v1(
         origin: callable.origin,
         reason,
     };
-    let supported = |kind| {
-        matches!(
-            kind,
-            CanonicalScalarValueKindV1::Text
-                | CanonicalScalarValueKindV1::Number
-                | CanonicalScalarValueKindV1::Boolean
-        )
-    };
+    fn supported(kind: &CanonicalValueTypeV1) -> bool {
+        use CanonicalScalarValueKindV1 as K;
+        match kind {
+            CanonicalValueTypeV1::Scalar(K::Text | K::Number | K::Boolean) => true,
+            CanonicalValueTypeV1::Sequence(element) => supported(element),
+            CanonicalValueTypeV1::Record(fields) => fields.values().all(supported),
+            _ => false,
+        }
+    }
     let mut names = BTreeSet::new();
-    if !supported(callable.result_kind)
+    if !supported(&callable.result_kind)
         || callable
             .arguments
             .iter()
-            .any(|a| !supported(a.value_kind) || !names.insert(&a.designation))
+            .any(|a| !supported(&a.value_kind) || !names.insert(&a.designation))
     {
         return Err(error("unsupported or duplicate argument/result contract"));
     }
+    let arguments = callable
+        .arguments
+        .iter()
+        .map(|a| a.value_kind.clone())
+        .collect::<Vec<_>>();
     if expression_kind(
         &callable.expression,
-        &callable
-            .arguments
-            .iter()
-            .map(|a| a.value_kind)
-            .collect::<Vec<_>>(),
+        &arguments,
         &BTreeMap::new(),
         0,
+        callable.mode,
     )
     .map_err(error)?
         != callable.result_kind
@@ -600,21 +789,23 @@ pub fn check_canonical_callable_v1(
 
 fn expression_kind(
     expression: &CanonicalExecutableExpressionV1,
-    arguments: &[CanonicalScalarValueKindV1],
-    bindings: &BTreeMap<u16, CanonicalScalarValueKindV1>,
+    arguments: &[CanonicalValueTypeV1],
+    bindings: &BTreeMap<u16, CanonicalValueTypeV1>,
     depth: usize,
-) -> Result<CanonicalScalarValueKindV1, &'static str> {
+    mode: CanonicalCallableModeV1,
+) -> Result<CanonicalValueTypeV1, &'static str> {
     use CanonicalExecutableExpressionV1 as E;
     use CanonicalScalarValueKindV1 as K;
+    use CanonicalValueTypeV1 as T;
     if depth >= 64 {
-        return Err("pure expression depth limit");
+        return Err("callable expression depth limit");
     }
-    let recur = |e| expression_kind(e, arguments, bindings, depth + 1);
-    let require = |e, kind| {
-        if recur(e)? == kind {
+    let recur = |e| expression_kind(e, arguments, bindings, depth + 1, mode);
+    let require = |e, kind: &T| {
+        if recur(e)? == *kind {
             Ok(())
         } else {
-            Err("pure expression type mismatch")
+            Err("callable expression type mismatch")
         }
     };
     Ok(match expression {
@@ -625,28 +816,95 @@ fn expression_kind(
         } => {
             let kind = recur(value)?;
             let mut nested = bindings.clone();
-            nested.insert(*binding, kind);
-            expression_kind(body, arguments, &nested, depth + 1)?
+            if nested.insert(*binding, kind).is_some() {
+                return Err("duplicate lexical binding");
+            }
+            expression_kind(body, arguments, &nested, depth + 1, mode)?
         }
-        E::Binding(binding) => *bindings.get(binding).ok_or("unresolved lexical binding")?,
-        E::Constant(CanonicalScalarValueV1::Number(_)) => K::Number,
-        E::Constant(CanonicalScalarValueV1::Boolean(_)) => K::Boolean,
-        E::Constant(CanonicalScalarValueV1::Text(_)) => K::Text,
-        E::Argument(i) => *arguments
+        E::Binding(i) => bindings.get(i).ok_or("unresolved lexical binding")?.clone(),
+        E::Argument(i) => arguments
             .get(usize::from(*i))
-            .ok_or("unresolved argument")?,
+            .ok_or("unresolved argument")?
+            .clone(),
+        E::Constant(CanonicalScalarValueV1::Number(bits)) if f64::from_bits(*bits).is_finite() => {
+            K::Number.into()
+        }
+        E::Constant(CanonicalScalarValueV1::Boolean(_)) => K::Boolean.into(),
+        E::Constant(CanonicalScalarValueV1::Text(_)) => K::Text.into(),
+        E::Sequence(values) => {
+            let first = values
+                .first()
+                .ok_or("empty sequence literal needs an element contract")?;
+            let kind = recur(first)?;
+            for value in &values[1..] {
+                require(value, &kind)?;
+            }
+            T::Sequence(Box::new(kind))
+        }
+        E::Record(fields) => T::Record(
+            fields
+                .iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k.clone(),
+                        expression_kind(
+                            v,
+                            arguments,
+                            bindings,
+                            depth + 1,
+                            CanonicalCallableModeV1::Function,
+                        )?,
+                    ))
+                })
+                .collect::<Result<_, &'static str>>()?,
+        ),
+        E::SequenceDrop(value, count) => {
+            require(count, &K::Number.into())?;
+            let kind = recur(value)?;
+            if !matches!(kind, T::Sequence(_)) {
+                return Err("drop requires an ordered sequence");
+            }
+            kind
+        }
+        E::Field(value, field) => {
+            let T::Record(fields) = recur(value)? else {
+                return Err("field requires a record");
+            };
+            fields.get(field).ok_or("unknown record field")?.clone()
+        }
+        E::Require(condition, value, message) => {
+            require(condition, &K::Boolean.into())?;
+            require(message, &K::Text.into())?;
+            recur(value)?
+        }
+        E::Foreign {
+            binding,
+            arguments: actual,
+        } => {
+            if mode != CanonicalCallableModeV1::Procedure {
+                return Err("foreign effects are forbidden in a pure callable");
+            }
+            binding.check()?;
+            if actual.len() != binding.arguments.len() {
+                return Err("foreign argument count mismatch");
+            }
+            for (value, kind) in actual.iter().zip(&binding.arguments) {
+                require(value, kind)?;
+            }
+            binding.result.clone()
+        }
         E::Concatenate(a, b) | E::ContainsText(a, b) | E::StartsWith(a, b) => {
-            require(a, K::Text)?;
-            require(b, K::Text)?;
+            require(a, &K::Text.into())?;
+            require(b, &K::Text.into())?;
             if matches!(expression, E::Concatenate(..)) {
-                K::Text
+                K::Text.into()
             } else {
-                K::Boolean
+                K::Boolean.into()
             }
         }
         E::TextTransform(_, a) => {
-            require(a, K::Text)?;
-            K::Text
+            require(a, &K::Text.into())?;
+            K::Text.into()
         }
         E::Add(a, b)
         | E::Subtract(a, b)
@@ -654,30 +912,28 @@ fn expression_kind(
         | E::Divide(a, b)
         | E::GreaterThan(a, b)
         | E::LessThanOrEqual(a, b) => {
-            require(a, K::Number)?;
-            require(b, K::Number)?;
+            require(a, &K::Number.into())?;
+            require(b, &K::Number.into())?;
             if matches!(expression, E::GreaterThan(..) | E::LessThanOrEqual(..)) {
-                K::Boolean
+                K::Boolean.into()
             } else {
-                K::Number
+                K::Number.into()
             }
         }
         E::SquareRoot(a) => {
-            require(a, K::Number)?;
-            K::Number
+            require(a, &K::Number.into())?;
+            K::Number.into()
         }
         E::Equal(a, b) => {
-            if recur(a)? != recur(b)? {
-                return Err("equality operand type mismatch");
-            }
-            K::Boolean
+            require(b, &recur(a)?)?;
+            K::Boolean.into()
         }
         E::Conditional(a, b, c) => {
-            require(a, K::Boolean)?;
-            let k = recur(b)?;
-            require(c, k)?;
-            k
+            require(a, &K::Boolean.into())?;
+            let kind = recur(b)?;
+            require(c, &kind)?;
+            kind
         }
-        _ => return Err("effects and state access are forbidden in a pure callable"),
+        _ => return Err("unsupported callable expression or state access"),
     })
 }
