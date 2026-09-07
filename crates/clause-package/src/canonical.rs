@@ -330,11 +330,11 @@ impl Encoder {
         self.fixed(&value.to_be_bytes());
     }
 
-    fn fixed(&mut self, value: &[u8]) {
+    fn count_bytes(&mut self, count: usize) {
         if self.byte_limit_exceeded {
             return;
         }
-        let Some(length) = self.length.checked_add(value.len()) else {
+        let Some(length) = self.length.checked_add(count) else {
             self.byte_limit_exceeded = true;
             return;
         };
@@ -343,7 +343,11 @@ impl Encoder {
             return;
         }
         self.length = length;
-        if !self.count_only {
+    }
+
+    fn fixed(&mut self, value: &[u8]) {
+        self.count_bytes(value.len());
+        if !self.count_only && !self.byte_limit_exceeded {
             self.bytes.extend_from_slice(value);
         }
     }
@@ -999,7 +1003,11 @@ fn encode_term(
             encoder.u8(0);
             encoder.blob("atom kind", atom.kind())?;
             encoder.u32(u32::try_from(atom.payload_len()).map_err(|_| CanonicalEncodeError::LengthExceedsU32 { field: "atom canonical payload", length: atom.payload_len() })?);
-            for segment in atom.shared_payload_segments() { encoder.shared(segment); }
+            if encoder.count_only {
+                encoder.count_bytes(atom.payload_len());
+            } else {
+                for segment in atom.shared_payload_segments() { encoder.shared(segment); }
+            }
             atom.equality_contract().encode(encoder)?;
         }
         TermValueRef::Triple(triple) => {
@@ -1027,7 +1035,11 @@ fn encode_term_value(
             encoder.u8(0);
             encoder.blob("atom kind", atom.kind())?;
             encoder.u32(u32::try_from(atom.payload_len()).map_err(|_| CanonicalEncodeError::LengthExceedsU32 { field: "atom canonical payload", length: atom.payload_len() })?);
-            for segment in atom.shared_payload_segments() { encoder.shared(segment); }
+            if encoder.count_only {
+                encoder.count_bytes(atom.payload_len());
+            } else {
+                for segment in atom.shared_payload_segments() { encoder.shared(segment); }
+            }
             atom.equality_contract().encode(encoder)?;
         }
         TermValueRef::Triple(triple) => {
@@ -3266,6 +3278,24 @@ fn ensure_by_key<T, K: Ord>(
 #[cfg(test)]
 mod ingress_size_tests {
     use super::*;
+
+    #[test]
+    fn segmented_payload_count_matches_flat_nested_encoding_and_ceiling() {
+        let scope = TermScope { universe: UniverseId::from_bytes([1; IDENTITY_BYTES]), semantics: ClauseSemanticsId::from_bytes([2; IDENTITY_BYTES]) };
+        let parts = (0..1004).map(|n| crate::AtomPayloadSegment::Bytes(vec![n as u8; n % 131].into())).collect();
+        let atom = Term::atom_segments(scope, b"segmented-count".to_vec(), parts, EqualityContract::ExactOctetsV1).unwrap();
+        let nested = Term::triple([atom.clone(), atom.clone(), atom]).unwrap();
+        assert_eq!(canonical_term_byte_len(&nested).unwrap(), canonical_term_bytes(&nested).unwrap().len());
+        let mut counter = Encoder::counting();
+        counter.count_bytes(MAX_CANONICAL_BYTES);
+        assert_eq!(counter.finish_size(), Ok(MAX_CANONICAL_BYTES));
+        counter.count_bytes(1);
+        assert!(matches!(counter.finish_size(), Err(CanonicalEncodeError::EncodedBytesTooLong { .. })));
+        let mut overflow = Encoder::counting();
+        overflow.length = usize::MAX;
+        overflow.count_bytes(1);
+        assert!(matches!(overflow.finish_size(), Err(CanonicalEncodeError::EncodedBytesTooLong { .. })));
+    }
 
     #[test]
     fn canonical_snapshot_shares_payload_and_keeps_exact_wire_bytes() {
