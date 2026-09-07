@@ -120,6 +120,26 @@ impl PersistentProcessSessionV1 {
         })
     }
 
+    pub(crate) fn open_source_edit(
+        package: CheckedProcessPackage,
+        authority: AuthorityStore,
+        application: ApplicationId,
+        checked: &super::CheckedExecutableSourceEditV1,
+        facts: ExecutableAuthorityFactsV1,
+    ) -> Result<Self, PersistentProcessSessionErrorV1> {
+        let mut runtime = ExecutableProcessRuntimeV1::instantiate_source_edit(
+            package, authority, application, checked, facts,
+        )?;
+        runtime.start_carrier_process(facts)?;
+        let accepted_projection = runtime.current_projection_term()?;
+        let allocation = runtime.allocation();
+        Ok(Self {
+            runtime: Some(runtime), session: facts.session,
+            program_revision: facts.program_revision, world_base: facts.initial_state,
+            allocation, last_admitted: None, accepted_projection,
+        })
+    }
+
     /// Rematerialize one exact recorded occurrence family. This is deliberately
     /// separate from `open`: replay preserves the allocation epoch, while a
     /// new run always mints a fresh one.

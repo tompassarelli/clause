@@ -2910,6 +2910,28 @@ impl ExecutableProcessRuntimeV1 {
         Self::from_parts(carrier, package_id, application, physical_plan, allocation)
     }
 
+    pub(crate) fn instantiate_source_edit(
+        package: CheckedProcessPackage,
+        authority: clause_package::AuthorityStore,
+        application: ApplicationId,
+        checked: &CheckedExecutableSourceEditV1,
+        facts: ExecutableAuthorityFactsV1,
+    ) -> Result<Self, ExecutableErrorV1> {
+        let plan = &checked.preparation.plan;
+        validate_executable_physical_plan_bindings_v1(package.constitution(), application, plan)?;
+        // The private transition retains the exact encoding produced alongside
+        // this typed plan; no host identity supplies its checked standing.
+        let physical_plan = CheckedExecutablePhysicalPlanV1 {
+            id: checked.new_plan,
+            plan: plan.clone(),
+        };
+        let package_id = package.id();
+        let allocation = RuntimeAllocationEpochV1::allocate_fresh(package_id, application, &physical_plan, facts)?;
+        let carrier = ProcessRuntime::instantiate(package, authority)
+            .map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+        Self::from_parts(carrier, package_id, application, physical_plan, allocation)
+    }
+
     pub(crate) fn reclaim_retired_entries(&mut self, maximum_entries: usize) -> bool {
         self.carrier.reclaim_retired_entries(maximum_entries)
     }
@@ -3030,6 +3052,20 @@ fn check_executable_physical_plan_v1(
     application: ApplicationId,
     plan: ExecutablePhysicalPlanV1,
 ) -> Result<CheckedExecutablePhysicalPlanV1, ExecutableErrorV1> {
+    validate_executable_physical_plan_bindings_v1(constitution, application, &plan)?;
+    let exact = encode_executable_physical_plan_v1(&plan)?;
+    let id = ExecutablePhysicalPlanIdV1(runtime_domain_hash(
+        "clause/executable-physical-plan/v1",
+        &[&exact],
+    ));
+    Ok(CheckedExecutablePhysicalPlanV1 { id, plan })
+}
+
+fn validate_executable_physical_plan_bindings_v1(
+    constitution: &ResolvedProgramConstitutionV2,
+    application: ApplicationId,
+    plan: &ExecutablePhysicalPlanV1,
+) -> Result<(), ExecutableErrorV1> {
     let shape = constitution
         .application_shape(application.local)
         .filter(|_| application.snapshot == constitution.snapshot())
@@ -3046,12 +3082,8 @@ fn check_executable_physical_plan_v1(
     validate_program(&plan.program)?;
     validate_projection_roles(constitution, &plan.program)?;
     validate_input_roles(constitution, plan.input.as_ref())?;
-    let exact = encode_executable_physical_plan_v1(&plan)?;
-    let id = ExecutablePhysicalPlanIdV1(runtime_domain_hash(
-        "clause/executable-physical-plan/v1",
-        &[&exact],
-    ));
-    Ok(CheckedExecutablePhysicalPlanV1 { id, plan })
+    validate_input_plan_shape(plan.input.as_ref(), &plan.program)?;
+    Ok(())
 }
 
 fn exact_role_exists(constitution: &ResolvedProgramConstitutionV2, role: LocalRoleRefV2) -> bool {

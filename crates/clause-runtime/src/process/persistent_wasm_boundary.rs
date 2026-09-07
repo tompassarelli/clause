@@ -618,6 +618,7 @@ impl WasmPersistentSessionBoundaryV1 {
             request.physical_plan_bytes,
             request.authority,
             request.allocation,
+            continuity,
         )?;
         if let Some(checked) = continuity {
             let previous = &self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?.session;
@@ -863,6 +864,7 @@ pub fn open_fresh_persistent_process_session_v1(
         request.physical_plan_bytes,
         request.authority,
         WasmSessionAllocationV1::New,
+        None,
     )
 }
 
@@ -872,6 +874,7 @@ fn instantiate_persistent_process_session_v1(
     physical_plan_bytes: Vec<u8>,
     authority_input: WasmAuthorityInputV1,
     allocation: WasmSessionAllocationV1,
+    continuity: Option<&super::CheckedExecutableSourceEditV1>,
 ) -> Result<PersistentProcessSessionV1, WasmProcessStatusV1> {
     let decoded =
         decode_process_package(&package_bytes).map_err(|_| WasmProcessStatusV1::PackageRejected)?;
@@ -881,9 +884,17 @@ fn instantiate_persistent_process_session_v1(
         snapshot: package.constitution().snapshot(),
         local: application,
     };
+    let (authority, facts) = establish_persistent_authority(&package, &authority_input)?;
+    if let Some(checked) = continuity {
+        if !matches!(allocation, WasmSessionAllocationV1::New)
+            || physical_plan_bytes != checked.preparation.exact_cpp1 {
+            return Err(WasmProcessStatusV1::ProcessRejected);
+        }
+        return PersistentProcessSessionV1::open_source_edit(package, authority, application, checked, facts)
+            .map_err(|_| WasmProcessStatusV1::ProcessRejected);
+    }
     let physical_plan = decode_executable_physical_plan_v1(&physical_plan_bytes)
         .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
-    let (authority, facts) = establish_persistent_authority(&package, &authority_input)?;
     match allocation {
         WasmSessionAllocationV1::New => {
             PersistentProcessSessionV1::open(package, authority, application, physical_plan, facts)
