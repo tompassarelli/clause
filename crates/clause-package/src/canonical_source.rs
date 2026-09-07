@@ -1548,7 +1548,9 @@ pub fn read_canonical_source_with_declared_frontend_v1(
         }
         if let Some((definition, relation)) = callable::read(block, origin, &scalar_laws.declarations)? {
             callables.push(definition);
-            items.push(CstItem { origin, kind: CstKind::Relation(relation) });
+            if let Some(relation) = relation {
+                items.push(CstItem { origin, kind: CstKind::Relation(relation) });
+            }
             continue;
         }
         if declaration_designation(block, artifact)?.is_some() {
@@ -1653,6 +1655,7 @@ pub fn read_canonical_source_with_declared_frontend_v1(
         })
         .collect();
     let callables = callable::check_definitions(&callables)?;
+    callable::complete_inferred_results(&mut items, &callables)?;
     let mut cst = CanonicalSourceCstV1 {
         artifact,
         exact_source: exact_source.into(),
@@ -9853,7 +9856,7 @@ fn declaration_designation(
     block: &[SourceLine<'_>],
     artifact: CanonicalSourceArtifactIdV1,
 ) -> Result<Option<Vec<u8>>, CanonicalSourceErrorV1> {
-    if block[0].text.starts_with('(') { return Ok(None); }
+    if block[0].text.contains('(') { return Ok(None); }
     let Some(source) = block[0].text.strip_suffix(':') else {
         return Ok(None);
     };

@@ -1414,6 +1414,13 @@ impl Wire for CanonicalForeignBindingV1 {
     }
 }
 
+pub(crate) fn encode_value_type_v1(kind: &CanonicalValueTypeV1) -> Result<Vec<u8>, CanonicalEncodeError> {
+    let mut encoder = Encoder::new();
+    encoder.blob("value type domain", b"clause/value-type-v1")?;
+    kind.encode(&mut encoder)?;
+    encoder.finish()
+}
+
 impl Wire for CanonicalValueTypeV1 {
     fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
         self.check().map_err(CanonicalEncodeError::InvalidForeignContract)?;

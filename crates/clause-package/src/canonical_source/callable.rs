@@ -23,8 +23,9 @@ pub(super) struct CallableCst {
     designation: Vec<u8>,
     exported: bool,
     mode: CanonicalCallableModeV1,
-    arguments: Vec<CanonicalCallableArgumentV1>,
-    result_kind: CanonicalValueTypeV1,
+    arguments: Vec<CallableArgumentCst>,
+    result_kind: Option<value_type::Pattern>,
+    type_parameters: BTreeSet<Vec<u8>>,
     body: CallableBodyCst,
     origin: CanonicalSourceOriginV1,
     expression_origin: CanonicalSourceOriginV1,
@@ -113,16 +114,28 @@ pub(super) fn foreign_accesses(
 }
 
 #[derive(Clone, Debug)]
+struct CallableArgumentCst {
+    designation: Vec<u8>,
+    value_kind: value_type::Pattern,
+}
+
+#[derive(Clone, Debug)]
 enum CallableBodyCst {
     Expressions(Vec<CanonicalScalarExpressionV1>),
-    Foreign(CanonicalForeignBindingV1),
+    Foreign {
+        evaluation: CanonicalForeignEvaluationV1,
+        operation: CanonicalForeignOperationV1,
+        failure: CanonicalForeignFailureV1,
+        module: String,
+        member: String,
+    },
 }
 
 pub(super) fn read(
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
     declarations: &[CstItem],
-) -> Result<Option<(CallableCst, RelationCst)>, CanonicalSourceErrorV1> {
+) -> Result<Option<(CallableCst, Option<RelationCst>)>, CanonicalSourceErrorV1> {
     let head = block[0].text;
     let exported = head.starts_with("export ");
     let head = head.strip_prefix("export ").unwrap_or(head);
@@ -136,13 +149,30 @@ pub(super) fn read(
         .strip_prefix("foreign ")
         .or_else(|| head.strip_prefix("procedure "))
         .unwrap_or(head);
-    if !exported && !(head.contains('(') && head.contains("):")) {
+    if !exported && !(head.contains('(') && (head.contains("):") || head.ends_with(')'))) {
         return Ok(None);
     }
     let error = |reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason };
     let (name, signature) = head
         .split_once('(')
         .ok_or_else(|| error("expected a named typed callable"))?;
+    let (name, type_parameters) = if let Some((name, parameters)) = name.trim().split_once('<') {
+        if !foreign || exported {
+            return Err(error("record type parameters require a private foreign declaration"));
+        }
+        let parameters = parameters.strip_suffix('>').ok_or_else(|| error("invalid type parameters"))?;
+        let mut names = BTreeSet::new();
+        for parameter in parameters.split(',') {
+            let (name, bound) = parameter.split_once(':').ok_or_else(|| error("type parameter requires a Record bound"))?;
+            let name = denotation_designation_bytes(name.trim(), origin)?;
+            if bound.trim() != "Record" || !names.insert(name) {
+                return Err(error("expected distinct Record type parameters"));
+            }
+        }
+        (name, names)
+    } else {
+        (name, BTreeSet::new())
+    };
     let designation = denotation_designation_bytes(name.trim(), origin)?;
     if [
         b"drop".as_slice(),
@@ -162,12 +192,16 @@ pub(super) fn read(
     {
         return Err(error("callable name conflicts with a primitive expression"));
     }
-    let (parameters, result) = signature
-        .split_once("):")
-        .ok_or_else(|| error("expected a result type"))?;
-    let mut result_kind =
-        value_type::resolve(result.trim().as_bytes(), declarations, &mut BTreeSet::new())
-            .map_err(error)?;
+    let (parameters, suffix) = signature.split_once(')').ok_or_else(|| error("invalid callable signature"))?;
+    let result = if suffix.trim().is_empty() { "" } else {
+        suffix.trim().strip_prefix(':').ok_or_else(|| error("expected a result type"))?.trim()
+    };
+    let mut result_kind = if result.is_empty() {
+        if foreign { return Err(error("foreign declarations require an explicit result contract")); }
+        None
+    } else {
+        Some(value_type::Pattern::read(result.as_bytes(), declarations, &type_parameters).map_err(error)?)
+    };
     let mut arguments = Vec::new();
     let mut roles = Vec::new();
     let mut names = BTreeSet::new();
@@ -184,15 +218,14 @@ pub(super) fn read(
         if !names.insert(name.clone()) {
             return Err(error("duplicate argument binding"));
         }
-        let value_kind =
-            value_type::resolve(domain.trim().as_bytes(), declarations, &mut BTreeSet::new())
-                .map_err(error)?;
+        let value_kind = value_type::Pattern::read(domain.trim().as_bytes(), declarations, &type_parameters)
+            .map_err(error)?;
         roles.push(RelationRoleCst {
             name: name.clone(),
             domain: domain.trim().as_bytes().to_vec(),
             origin,
         });
-        arguments.push(CanonicalCallableArgumentV1 {
+        arguments.push(CallableArgumentCst {
             designation: name,
             value_kind,
         });
@@ -216,20 +249,18 @@ pub(super) fn read(
             .ok_or_else(|| error("invalid foreign ABI declaration"))?;
         if let CanonicalForeignEvaluationV1::Construct { target } = &evaluation {
             mode = CanonicalCallableModeV1::Function;
-            result_kind = CanonicalValueTypeV1::Delayed { target: target.clone(), value: Box::new(result_kind) };
+            result_kind = Some(value_type::Pattern::Delayed {
+                target: target.clone(), value: Box::new(result_kind.take().expect("foreign result contract")),
+            });
             roles.last_mut().expect("callable result role").domain = format!("Delayed<{target},{}>", result.trim()).into_bytes();
         }
-        let binding = CanonicalForeignBindingV1 {
-            evaluation,
-            operation,
-            failure,
-            module,
-            member,
-            arguments: arguments.iter().map(|a| a.value_kind.clone()).collect(),
-            result: result_kind.clone(),
-        };
-        binding.check().map_err(error)?;
-        CallableBodyCst::Foreign(binding)
+        if module.is_empty() || member.is_empty() || module.contains('\0') || member.contains('\0') {
+            return Err(error("foreign module and member must be nonempty identifiers"));
+        }
+        if operation == CanonicalForeignOperationV1::Get && !arguments.is_empty() {
+            return Err(error("foreign property access takes no arguments"));
+        }
+        CallableBodyCst::Foreign { evaluation, operation, failure, module, member }
     } else {
         let source = block
             .iter()
@@ -271,6 +302,7 @@ pub(super) fn read(
         mode,
         arguments,
         result_kind,
+        type_parameters,
         body,
         origin,
     };
@@ -314,7 +346,62 @@ pub(super) fn read(
             origin,
         }],
     };
+    for parameter in &callable.type_parameters {
+        if !callable.arguments.iter().any(|argument| argument.value_kind.contains(parameter)) {
+            return Err(error("type parameter must be inferred from an argument"));
+        }
+    }
+    if foreign {
+        let result = callable.result_kind.as_ref().expect("foreign result contract");
+        for pattern in callable.arguments.iter().map(|a| &a.value_kind).chain(std::iter::once(result)) {
+            pattern.check().map_err(error)?;
+            match &callable.body {
+                CallableBodyCst::Foreign { evaluation: CanonicalForeignEvaluationV1::Attempt, .. }
+                    if pattern.contains_delayed() => return Err(error("runtime foreign crossing cannot carry delayed values")),
+                CallableBodyCst::Foreign { evaluation: CanonicalForeignEvaluationV1::Construct { target }, .. }
+                    if !pattern.in_target(target) => return Err(error("foreign construction target mismatch")),
+                _ => {}
+            }
+        }
+    }
+    let relation = callable.type_parameters.is_empty().then_some(relation);
     Ok(Some((callable, relation)))
+}
+
+impl CallableCst {
+    fn foreign_binding(
+        &self,
+        substitutions: &BTreeMap<Vec<u8>, CanonicalValueTypeV1>,
+        origin: CanonicalSourceOriginV1,
+    ) -> Result<CanonicalForeignBindingV1, CanonicalSourceErrorV1> {
+        let error = |reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason };
+        let CallableBodyCst::Foreign { evaluation, operation, failure, module, member } = &self.body else {
+            return Err(error("type parameters require a foreign declaration"));
+        };
+        let binding = CanonicalForeignBindingV1 {
+            evaluation: evaluation.clone(), operation: *operation, failure: *failure,
+            module: module.clone(), member: member.clone(),
+            arguments: self.arguments.iter().map(|a| a.value_kind.instantiate(substitutions)).collect::<Result<_, _>>().map_err(error)?,
+            result: self.result_kind.as_ref().ok_or_else(|| error("foreign result contract is missing"))?
+                .instantiate(substitutions).map_err(error)?,
+        };
+        binding.check().map_err(error)?;
+        Ok(binding)
+    }
+}
+
+pub(super) fn complete_inferred_results(items: &mut [CstItem], callables: &[CanonicalCallableV1]) -> Result<(), CanonicalSourceErrorV1> {
+    for item in items {
+        if let CstKind::Relation(relation) = &mut item.kind
+            && let Some(callable) = callables.iter().find(|c| c.designation == relation.designation)
+            && let Some(role) = relation.roles.last_mut()
+            && role.domain.is_empty()
+        {
+            role.domain = crate::canonical::encode_value_type_v1(&callable.result_kind)
+                .map_err(CanonicalSourceErrorV1::Encode)?;
+        }
+    }
+    Ok(())
 }
 
 /// Reads literal segments and embedded Clause expressions without reinterpreting
@@ -413,9 +500,12 @@ pub(super) fn check_definitions(
         next_binding: 0,
     };
     for (index, definition) in definitions.iter().enumerate() {
-        expansion.compile(index, definition.origin)?;
+        if definition.type_parameters.is_empty() {
+            expansion.compile(index, definition.origin)?;
+        }
     }
     Ok((0..definitions.len())
+        .filter(|index| definitions[*index].type_parameters.is_empty())
         .map(|index| {
             expansion
                 .checked
@@ -483,6 +573,11 @@ impl Expansion<'_> {
         }
         let definitions = self.definitions;
         let definition = &definitions[index];
+        let arguments = definition.arguments.iter().map(|argument| Ok(CanonicalCallableArgumentV1 {
+            designation: argument.designation.clone(),
+            value_kind: argument.value_kind.instantiate(&BTreeMap::new())
+                .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?,
+        })).collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
         let expression = match &definition.body {
             CallableBodyCst::Expressions(expressions) => {
                 let mut expressions = expressions
@@ -490,7 +585,7 @@ impl Expansion<'_> {
                     .map(|expression| {
                         lower(
                             expression,
-                            &definition.arguments,
+                            &arguments,
                             &BTreeMap::new(),
                             definition.expression_origin,
                             self,
@@ -509,19 +604,24 @@ impl Expansion<'_> {
                 }
                 body
             }
-            CallableBodyCst::Foreign(binding) => CanonicalExecutableExpressionV1::Foreign {
-                binding: Box::new(binding.clone()),
+            CallableBodyCst::Foreign { .. } => CanonicalExecutableExpressionV1::Foreign {
+                binding: Box::new(definition.foreign_binding(&BTreeMap::new(), origin)?),
                 arguments: (0..definition.arguments.len())
                     .map(|i| CanonicalExecutableExpressionV1::Argument(i as u16))
                     .collect(),
             },
         };
+        let result_kind = match &definition.result_kind {
+            Some(kind) => kind.instantiate(&BTreeMap::new()),
+            None => expression_kind(&expression, &arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>(),
+                &BTreeMap::new(), 0, definition.mode),
+        }.map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
         let callable = CanonicalCallableV1 {
             designation: definition.designation.clone(),
             exported: definition.exported,
             mode: definition.mode,
-            arguments: definition.arguments.clone(),
-            result_kind: definition.result_kind.clone(),
+            arguments,
+            result_kind,
             expression,
             origin: definition.origin,
         };
@@ -741,6 +841,23 @@ fn lower(
                     reason: "unresolved pure callable",
                 },
             )?;
+            let definition = &expansion.definitions[index];
+            if !definition.type_parameters.is_empty() {
+                let argument_types = arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>();
+                let binding_types = locals.values().cloned().collect();
+                let mut substitutions = BTreeMap::new();
+                if values.len() != definition.arguments.len() {
+                    return Err(CanonicalSourceErrorV1::InvalidCallable { origin, reason: "callable argument count mismatch" });
+                }
+                for (value, parameter) in values.iter().zip(&definition.arguments) {
+                    let actual = expression_kind(value, &argument_types, &binding_types, 0, mode)
+                        .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
+                    parameter.value_kind.unify(&actual, &mut substitutions)
+                        .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
+                }
+                let binding = definition.foreign_binding(&substitutions, origin)?;
+                return Ok(E::Foreign { binding: Box::new(binding), arguments: values });
+            }
             let callee = expansion.compile(index, origin)?;
             if mode == CanonicalCallableModeV1::Function
                 && callee.mode == CanonicalCallableModeV1::Procedure

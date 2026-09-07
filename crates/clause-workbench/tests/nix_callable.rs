@@ -31,3 +31,35 @@ fn staged_foreign_construction_preserves_checked_contracts_and_strict_bindings()
     let callable = checked.callables.iter().find(|c| c.designation == b"strict").unwrap();
     assert_eq!(render_nix_callable_v1(callable).unwrap_err(), "strict argument failed");
 }
+
+#[test]
+fn inferred_nested_records_preserve_the_complete_btop_contract_and_projection() {
+    let original = ResidentSourceWorkbenchV1::open(SOURCE).unwrap();
+    let original = original.checked_source_package().unwrap();
+    let original = original.callables.iter().find(|c| c.designation == b"btop-module").unwrap();
+    let inferred = include_bytes!("../../../test-vectors/authoring/foreign-construction-inferred.clause");
+    let opened = ResidentSourceWorkbenchV1::open(inferred).unwrap();
+    let checked = opened.checked_source_package().unwrap();
+    let callable = checked.callables.iter().find(|c| c.designation == b"btop-module").unwrap();
+    assert_eq!(callable.result_kind, original.result_kind);
+    assert_eq!(render_nix_callable_v1(callable).unwrap(), render_nix_callable_v1(original).unwrap());
+    assert!(lower_javascript_v1(&checked).is_err());
+    assert!(clause_runtime::lower_canonical_callable_v1(callable).is_err());
+
+    let source = std::str::from_utf8(inferred).unwrap();
+    for wrong in [
+        source.replace("when-enabled(enabled(),", "when-enabled(true,"),
+        source.replace("[btop()]", "[btop(), enable-option(\"wrong\")]"),
+        source.replace("?condition: Delayed<nix,Bool>", "?condition: Delayed<other,Bool>"),
+        source.replace("?body: Body", "?body: Sequence<Body>"),
+        source.replace("failure: throw", "failure: ignore"),
+        source.replace("construction: \"nix\"\n  get: \"btop\"", "construction: \"other\"\n  get: \"btop\""),
+    ] {
+        assert!(ResidentSourceWorkbenchV1::open(wrong.as_bytes()).is_err(), "accepted wrong contract: {wrong}");
+    }
+    let strict = format!("{source}\nignore(?unused: Text)\n  btop-module()\n\nexport strict()\n  ignore(require(false, \"unused\", \"strict argument failed\"))\n");
+    let opened = ResidentSourceWorkbenchV1::open(strict.as_bytes()).unwrap();
+    let checked = opened.checked_source_package().unwrap();
+    let callable = checked.callables.iter().find(|c| c.designation == b"strict").unwrap();
+    assert_eq!(render_nix_callable_v1(callable).unwrap_err(), "strict argument failed");
+}

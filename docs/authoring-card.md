@@ -65,6 +65,54 @@ missing-leaf(?node: Text, ?edge: Text, ?leaf: Text, ?summary: Text): Text
   "firn: '{?node} {?edge}' requires a leaf node\nUsage: firn {?node} {?edge} {?leaf}\n  {?summary}\n"
 ```
 
+## Inferred records and exact foreign construction
+
+A callable may omit its result annotation when its checked body determines one exact type. Nested records infer every field, including delayed foreign values. A private foreign declaration may bind a Record type parameter; each use retains the complete actual record contract, and repeated uses of a parameter must agree. Foreign results, target, member and failure remain explicit. This complete example includes all foreign declarations; it does not assume a shared library or import mechanism.
+
+Catalog ID: `inferred-construction`
+
+```clause
+Package:
+  foreign: "nixpkgs"
+  type: "Package"
+
+Option:
+  foreign: "nixpkgs/lib"
+  type: "Option"
+
+Definition:
+  foreign: "nixpkgs/lib"
+  type: "Definition"
+
+foreign btop(): Package
+  construction: "nix"
+  get: "btop"
+  from: "pkgs"
+  failure: throw
+
+foreign enabled(): Bool
+  construction: "nix"
+  get: "myConfig.modules.btop.enable"
+  from: "config"
+  failure: throw
+
+foreign enable-option(?description: Text): Option
+  construction: "nix"
+  call: "mkEnableOption"
+  from: "lib"
+  failure: throw
+
+foreign when-enabled<Body: Record>(?condition: Delayed<nix,Bool>, ?body: Body): Definition
+  construction: "nix"
+  call: "mkIf"
+  from: "lib"
+  failure: throw
+
+export btop-module()
+  {options: {myConfig: {modules: {btop: {enable: enable-option("Enable btop system monitor")}}}},
+   config: when-enabled(enabled(), {environment: {systemPackages: [btop()]}})}
+```
+
 ## Ordered arguments and typed foreign procedures
 
 Sequences preserve order and repeated values; named record contracts check each field. Pure dispatch composes a typed message and status. Explicit foreign declarations identify the actual module/member, input/output types and throwing failure contract; procedures permit those accesses. Native invocation without a foreign binding rejects. This executable comparison covers only the existing firn module-add missing-name branch.

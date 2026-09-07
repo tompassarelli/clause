@@ -305,7 +305,8 @@ complete collection language.
 ## Laws and finite queries
 
 A compact pure callable names one deterministic, single-result direction and
-its definition. Arguments and the result carry their types once:
+its definition. Arguments carry explicit types; a result annotation may state
+an independent constraint:
 
 ```clause
 export greeting(?name: Text): Text
@@ -319,6 +320,18 @@ Scalar argument and result types are `Text`, `F64`, and `Bool`. Effects,
 unresolved bindings, and mismatched argument or result types reject in a pure
 callable.
 
+A callable may omit `: Result` when its checked body determines one exact type:
+
+```clause
+export description(?enabled: Bool)
+  {status: {enabled: ?enabled, message: "Ready"}}
+```
+
+Every nested record field retains its inferred type. Forward calls use the
+callee's checked result. Conflicting conditional branches, unknown fields,
+unresolved bindings, and empty sequences without an element contract reject.
+An explicit result annotation remains an exact checking obligation.
+
 Text interpolation inside a callable body evaluates the enclosed Clause
 expression and requires Text; it performs no implicit numeric conversion.
 Ordinary source text outside these callable bodies retains literal braces.
@@ -328,9 +341,10 @@ an unused argument can still fail. Conditional expressions evaluate only their
 selected branch. Cycles and exhausted expansion bounds reject explicitly.
 
 Callable value contracts also admit `Sequence<T>` and named structural Shapes.
-A sequence preserves order and repeated equal values. Record values spell each
-declared field once, as in `{message: "Missing name", status: 1}`; missing,
-extra, or mistyped fields reject. The same recursive element and field contracts
+A sequence preserves order and repeated equal values. A record checked against
+a declared Shape supplies each field once, as in
+`{message: "Missing name", status: 1}`; missing, extra, or mistyped fields reject.
+The same recursive element and field contracts
 check exported arguments, results, and foreign crossings. Equality compares
 sequence elements in order and record fields structurally.
 
@@ -364,6 +378,25 @@ unresolved native foreign obligations; invoking one without a binding rejects.
 JavaScript lowering binds the exact declared member and checks values crossing
 that boundary. Exported declarations describe the same checked public types;
 they do not import or emulate the TypeScript type system.
+
+A private foreign declaration may quantify a structural record contract:
+
+```clause
+foreign echo<Body: Record>(?value: Body): Body
+  call: "echo"
+  from: "records"
+  failure: throw
+```
+
+`Body` captures the complete actual record type at each call, including its
+fields and nested values. It is not an unspecified record value. Repeating the
+parameter in another argument or the result requires that same exact type.
+The parameter must occur in an argument; `Sequence<Body>` and
+`Delayed<target,Body>` preserve the same substitution. Every instantiated
+foreign contract passes the ordinary value, target, effect and failure checks.
+Type parameters are source-level, private foreign declarations only; exported
+signatures and canonical foreign accesses contain fully resolved types.
+Foreign declarations always require explicit result contracts.
 
 A foreign declaration with `construction: "nix"` instead constructs a delayed
 expression for that target. It performs no foreign attempt. Its written result

@@ -34,6 +34,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/pure-composition.clause"),
     },
     AuthoringExampleV1 {
+        slug: "inferred-construction",
+        title: "Inferred records and exact foreign construction",
+        summary: "A callable may omit its result annotation when its checked body determines one exact type. Nested records infer every field, including delayed foreign values. A private foreign declaration may bind a Record type parameter; each use retains the complete actual record contract, and repeated uses of a parameter must agree. Foreign results, target, member and failure remain explicit. This complete example includes all foreign declarations; it does not assume a shared library or import mechanism.",
+        source: include_str!("../../../test-vectors/authoring/foreign-construction-inferred.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "foreign-cli",
         title: "Ordered arguments and typed foreign procedures",
         summary: "Sequences preserve order and repeated values; named record contracts check each field. Pure dispatch composes a typed message and status. Explicit foreign declarations identify the actual module/member, input/output types and throwing failure contract; procedures permit those accesses. Native invocation without a foreign binding rejects. This executable comparison covers only the existing firn module-add missing-name branch.",

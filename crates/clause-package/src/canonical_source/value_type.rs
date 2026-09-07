@@ -19,40 +19,41 @@ impl From<CanonicalScalarValueKindV1> for CanonicalValueTypeV1 {
 
 impl CanonicalValueTypeV1 {
     pub fn check(&self) -> Result<(), &'static str> {
-        fn check(kind: &CanonicalValueTypeV1, depth: usize, delayed: bool) -> Result<(), &'static str> {
-            if depth >= 64 {
-                return Err("value type depth limit");
+        self.check_at(0, false)
+    }
+
+    fn check_at(&self, depth: usize, delayed: bool) -> Result<(), &'static str> {
+        if depth >= 64 {
+            return Err("value type depth limit");
+        }
+        match self {
+            CanonicalValueTypeV1::Scalar(
+                CanonicalScalarValueKindV1::Sequence | CanonicalScalarValueKindV1::Record,
+            ) => Err("composite value requires its recursive contract"),
+            CanonicalValueTypeV1::Scalar(_) => Ok(()),
+            CanonicalValueTypeV1::Delayed { target, value } => {
+                if delayed || target.is_empty() || target.contains('\0') || !value.in_target(target) {
+                    return Err("invalid delayed target contract");
+                }
+                value.check_at(depth + 1, true)
             }
-            match kind {
-                CanonicalValueTypeV1::Scalar(
-                    CanonicalScalarValueKindV1::Sequence | CanonicalScalarValueKindV1::Record,
-                ) => Err("composite value requires its recursive contract"),
-                CanonicalValueTypeV1::Scalar(_) => Ok(()),
-                CanonicalValueTypeV1::Delayed { target, value } => {
-                    if delayed || target.is_empty() || target.contains('\0') || !value.in_target(target) {
-                        return Err("invalid delayed target contract");
-                    }
-                    check(value, depth + 1, true)
+            CanonicalValueTypeV1::OpaqueForeign { module, name } => {
+                if !delayed || module.is_empty() || name.is_empty() || module.contains('\0') || name.contains('\0') {
+                    return Err("opaque foreign types require a delayed contract and exact external identity");
                 }
-                CanonicalValueTypeV1::OpaqueForeign { module, name } => {
-                    if !delayed || module.is_empty() || name.is_empty() || module.contains('\0') || name.contains('\0') {
-                        return Err("opaque foreign types require a delayed contract and exact external identity");
+                Ok(())
+            }
+            CanonicalValueTypeV1::Sequence(element) => element.check_at(depth + 1, delayed),
+            CanonicalValueTypeV1::Record(fields) => {
+                for (name, field) in fields {
+                    if name.is_empty() || std::str::from_utf8(name).is_err() {
+                        return Err("invalid record field designation");
                     }
-                    Ok(())
+                    field.check_at(depth + 1, delayed)?;
                 }
-                CanonicalValueTypeV1::Sequence(element) => check(element, depth + 1, delayed),
-                CanonicalValueTypeV1::Record(fields) => {
-                    for (name, field) in fields {
-                        if name.is_empty() || std::str::from_utf8(name).is_err() {
-                            return Err("invalid record field designation");
-                        }
-                        check(field, depth + 1, delayed)?;
-                    }
-                    Ok(())
-                }
+                Ok(())
             }
         }
-        check(self, 0, false)
     }
     pub fn contains_delayed(&self) -> bool {
         match self {
@@ -90,6 +91,122 @@ impl CanonicalValueTypeV1 {
                         .all(|(name, field)| values.get(name).is_some_and(|v| field.accepts(v)))
             }
             _ => false,
+        }
+    }
+}
+
+/// Source-level quantified contracts are instantiated before canonical checking.
+/// A record parameter binds one entire exact type, including every nested field.
+#[derive(Clone, Debug)]
+pub(super) enum Pattern {
+    Exact(CanonicalValueTypeV1),
+    RecordParameter(Vec<u8>),
+    Sequence(Box<Self>),
+    Delayed { target: String, value: Box<Self> },
+}
+
+impl Pattern {
+    pub(super) fn read(
+        name: &[u8],
+        items: &[CstItem],
+        parameters: &BTreeSet<Vec<u8>>,
+    ) -> Result<Self, &'static str> {
+        fn read(name: &[u8], items: &[CstItem], parameters: &BTreeSet<Vec<u8>>, depth: usize) -> Result<Pattern, &'static str> {
+            if depth >= 64 { return Err("value type depth limit"); }
+            if parameters.contains(name) { return Ok(Pattern::RecordParameter(name.to_vec())); }
+            if let Some(inner) = name.strip_prefix(b"Sequence<").and_then(|s| s.strip_suffix(b">")) {
+                return Ok(Pattern::Sequence(Box::new(read(inner, items, parameters, depth + 1)?)));
+            }
+            if let Some(inner) = name.strip_prefix(b"Delayed<").and_then(|s| s.strip_suffix(b">")) {
+                let source = std::str::from_utf8(inner).map_err(|_| "invalid delayed value")?;
+                let (target, value) = source.split_once(',').ok_or("delayed contract needs target and value")?;
+                return Ok(Pattern::Delayed {
+                    target: target.trim().into(),
+                    value: Box::new(read(value.trim().as_bytes(), items, parameters, depth + 1)?),
+                });
+            }
+            resolve(name, items, &mut BTreeSet::new()).map(Pattern::Exact)
+        }
+        read(name, items, parameters, 0)
+    }
+
+    pub(super) fn contains(&self, parameter: &[u8]) -> bool {
+        match self {
+            Self::RecordParameter(name) => name == parameter,
+            Self::Sequence(value) | Self::Delayed { value, .. } => value.contains(parameter),
+            Self::Exact(_) => false,
+        }
+    }
+
+    pub(super) fn check(&self) -> Result<(), &'static str> {
+        fn check(pattern: &Pattern, depth: usize, delayed: bool) -> Result<(), &'static str> {
+            if depth >= 64 { return Err("value type depth limit"); }
+            match pattern {
+                Pattern::Exact(kind) => kind.check_at(depth, delayed),
+                Pattern::RecordParameter(_) => Ok(()),
+                Pattern::Sequence(value) => check(value, depth + 1, delayed),
+                Pattern::Delayed { target, value } => {
+                    if delayed || target.is_empty() || target.contains('\0') || !value.in_target(target) {
+                        return Err("invalid delayed target contract");
+                    }
+                    check(value, depth + 1, true)
+                }
+            }
+        }
+        check(self, 0, false)
+    }
+
+    pub(super) fn contains_delayed(&self) -> bool {
+        match self {
+            Self::Exact(kind) => kind.contains_delayed(),
+            Self::Delayed { .. } => true,
+            Self::Sequence(value) => value.contains_delayed(),
+            Self::RecordParameter(_) => false,
+        }
+    }
+
+    pub(super) fn in_target(&self, target: &str) -> bool {
+        match self {
+            Self::Exact(kind) => kind.in_target(target),
+            Self::Delayed { target: actual, value } => actual == target && value.in_target(target),
+            Self::Sequence(value) => value.in_target(target),
+            Self::RecordParameter(_) => true,
+        }
+    }
+
+    pub(super) fn instantiate(
+        &self,
+        substitutions: &BTreeMap<Vec<u8>, CanonicalValueTypeV1>,
+    ) -> Result<CanonicalValueTypeV1, &'static str> {
+        Ok(match self {
+            Self::Exact(kind) => kind.clone(),
+            Self::RecordParameter(name) => substitutions.get(name).ok_or("unresolved record type parameter")?.clone(),
+            Self::Sequence(value) => CanonicalValueTypeV1::Sequence(Box::new(value.instantiate(substitutions)?)),
+            Self::Delayed { target, value } => CanonicalValueTypeV1::Delayed {
+                target: target.clone(), value: Box::new(value.instantiate(substitutions)?),
+            },
+        })
+    }
+
+    pub(super) fn unify(
+        &self,
+        actual: &CanonicalValueTypeV1,
+        substitutions: &mut BTreeMap<Vec<u8>, CanonicalValueTypeV1>,
+    ) -> Result<(), &'static str> {
+        match (self, actual) {
+            (Self::Exact(expected), actual) if expected == actual => Ok(()),
+            (Self::RecordParameter(name), CanonicalValueTypeV1::Record(_)) => {
+                if let Some(previous) = substitutions.get(name) {
+                    if previous != actual { return Err("record type parameter has conflicting argument types"); }
+                } else {
+                    substitutions.insert(name.clone(), actual.clone());
+                }
+                Ok(())
+            }
+            (Self::Sequence(pattern), CanonicalValueTypeV1::Sequence(value)) => pattern.unify(value, substitutions),
+            (Self::Delayed { target, value: pattern }, CanonicalValueTypeV1::Delayed { target: actual, value })
+                if target == actual => pattern.unify(value, substitutions),
+            _ => Err("callable argument type mismatch"),
         }
     }
 }
