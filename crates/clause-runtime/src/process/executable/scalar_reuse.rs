@@ -8,7 +8,8 @@ pub(super) struct ScalarPlan {
 }
 
 enum Node {
-    Value(ExecutableExpressionV1),
+    Value(Box<ExecutableExpressionV1>),
+    Number(u64), Boolean(bool), Slot(u16), Argument(u16), Binding(u16),
     Add(usize, usize), Subtract(usize, usize), Multiply(usize, usize), Divide(usize, usize),
     GreaterThan(usize, usize), LessThanOrEqual(usize, usize), Equal(usize, usize), And(usize, usize),
     Not(usize), SquareRoot(usize), Conditional(usize, usize, usize), Clamp(usize, usize, usize),
@@ -43,8 +44,13 @@ impl ScalarPlan {
                 E::SquareRoot(a) => Node::SquareRoot(child(a)?),
                 E::Conditional(a, b, c) => Node::Conditional(child(a)?, child(b)?, child(c)?),
                 E::Clamp(a, b, c) => Node::Clamp(child(a)?, child(b)?, child(c)?),
-                E::Constant(_) | E::Slot(_) | E::Argument(_) | E::Binding(_) => Node::Value(expression.clone()),
-                _ => { reusable = false; Node::Value(expression.clone()) },
+                E::Constant(ExecutableValueV1::Number(bits)) => Node::Number(*bits),
+                E::Constant(ExecutableValueV1::Boolean(value)) => Node::Boolean(*value),
+                E::Constant(_) => Node::Value(Box::new(expression.clone())),
+                E::Slot(index) => Node::Slot(*index),
+                E::Argument(index) => Node::Argument(*index),
+                E::Binding(index) => Node::Binding(*index),
+                _ => { reusable = false; Node::Value(Box::new(expression.clone())) },
             };
             let index = nodes.len();
             nodes.push((node, reusable));
@@ -96,14 +102,14 @@ impl ScalarValue {
 }
 
 impl ScalarMemo<'_> {
-    fn retain(&self, value: ExecutableValueV1) -> ScalarValue {
+    fn retain(&self, value: &ExecutableValueV1) -> ScalarValue {
         match value {
-            ExecutableValueV1::Number(bits) => ScalarValue::Number(bits),
-            ExecutableValueV1::Boolean(value) => ScalarValue::Boolean(value),
+            ExecutableValueV1::Number(bits) => ScalarValue::Number(*bits),
+            ExecutableValueV1::Boolean(value) => ScalarValue::Boolean(*value),
             value => {
                 let mut other = self.other_values.borrow_mut();
                 let index = other.len();
-                other.push(value);
+                other.push(value.clone());
                 ScalarValue::Other(index)
             },
         }
@@ -141,7 +147,15 @@ impl ScalarMemo<'_> {
         let numeric = |index| eval(index)?.as_number();
         let boolean_value = |index| eval(index)?.as_boolean();
         let value = match self.plan.nodes[index].0 {
-            Node::Value(ref expression) => self.retain(evaluate_uncached(expression, configuration, arguments, context)?),
+            Node::Value(ref expression) => self.retain(&evaluate_uncached(expression, configuration, arguments, context)?),
+            Node::Number(bits) => ScalarValue::Number(bits),
+            Node::Boolean(value) => ScalarValue::Boolean(value),
+            Node::Slot(slot) => self.retain(configuration.get(usize::from(slot))
+                .ok_or(ExecutableErrorV1::UnknownSlot(slot))?.value().ok_or(ExecutableErrorV1::MissingState)?),
+            Node::Argument(argument) => self.retain(arguments.get(usize::from(argument))
+                .ok_or(ExecutableErrorV1::UnknownArgument(argument))?),
+            Node::Binding(binding) => self.retain(context.bindings.and_then(|bindings| bindings.get(&binding))
+                .ok_or(ExecutableErrorV1::MalformedProgram)?),
             Node::Add(a, b) => ScalarValue::number(numeric(a)? + numeric(b)?)?,
             Node::Subtract(a, b) => ScalarValue::number(numeric(a)? - numeric(b)?)?,
             Node::Multiply(a, b) => ScalarValue::number(numeric(a)? * numeric(b)?)?,
