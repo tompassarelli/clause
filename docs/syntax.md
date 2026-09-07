@@ -180,6 +180,24 @@ occurrences but not a second value or identity. This is not a comma product.
 An undelimited `charge: 9.0` remains denotation; adding children rejects rather
 than turning it into shared-edge focus.
 
+The children are a subject-token list selected by this head, not arbitrary
+whitespace-separated sibling clauses. Subjects may share a line or occupy
+separate lines at the same child indentation:
+
+```clause
+(charge: 9.0):
+  first
+  second
+```
+
+Both layouts apply `charge: 9.0` separately to `first` and `second`. Ordinary
+subject blocks can express those two facts too. Equal charge values on two
+subjects are two independent facts; repeating the value does not itself
+violate the design discipline. Shared-edge focus groups an explicit common
+role/object without merging those facts. The same construct can constrain
+several bindings, as `(shape: F64):` does in the
+[language tour](language-tour.md#bindings-and-readings).
+
 ## Declared readings and modes
 
 Relations that need non-field phrase structure declare one exact Reading and
