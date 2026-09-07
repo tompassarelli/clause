@@ -978,4 +978,29 @@ test["test"]("real Wasm refuses an effect before intent admission", () => Promis
     port.disposeSession(session);
     return null;
 }));
+test.test("source preparation uses captured custody without advancing sequence", () => {
+    const requests = [];
+    const calls = [];
+    let status = 0;
+    const module = {
+        ...module_for_bang([opened_event_bang(), cse_header_bang(1, 6)], requests),
+        clause_session_v1_prepare_source(slot, generation, sequence, bytes) {
+            calls.push([slot, generation, sequence, [...bytes]]);
+            bytes.fill(0);
+            return status;
+        },
+    };
+    const port = wasm["create-wasm-cartridge-port"](module, policy());
+    const started = startSession(port, acceptPackage(port, wasm["->ExactProcessRequest"](minimal_cwr1_bang())).acceptedPackage);
+    const bytes = wasm.decodeSourcePreparationHex("43505331ff");
+    wasm.prepareSourceSession(module, started.session, bytes);
+    wasm.prepareSourceSession(module, started.session, bytes);
+    expect(calls).toEqual([[0, 1, 0n, [67, 80, 83, 49, 255]], [0, 1, 0n, [67, 80, 83, 49, 255]]]);
+    expect(bytes).toEqual([67, 80, 83, 49, 255]);
+    status = 3;
+    expect(() => wasm.prepareSourceSession(module, started.session, bytes)).toThrow("checked source preparation rejected: 3");
+    expect(() => wasm.prepareSourceSession(module, started.session, [256])).toThrow("source preparation exceeds bound");
+    port.disposeSession(started.session);
+    expect(() => wasm.prepareSourceSession(module, started.session, bytes)).toThrow("Wasm session is disposed");
+});
 //# sourceMappingURL=wasm-cartridge-port-test.js.map

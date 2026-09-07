@@ -2007,6 +2007,25 @@ function create_wasm_cartridge_port_bang(module, policy) {
             : null;
     });
 }
+function isSourcePreparationModule(module) {
+    return is_session_wasm_module(module)
+        && "clause_session_v1_prepare_source" in module && typeof module.clause_session_v1_prepare_source === "function";
+}
+export function decodeSourcePreparationHex(source) {
+    return decode_hex_transport(source, "CPS1", cet1_max_bytes, 3 * cet1_max_bytes);
+}
+/** Check compiler-owned source preparation against the captured live session.
+ * Preparation imports no state and advances neither generation nor sequence. */
+export function prepareSourceSession(module, incomingSession, preparation) {
+    const session = require_live_session(incomingSession);
+    if (!isSourcePreparationModule(module))
+        throw new Error("Wasm runtime lacks checked source preparation API");
+    if (!exact_byte_array_p(preparation, cet1_max_bytes))
+        throw new Error("source preparation exceeds bound");
+    const status = module.clause_session_v1_prepare_source(session.handle.slot, session.handle.generation, BigInt(session.sequence.value), new Uint8Array(preparation));
+    if (status !== 0)
+        throw new Error(`checked source preparation rejected: ${process_status(status)}`);
+}
 /** Apply compiler-owned CET1 to this exact live Wasm session. No source parsing,
  * identity inference, native shadow-state import, or automatic Admission. */
 export function editSourceSession(module, incomingSession, generation, request, witness, policy) {
