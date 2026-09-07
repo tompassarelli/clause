@@ -184,10 +184,11 @@ struct SumQuery {
     predicates: Vec<ExecutableExpressionV1>,
     contribution: ExecutableExpressionV1,
     captured_reads: bool,
-    results: BTreeMap<Vec<ExecutableValueV1>, SumResult>,
+    results: Vec<SumResult>,
 }
 
 struct SumResult {
+    inputs: Vec<ExecutableValueV1>,
     result: ExecutableValueV1,
     reads: Vec<ExecutableReadV1>,
 }
@@ -224,7 +225,7 @@ pub(super) fn sum_with_shape(
     if let Some(queries) = context.sum_queries {
         if let Some(previous) = queries.borrow().entries.iter().find(|previous|
             same_query(previous))
-            .and_then(|query| query.results.get(&inputs)) {
+            .and_then(|query| query.results.iter().find(|previous| previous.inputs == inputs)) {
             if let Some(reads) = context.reads {
                 reads.borrow_mut().extend(previous.reads.iter().cloned());
             }
@@ -262,14 +263,14 @@ pub(super) fn sum_with_shape(
     }
     if let Some(queries) = context.sum_queries {
         let mut queries = queries.borrow_mut();
-        let result = SumResult { result: result.clone(), reads: query_reads };
+        let result = SumResult { inputs, result: result.clone(), reads: query_reads };
         if let Some(query) = queries.entries.iter_mut().find(|previous|
             same_query(previous)) {
-            query.results.insert(inputs, result);
+            query.results.push(result);
         } else {
             queries.entries.push(SumQuery {
                 shape: shape.cloned(), predicates: predicates.to_vec(), contribution: value.clone(),
-                captured_reads: context.reads.is_some(), results: BTreeMap::from([(inputs, result)]),
+                captured_reads: context.reads.is_some(), results: vec![result],
             });
         }
     }
@@ -1129,7 +1130,7 @@ mod sum_reuse_tests {
         for _ in 0..2 {
             assert_eq!(evaluate(&sum, &configuration, &[], shared).unwrap(), expected.value);
             assert_eq!(queries.borrow().entries.len(), 1);
-            assert!(queries.borrow().entries[0].results.values().next().unwrap().reads.is_empty());
+            assert!(queries.borrow().entries[0].results[0].reads.is_empty());
         }
         let traced = evaluate_with_reads(&sum, &configuration, &[], shared).unwrap();
         assert_eq!(traced.value, expected.value);
