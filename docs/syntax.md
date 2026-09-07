@@ -472,19 +472,39 @@ Reading proceeds in this order:
 6. If an indent follows, wrap that selected head in its declared block
    production; children cannot reclassify it.
 
-The essential layout grammar is:
+The essential layout grammar below exposes shared-edge focus separately from
+the generic block-head abstraction:
 
 ```text
 SourceFile        ::= Trivia* TopLevelConstruct* EOF
 TopLevelConstruct ::= SimpleConstruct NEWLINE
-                    | BlockHead NEWLINE INDENT ChildConstruct+ DEDENT
+                    | SharedEdgeFocus
+                    | OtherBlockHead NEWLINE INDENT ChildConstruct+ DEDENT
 BindingHead       ::= Designation HSPACE* ":" HSPACE* ProductTerm
 ProductTerm       ::= GroupedTerm ("," HSPACE* GroupedTerm)*
 SubjectFocus      ::= Designation NEWLINE INDENT FocusedEdgeChild+ DEDENT
 FocusedEdgeChild  ::= RelationEdge
                     | RelationPrefix NEWLINE INDENT FocusedEdgeChild+ DEDENT
+SharedEdgeFocus   ::= SharedEdgeHead NEWLINE INDENT SubjectRow+ DEDENT
+SharedEdgeHead    ::= "(" RelationEdge "):"
+SubjectRow        ::= SubjectToken (HSPACE+ SubjectToken)* NEWLINE
+SubjectToken      ::= Designation | "?" Designation
 ReferentDeclaration ::= Designation
 ```
+
+`OtherBlockHead` stands for the remaining declared block heads; each selects
+its own `ChildConstruct` grammar. This is a layout outline, not the complete
+set of source productions. A `SharedEdgeHead` selects `SubjectRow` children
+both at top level and in the declaration or pattern contexts that admit
+shared-edge focus. Its `RelationEdge` uses the selected declared edge grammar;
+the head fixes the role and object while the children supply subjects.
+
+Every subject row is exactly one indentation level below its head and has one
+or more named or variable subject tokens. A quoted designation remains one
+token. Subjects may share one row or occupy separate rows. Both layouts emit
+one occurrence per subject token in source order, each with its own origin.
+This row grammar belongs to shared-edge focus; it does not permit several
+arbitrary sibling clauses on one line or nested children under a subject token.
 
 `HSPACE` is one ASCII space; flexible positions accept zero or more.
 
