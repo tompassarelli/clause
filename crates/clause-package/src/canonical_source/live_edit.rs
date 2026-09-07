@@ -104,6 +104,13 @@ pub fn canonical_scalar_effects_v1(
     plan: &CanonicalSourceAllocationPlanV1,
 ) -> Result<Vec<CanonicalScalarEffectV1>, CanonicalSourceErrorV1> {
     rematerialize_canonical_source_allocation_plan_v1(cst, plan)?;
+    scalar_effects_from_bound_source(cst, plan)
+}
+
+pub(super) fn scalar_effects_from_bound_source(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+) -> Result<Vec<CanonicalScalarEffectV1>, CanonicalSourceErrorV1> {
     let mut effects = Vec::new();
     for item in &cst.items {
         let (producer, origin, includes) = match &item.kind {
@@ -260,7 +267,20 @@ pub fn replace_canonical_scalar_effect_v1(
     new_root: ProgramChangeOccurrenceId,
 ) -> Result<CanonicalSourceEditV1, CanonicalSourceErrorV1> {
     let offered = canonical_scalar_effects_v1(cst, old_plan)?;
-    if !offered.contains(selected) || new_root == old_plan.root {
+    if !offered.contains(selected) {
+        return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+    }
+    replace_bound_scalar_effect(cst, old_plan, selected, replacement, new_root)
+}
+
+pub(super) fn replace_bound_scalar_effect(
+    cst: &CanonicalSourceCstV1,
+    old_plan: &CanonicalSourceAllocationPlanV1,
+    selected: &CanonicalScalarEffectV1,
+    replacement: &[u8],
+    new_root: ProgramChangeOccurrenceId,
+) -> Result<CanonicalSourceEditV1, CanonicalSourceErrorV1> {
+    if new_root == old_plan.root {
         return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
     }
     let expression = std::str::from_utf8(replacement)

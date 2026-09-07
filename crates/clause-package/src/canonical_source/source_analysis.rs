@@ -8,16 +8,40 @@ pub struct CheckedCanonicalSourceAnalysisV1 {
     plan: CanonicalSourceAllocationPlanV1,
     context: CanonicalSourceContextV1,
     package: CanonicalSourcePackageSliceV1,
+    scalar_effects: std::sync::OnceLock<Vec<CanonicalScalarEffectV1>>,
 }
 
 impl CheckedCanonicalSourceAnalysisV1 {
     pub fn new(source: CanonicalSourceCstV1, plan: CanonicalSourceAllocationPlanV1, context: CanonicalSourceContextV1) -> Result<Self, CanonicalSourceErrorV1> {
+        rematerialize_canonical_source_allocation_plan_v1(&source, &plan)?;
         let package = elaborate_canonical_source_package_v1(&source, context, &plan)?;
-        Ok(Self { source, plan, context, package })
+        Ok(Self { source, plan, context, package, scalar_effects: std::sync::OnceLock::new() })
     }
     pub fn source(&self) -> &CanonicalSourceCstV1 { &self.source }
     pub fn plan(&self) -> &CanonicalSourceAllocationPlanV1 { &self.plan }
     pub fn package(&self) -> &CanonicalSourcePackageSliceV1 { &self.package }
+
+    pub fn scalar_effects(&self) -> Result<&[CanonicalScalarEffectV1], CanonicalSourceErrorV1> {
+        if let Some(effects) = self.scalar_effects.get() { return Ok(effects); }
+        let effects = live_edit::scalar_effects_from_bound_source(&self.source, &self.plan)?;
+        let _ = self.scalar_effects.set(effects);
+        Ok(self.scalar_effects.get().expect("successful effects analysis initializes the exact source index"))
+    }
+
+    pub fn replace_scalar_effect(
+        &self,
+        handler: FormationLocalId,
+        effect: FormationLocalId,
+        field_path: &[FormationLocalId],
+        replacement: &[u8],
+        new_root: ProgramChangeOccurrenceId,
+    ) -> Result<CanonicalSourceEditV1, CanonicalSourceErrorV1> {
+        let selected = self.scalar_effects()?.iter().find(|selected|
+            selected.handler == handler && selected.effect == effect && selected.field_path == field_path)
+            .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
+        if selected.expression == replacement { return Err(CanonicalSourceErrorV1::RecordedPlanMismatch); }
+        live_edit::replace_bound_scalar_effect(&self.source, &self.plan, selected, replacement, new_root)
+    }
 
     pub fn advance(&self, edit: &CanonicalSourceEditV1) -> Result<Self, CanonicalSourceErrorV1> {
         if edit.old_artifact != self.source.artifact() || edit.old_root != self.plan.root() {
@@ -62,7 +86,7 @@ impl CheckedCanonicalSourceAnalysisV1 {
         } else {
             elaborate_canonical_source_package_v1(edit.source(), self.context, edit.plan())?
         };
-        Ok(Self { source: edit.source().clone(), plan: edit.plan().clone(), context: self.context, package })
+        Ok(Self { source: edit.source().clone(), plan: edit.plan().clone(), context: self.context, package, scalar_effects: std::sync::OnceLock::new() })
     }
 }
 

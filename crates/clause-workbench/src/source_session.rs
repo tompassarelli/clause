@@ -336,8 +336,7 @@ impl ResidentSourceWorkbenchV1 {
 
     pub fn scalar_effects(&self) -> Result<Vec<clause_package::CanonicalScalarEffectV1>, ResidentSourceWorkbenchErrorV1> {
         let analysis = self.source_snapshot.as_ref().expect("an installed workbench retains its source snapshot");
-        let (cst, plan) = (analysis.source(), analysis.plan());
-        clause_package::canonical_scalar_effects_v1(&cst, &plan).map_err(|error| debug_error("editable effects", error))
+        analysis.scalar_effects().map(<[_]>::to_vec).map_err(|error| debug_error("editable effects", error))
     }
 
     /// Replay one explicit compiler-owned operation. Arbitrary imported text

@@ -2,9 +2,8 @@
 use super::*;
 use clause_package::{
     CheckedCanonicalSourceAnalysisV1, CanonicalAllocatedIdentityV1, CanonicalDeclaredFrontendV1, CanonicalSourceEditV1, CanonicalSourceContextV1,
-    ProgramChangeOccurrenceId, canonical_scalar_effects_v1,
+    ProgramChangeOccurrenceId,
     plan_independent_canonical_source_allocations_v1, read_canonical_source_with_declared_frontend_v1,
-    replace_canonical_scalar_effect_v1,
 };
 
 /// Aggregate envelope for one compiler-produced source transition witness.
@@ -737,27 +736,8 @@ fn derive_prepared_source_edit(
             field_path,
             expression,
         } => {
-            let offered =
-                canonical_scalar_effects_v1(&old_cst, &old_allocations).map_err(rejected)?;
-            let selected = offered
-                .iter()
-                .find(|selected| {
-                    selected.handler == *handler
-                        && selected.effect == *effect
-                        && selected.field_path == *field_path
-                })
-                .ok_or(ExecutableErrorV1::MalformedProgram)?;
-            if selected.expression == *expression {
-                return Err(ExecutableErrorV1::MalformedProgram);
-            }
-            replace_canonical_scalar_effect_v1(
-                &old_cst,
-                &old_allocations,
-                selected,
-                expression,
-                new_root,
-            )
-            .map_err(rejected)?
+            preparation.analysis.replace_scalar_effect(*handler, *effect, field_path, expression, new_root)
+                .map_err(rejected)?
         }
         ExecutableSourceOperationV1::ReplaceItems(items) => {
             let offered =

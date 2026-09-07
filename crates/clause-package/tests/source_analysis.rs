@@ -10,11 +10,17 @@ fn incremental_scalar_analysis_matches_full_check_and_rejects_stale_or_invalid_e
         let context = CanonicalSourceContextV1 { universe: UniverseId::from_bytes([1;32]), semantics: ClauseSemanticsId::from_bytes([2;32]) };
         let mut checked = CheckedCanonicalSourceAnalysisV1::new(cst, plan, context).unwrap();
         for (index, (before, after)) in [("0.0 - ?damage", "0.0 - (?damage * 2.0)"), ("0.0 - (?damage * 2.0)", "0.0 - ?damage")].into_iter().enumerate() {
-            let selected = canonical_scalar_effects_v1(checked.source(), checked.plan()).unwrap().into_iter().find(|effect| effect.expression == before.as_bytes()).unwrap();
+            let offered = canonical_scalar_effects_v1(checked.source(), checked.plan()).unwrap();
+            assert_eq!(checked.scalar_effects().unwrap(), offered);
+            let selected = offered.into_iter().find(|effect| effect.expression == before.as_bytes()).unwrap();
             let root = ProgramChangeOccurrenceId::from_bytes([4 + index as u8;32]);
             let invalid = replace_canonical_scalar_effect_v1(checked.source(), checked.plan(), &selected, b"true", root).unwrap();
             assert!(checked.advance(&invalid).is_err());
-            let edit = replace_canonical_scalar_effect_v1(checked.source(), checked.plan(), &selected, after.as_bytes(), root).unwrap();
+            let full_edit = replace_canonical_scalar_effect_v1(checked.source(), checked.plan(), &selected, after.as_bytes(), root).unwrap();
+            let edit = checked.replace_scalar_effect(selected.handler, selected.effect, &selected.field_path, after.as_bytes(), root).unwrap();
+            assert_eq!(edit.source().exact_source(), full_edit.source().exact_source());
+            assert_eq!(edit.plan(), full_edit.plan());
+            assert_eq!(edit.retained(), full_edit.retained());
             let next = checked.advance(&edit).unwrap();
             let full = elaborate_canonical_source_package_v1(edit.source(), context, edit.plan()).unwrap();
             let incremental = next.package();
@@ -35,6 +41,7 @@ fn incremental_scalar_analysis_matches_full_check_and_rejects_stale_or_invalid_e
             assert_eq!(incremental.scalar_input_bindings, full.scalar_input_bindings);
             assert_eq!(incremental.referent_input_bindings, full.referent_input_bindings);
             assert!(next.advance(&edit).is_err());
+            assert!(next.replace_scalar_effect(selected.handler, selected.effect, &selected.field_path, after.as_bytes(), root).is_err());
             checked = next;
         }
     }
