@@ -1,5 +1,6 @@
 import * as workbench from "./workbench.js";
 import { enterSourceTransferPhase, leaveSourceTransferPhase, observeSourceTransferPhase } from "./source-transfer-observation.js";
+const byteTextDecoder = new TextDecoder(new Uint8Array(new Uint16Array([1]).buffer)[0] === 1 ? "utf-16le" : "utf-16be", { fatal: true, ignoreBOM: true });
 function equivalent(left, right) {
     return (Object.is(left, right) ||
         (Array.isArray(left) &&
@@ -671,11 +672,9 @@ function dispatch_session_request(module, request, operation) {
             throw new Error("CSE1 bulk event byte is out of bounds");
         }
         return observeSourceTransferPhase("event-array-construction", () => {
-            const chunks = [];
-            for (let start = 0; start < event.length; start += 4096) {
-                chunks.push(String.fromCharCode(...event.subarray(start, start + 4096)));
-            }
-            return chunks.join("");
+            // Widening each octet to one native-endian code unit preserves all 256
+            // values; the decoder returns an immutable snapshot without JS iteration.
+            return byteTextDecoder.decode(new Uint16Array(event));
         });
     }
     else {

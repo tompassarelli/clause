@@ -309,13 +309,13 @@ function issuance_event_bang(): number[] {
   return bytes;
 }
 
-function admission_event_bang(): number[] {
+function admission_event_bang(frame: readonly number[] = [40, 41, 42]): number[] {
   const bytes = cse_header_bang(4, 5);
   put_identities_bang(bytes, [22, 36, 37, 38, 41, 42, 3]);
   append_u32_bang(bytes, 2);
   bytes.push(1);
   put_identities_bang(bytes, [39]);
-  append_blob_bang(bytes, [40, 41, 42]);
+  append_blob_bang(bytes, frame);
   return bytes;
 }
 
@@ -834,6 +834,22 @@ test["test"](
     );
   },
 );
+
+test.test("admitted bulk snapshot preserves every octet after producer mutation", () => {
+  const bytes = Array.from({ length: 256 }, (_, index) => index);
+  const module = module_for_bang([opened_event_bang(), input_event_bang(), candidate_event_bang(),
+    issuance_event_bang(), admission_event_bang(bytes)], []);
+  let producer = new Uint8Array(0);
+  const port = wasm["create-wasm-cartridge-port"]({ ...module,
+    clause_session_v1_event_bulk: () => (producer = new Uint8Array(module.clause_session_v1_event_bulk())),
+  }, arena_policy());
+  const accepted = acceptPackage(port, wasm["->ExactProcessRequest"](minimal_cwr1_bang()));
+  const started = startSession(port, accepted.acceptedPackage);
+  const candidate = runCandidate(port, started.session, key_configuration(1, 1, "KeyD"));
+  const admitted = admitCandidate(port, started.session, candidate.candidate);
+  producer.fill(0);
+  expect(JSON.parse(JSON.stringify(admitted.frame))).toEqual(bytes);
+});
 
 test["test"](
   "persistent session open and command requests retain distinct byte envelopes",
