@@ -125,7 +125,7 @@ mod tests {
             subject_domain: 7, value_kind: ExecutableRelationValueKindV1::Number,
             value_domain: None, cardinality: ExecutableRelationCardinalityV1::Many, total: false,
             rows: Arc::new(values.iter().map(|(id, value)|
-                (ExecutableReferentV1::declared(7, *id), [number(*value)].into())).collect()),
+                (ExecutableReferentV1::declared(7, *id), [number(*value)].into())).collect::<BTreeMap<_, _>>().into()),
         })
     }
     fn evaluator<'a>(program: &'a Arc<ExecutableProgramV1>, cache: Option<&'a Mutex<EvaluationCache>>) -> StepEvaluator<'a> {
