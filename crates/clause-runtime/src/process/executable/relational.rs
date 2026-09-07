@@ -594,11 +594,33 @@ pub(super) fn match_rule(
     Ok(rejected)
 }
 
+pub(super) struct LazyOccurrenceIdentity<'a> {
+    context: EvaluationContextV1<'a>,
+    rule: usize,
+    bindings: &'a BTreeMap<u16, ExecutableValueV1>,
+    identity: std::cell::Cell<Option<[u8; IDENTITY_BYTES]>>,
+}
+
+impl<'a> LazyOccurrenceIdentity<'a> {
+    pub(super) fn new(context: EvaluationContextV1<'a>, rule: usize,
+        bindings: &'a BTreeMap<u16, ExecutableValueV1>) -> Self {
+        Self { context, rule, bindings, identity: std::cell::Cell::new(None) }
+    }
+
+    pub(super) fn get(&self) -> Result<[u8; IDENTITY_BYTES], ExecutableErrorV1> {
+        if let Some(identity) = self.identity.get() { return Ok(identity); }
+        let identity = occurrence_identity(self.context, self.rule, self.bindings)?;
+        self.identity.set(Some(identity));
+        Ok(identity)
+    }
+}
+
 pub(super) fn occurrence_identity(
     context: EvaluationContextV1,
     rule: usize,
     bindings: &BTreeMap<u16, ExecutableValueV1>,
 ) -> Result<[u8; IDENTITY_BYTES], ExecutableErrorV1> {
+    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::OccurrenceIdentity);
     let mut bytes = Vec::new();
     for (binding, value) in bindings {
         bytes.extend_from_slice(&binding.to_le_bytes());
@@ -898,6 +920,34 @@ mod sum_reuse_tests {
 #[cfg(test)]
 mod match_ownership_tests {
     use super::*;
+
+    #[test]
+    fn relational_identity_is_derived_only_for_evaluated_fresh_referents() {
+        use ExecutableExpressionV1 as E;
+        let bindings = BTreeMap::from([(3, ExecutableValueV1::text("bound text").unwrap())]);
+        let context = EvaluationContextV1 { allocation_root: [17; IDENTITY_BYTES],
+            step_ordinal: 19, reads: None, bindings: Some(&bindings), relational_occurrence: None };
+        let identity = LazyOccurrenceIdentity::new(context, 23, &bindings);
+        let evaluation = EvaluationContextV1 { relational_occurrence: Some(&identity), ..context };
+        let fresh = E::FreshReferent { domain: 29, binder: 31 };
+        let ordinary = E::Conditional(Box::new(E::Constant(ExecutableValueV1::Boolean(false))),
+            Box::new(fresh.clone()), Box::new(E::Binding(3)));
+        assert_eq!(evaluate(&ordinary, &[], &[], evaluation).unwrap(), bindings[&3]);
+        assert_eq!(identity.identity.get(), None);
+        let mut preimage = 3u16.to_le_bytes().to_vec();
+        encode_value(&mut preimage, &bindings[&3]).unwrap();
+        let expected_match = runtime_domain_hash("clause/relational-match/v1", &[
+            &[17; IDENTITY_BYTES], &19u64.to_be_bytes(), &23u64.to_be_bytes(), &preimage]);
+        let expected = ExecutableValueV1::Referent(ExecutableReferentV1::created(29,
+            runtime_domain_hash("clause/runtime-referent/v1", &[
+                &expected_match, &19u64.to_be_bytes(), &29u32.to_be_bytes(), &31u16.to_be_bytes()])));
+        assert_eq!(evaluate(&fresh, &[], &[], evaluation).unwrap(), expected);
+        assert_eq!(identity.identity.get(), Some(expected_match));
+        assert_eq!(evaluate(&fresh, &[], &[], evaluation).unwrap(), expected);
+        let later = LazyOccurrenceIdentity::new(EvaluationContextV1 { step_ordinal: 20, ..context }, 23, &bindings);
+        assert_ne!(later.get().unwrap(), expected_match);
+        assert_ne!(evaluate(&fresh, &[], &[], context).unwrap(), expected);
+    }
 
     #[test]
     fn untraced_matches_preserve_rejection_and_visit_limits() {

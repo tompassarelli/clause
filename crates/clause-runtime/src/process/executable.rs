@@ -6322,7 +6322,7 @@ struct EvaluationContextV1<'a> {
     reads: Option<&'a std::cell::RefCell<Vec<ExecutableReadV1>>>,
     sum_queries: Option<&'a std::cell::RefCell<relational::SumQueries>>,
     bindings: Option<&'a BTreeMap<u16, ExecutableValueV1>>,
-    relational_occurrence: Option<&'a [u8; IDENTITY_BYTES]>,
+    relational_occurrence: Option<&'a relational::LazyOccurrenceIdentity<'a>>,
 }
 
 fn evaluate(
@@ -6400,9 +6400,10 @@ fn evaluate(
                 runtime_domain_hash(
                     "clause/runtime-referent/v1",
                     &[
-                        context
-                            .relational_occurrence
-                            .unwrap_or(&context.allocation_root),
+                        &match context.relational_occurrence {
+                            Some(identity) => identity.get()?,
+                            None => context.allocation_root,
+                        },
                         &context.step_ordinal.to_be_bytes(),
                         &domain.to_be_bytes(),
                         &binder.to_be_bytes(),
@@ -7551,11 +7552,7 @@ impl StepEvaluator<'_> {
         // The context below never reaches closure of the staged next state.
         let sum_queries = std::cell::RefCell::new(relational::SumQueries::default());
         for (rule_index, rule, bindings, trace_index) in &selected {
-            let identity = {
-                let _profile =
-                    source_profile_scope_v1(SourceProfilePhaseV1::OccurrenceIdentity);
-                relational::occurrence_identity(evaluation, *rule_index, bindings)?
-            };
+            let identity = relational::LazyOccurrenceIdentity::new(evaluation, *rule_index, bindings);
             let evaluation = EvaluationContextV1 {
                 bindings: Some(bindings),
                 sum_queries: Some(&sum_queries),
