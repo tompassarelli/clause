@@ -6,7 +6,7 @@ const MAGIC: &[u8; 4] = b"CRF1";
 macro_rules! ordinal_wire {
     ($($field:ident),+ $(,)?) => {
         impl RuntimeIdentityOrdinalsV1 {
-            fn encode(&self, bytes: &mut Vec<u8>) { $(bytes.extend_from_slice(&self.$field.to_le_bytes());)+ }
+            fn encode(&self, bytes: &mut impl ExecutableBytes) { $(bytes.extend_from_slice(&self.$field.to_le_bytes());)+ }
             fn decode(d: &mut Decoder<'_>) -> Result<Self, ExecutableErrorV1> {
                 Ok(Self { $($field: d.u64()?,)+ })
             }
@@ -33,10 +33,9 @@ ordinal_wire!(
     next_effect_observation
 );
 
-fn blob(bytes: &mut Vec<u8>, value: &[u8]) -> Result<(), ExecutableErrorV1> {
+fn blob(bytes: &mut SegmentedBytes, value: &[u8]) -> Result<(), ExecutableErrorV1> {
     let length = u32::try_from(value.len()).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
-    bytes
-        .try_reserve(value.len().checked_add(4).ok_or(ExecutableErrorV1::ResourceLimit)?)
+    bytes.current.try_reserve(value.len().checked_add(4).ok_or(ExecutableErrorV1::ResourceLimit)?)
         .map_err(|_| ExecutableErrorV1::ResourceLimit)?;
     bytes.extend_from_slice(&length.to_le_bytes());
     bytes.extend_from_slice(value);
@@ -49,6 +48,15 @@ fn read_blob<'a>(d: &mut Decoder<'a>) -> Result<&'a [u8], ExecutableErrorV1> {
 
 impl ExecutableProcessRuntimeV1 {
     pub(crate) fn checkpoint_admitted(&self) -> Result<Vec<u8>, ExecutableCarrierErrorV1> {
+        let mut bytes = Vec::new();
+        for segment in self.checkpoint_admitted_segments()? {
+            bytes.try_reserve(segment.as_bytes().len()).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
+            bytes.extend_from_slice(segment.as_bytes());
+        }
+        Ok(bytes)
+    }
+
+    pub(crate) fn checkpoint_admitted_segments(&self) -> Result<Vec<AtomPayloadSegment>, ExecutableCarrierErrorV1> {
         let execution = self
             .carrier_execution
             .as_ref()
@@ -67,14 +75,19 @@ impl ExecutableProcessRuntimeV1 {
             .carrier()
             .record_admitted_frontier(execution.facts.initial_state)
             .map_err(|_| ExecutableCarrierErrorV1::HistoryCompactionUnavailable)?;
-        let encoded = encode_recorded_admitted_frontier_v1(&frontier)
+        let encoded = encode_recorded_admitted_frontier_segments_v1(&frontier)
             .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
-        let mut bytes = MAGIC.to_vec();
+        let mut bytes = SegmentedBytes::default();
+        bytes.extend_from_slice(MAGIC);
         blob(
             &mut bytes,
             &encode_runtime_allocation_epoch_v1(self.allocation),
         )?;
-        blob(&mut bytes, &encoded)?;
+        let length = encoded.iter().try_fold(0usize, |length, segment| length.checked_add(segment.as_bytes().len()))
+            .and_then(|length| u32::try_from(length).ok()).ok_or(ExecutableErrorV1::ResourceLimit)?;
+        bytes.extend_from_slice(&length.to_le_bytes());
+        bytes.flush();
+        bytes.segments.extend(encoded);
         bytes.extend_from_slice(self.run.as_bytes());
         bytes.extend_from_slice(self.activation.as_bytes());
         bytes.extend_from_slice(self.configuration_id.as_bytes());
@@ -82,7 +95,7 @@ impl ExecutableProcessRuntimeV1 {
         self.identity_ordinals.encode(&mut bytes);
         encode_slots(&mut bytes, &self.configuration)?;
         encode_continuity(&mut bytes, self.source_continuity.as_ref())?;
-        Ok(bytes)
+        Ok(bytes.finish())
     }
 
     pub(crate) fn reopen_admitted(
@@ -187,7 +200,7 @@ impl ExecutableProcessRuntimeV1 {
     }
 }
 
-fn encode_identity(bytes: &mut Vec<u8>, value: CanonicalAllocatedIdentityV1) {
+fn encode_identity(bytes: &mut impl ExecutableBytes, value: CanonicalAllocatedIdentityV1) {
     use CanonicalAllocatedIdentityV1 as I;
     let (tag, a, b) = match value {
         I::Formation(a) => (0, a.get(), 0),
@@ -223,7 +236,7 @@ fn decode_identity(d: &mut Decoder<'_>) -> Result<CanonicalAllocatedIdentityV1, 
     })
 }
 fn encode_continuity(
-    bytes: &mut Vec<u8>,
+    bytes: &mut impl ExecutableBytes,
     value: Option<&ExecutableSourceContinuityV1>,
 ) -> Result<(), ExecutableErrorV1> {
     bytes.push(u8::from(value.is_some()));

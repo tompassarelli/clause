@@ -62,30 +62,49 @@ impl WasmPersistentSessionBoundaryV1 {
         handle: WasmSessionHandleV1,
         context: &[u8],
     ) -> Result<Vec<u8>, WasmProcessStatusV1> {
+        let mut bytes = Vec::new();
+        for segment in self.checkpoint_admitted_segments(handle, context)? {
+            bytes.try_reserve(segment.as_bytes().len()).map_err(|_| WasmProcessStatusV1::ResponseOutOfBounds)?;
+            bytes.extend_from_slice(segment.as_bytes());
+        }
+        Ok(bytes)
+    }
+
+    /// Exact checkpoint bytes without copying immutable payloads. Segment
+    /// boundaries are physical only; concatenation is `checkpoint_admitted`.
+    pub fn checkpoint_admitted_segments(
+        &self,
+        handle: WasmSessionHandleV1,
+        context: &[u8],
+    ) -> Result<Vec<clause_package::AtomPayloadSegment>, WasmProcessStatusV1> {
+        use clause_package::AtomPayloadSegment;
         let session = self.captured_session(handle)?;
-        let live = self
-            .live
-            .as_ref()
-            .ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
-        let runtime = session
-            .checkpoint_admitted()
+        let live = self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
+        let runtime = session.checkpoint_admitted_segments()
             .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
         let mut bytes = MAGIC.to_vec();
-        for value in [context, live.exact_open.as_slice(), runtime.as_slice()] {
-            bytes
-                .try_reserve(value.len().checked_add(4).ok_or(WasmProcessStatusV1::ResponseOutOfBounds)?)
+        for value in [context, live.exact_open.as_slice()] {
+            bytes.try_reserve(value.len().checked_add(4).ok_or(WasmProcessStatusV1::ResponseOutOfBounds)?)
                 .map_err(|_| WasmProcessStatusV1::ResponseOutOfBounds)?;
             put_blob(&mut bytes, value)?;
         }
-        bytes.extend_from_slice(&handle.generation.to_le_bytes());
-        bytes.extend_from_slice(&live.sequence.to_le_bytes());
-        bytes.extend_from_slice(&live.command_window_start.to_le_bytes());
-        bytes.push(u8::from(live.at_admitted_frontier));
-        bytes.extend_from_slice(&live.last_input_sequence.to_le_bytes());
-        bytes.extend_from_slice(&live.last_configuration_revision.to_le_bytes());
-        let digest = Sha256::digest(&bytes);
-        bytes.extend_from_slice(&digest);
-        Ok(bytes)
+        let length = runtime.iter().try_fold(0usize, |length, segment| length.checked_add(segment.as_bytes().len()))
+            .and_then(|length| u32::try_from(length).ok()).ok_or(WasmProcessStatusV1::ResponseOutOfBounds)?;
+        bytes.extend_from_slice(&length.to_le_bytes());
+        let mut segments = vec![AtomPayloadSegment::Bytes(bytes.into())];
+        segments.extend(runtime);
+        let mut tail = handle.generation.to_le_bytes().to_vec();
+        tail.extend_from_slice(&live.sequence.to_le_bytes());
+        tail.extend_from_slice(&live.command_window_start.to_le_bytes());
+        tail.push(u8::from(live.at_admitted_frontier));
+        tail.extend_from_slice(&live.last_input_sequence.to_le_bytes());
+        tail.extend_from_slice(&live.last_configuration_revision.to_le_bytes());
+        let mut digest = Sha256::new();
+        for segment in &segments { digest.update(segment.as_bytes()); }
+        digest.update(&tail);
+        tail.extend_from_slice(&digest.finalize());
+        segments.push(AtomPayloadSegment::Bytes(tail.into()));
+        Ok(segments)
     }
 
     /// Reconstitute the recorded world in an empty boundary, from the caller's
