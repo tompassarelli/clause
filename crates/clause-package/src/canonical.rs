@@ -232,6 +232,36 @@ impl std::error::Error for CanonicalDecodeError {
     }
 }
 
+/// Immutable exact canonical octets. Segment boundaries do not change equality,
+/// wire spelling or derived identities. Import retains all canonical and
+/// payload-binding checks required for contiguous snapshot bytes.
+#[derive(Clone, Debug)]
+pub struct CanonicalBytes {
+    segments: std::sync::Arc<[crate::AtomPayloadSegment]>,
+    length: usize,
+}
+
+impl CanonicalBytes {
+    pub fn segments(&self) -> &[crate::AtomPayloadSegment] { &self.segments }
+    pub fn len(&self) -> usize { self.length }
+    pub fn is_empty(&self) -> bool { self.length == 0 }
+}
+impl From<Vec<u8>> for CanonicalBytes {
+    fn from(value: Vec<u8>) -> Self {
+        Self { length: value.len(), segments: vec![crate::AtomPayloadSegment::Bytes(value.into())].into() }
+    }
+}
+impl From<Box<[u8]>> for CanonicalBytes {
+    fn from(value: Box<[u8]>) -> Self { value.into_vec().into() }
+}
+impl PartialEq for CanonicalBytes {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.segments, &other.segments)
+            || (self.length == other.length && crate::term::compare_segments(&self.segments, &other.segments).is_eq())
+    }
+}
+impl Eq for CanonicalBytes {}
+
 struct Encoder {
     bytes: Vec<u8>,
     segments: Option<Vec<crate::AtomPayloadSegment>>,
@@ -504,6 +534,17 @@ impl<T: Wire> Wire for Option<T> {
                 found,
             }),
         }
+    }
+}
+
+impl Wire for CanonicalBytes {
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
+        encoder.u32(u32::try_from(self.len()).map_err(|_| CanonicalEncodeError::LengthExceedsU32 { field: "octet string", length: self.len() })?);
+        for segment in self.segments() { encoder.shared(segment); }
+        Ok(())
+    }
+    fn decode(cursor: &mut Cursor<'_>) -> Result<Self, CanonicalDecodeError> {
+        Ok(cursor.blob()?.into())
     }
 }
 
@@ -2814,6 +2855,14 @@ pub fn canonical_term_bytes(term: &Term) -> Result<Vec<u8>, CanonicalEncodeError
     encode_wire(term)
 }
 
+/// The same canonical Term bytes retaining immutable payload storage.
+pub fn canonical_term_shared_bytes(term: &Term) -> Result<CanonicalBytes, CanonicalEncodeError> {
+    let mut encoder = Encoder { segments: Some(Vec::new()), ..Encoder::new() };
+    term.encode(&mut encoder)?;
+    let length = encoder.finish_size()?;
+    Ok(CanonicalBytes { length, segments: encoder.finish_segments()?.into() })
+}
+
 /// Check the same canonical representation and byte ceiling without copying payloads.
 pub fn canonical_term_byte_len(term: &Term) -> Result<usize, CanonicalEncodeError> {
     let mut encoder = Encoder::counting();
@@ -3180,6 +3229,20 @@ fn ensure_by_key<T, K: Ord>(
 #[cfg(test)]
 mod ingress_size_tests {
     use super::*;
+
+    #[test]
+    fn canonical_snapshot_shares_payload_and_keeps_exact_wire_bytes() {
+        let payload: std::sync::Arc<str> = "shared snapshot".repeat(1000).into();
+        let scope = TermScope { universe: UniverseId::from_bytes([1; IDENTITY_BYTES]), semantics: ClauseSemanticsId::from_bytes([2; IDENTITY_BYTES]) };
+        let term = Term::atom_segments(scope, b"snapshot".to_vec(), vec![crate::AtomPayloadSegment::Text(payload.clone())], EqualityContract::ExactOctetsV1).unwrap();
+        let shared = canonical_term_shared_bytes(&term).unwrap();
+        assert!(shared.segments().iter().any(|part| std::ptr::eq(part.as_bytes(), payload.as_bytes())));
+        let flat = canonical_term_bytes(&term).unwrap();
+        assert_eq!(shared, CanonicalBytes::from(flat.clone()));
+        let cloned = shared.clone();
+        assert!(std::sync::Arc::ptr_eq(&shared.segments, &cloned.segments));
+        assert_eq!(encode_wire(&shared).unwrap(), encode_wire(&flat.into_boxed_slice()).unwrap());
+    }
 
     #[test]
     fn ingress_size_matches_materialized_corpus_encoding_and_preserves_ceiling() {

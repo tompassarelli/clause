@@ -5183,9 +5183,8 @@ impl ExecutableProcessRuntimeV1 {
                 activation: producer.activation,
                 step: producer.step,
             },
-            canonical_state_snapshot: canonical_term_bytes(&payload)
-                .map_err(|_| ExecutableCarrierErrorV1::UnsupportedSurface)?
-                .into_boxed_slice(),
+            canonical_state_snapshot: canonical_term_shared_bytes(&payload)
+                .map_err(|_| ExecutableCarrierErrorV1::UnsupportedSurface)?,
             payload,
             policy: facts.policy,
             semantics: scope.semantics,

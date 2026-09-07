@@ -19,6 +19,7 @@ mod term;
 
 pub use authority::*;
 pub use canonical::{
+    CanonicalBytes, canonical_term_shared_bytes,
     CanonicalDecodeError, CanonicalEncodeError, DecodedProcessPackage, ProcessPackageCheckError,
     ProgramSnapshotPreimageV2, RevisionJudgmentAuthorityGrantPreimageV2,
     RevisionStateAdmissionGrantPreimageV2, RevisionStaticExecutionGrantPreimageV2,

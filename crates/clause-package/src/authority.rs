@@ -626,7 +626,7 @@ impl InitialStateRevisionPreimage {
             self.session,
             None,
             StateRevisionCausePreimage::SessionStart(self.start),
-            &self.canonical_state_snapshot,
+            &[&self.canonical_state_snapshot],
             self.policy,
         )
     }

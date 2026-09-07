@@ -165,22 +165,24 @@ pub(crate) fn derive_state_revision_id(
     session: RuntimeSessionId,
     predecessor: Option<StateRevisionId>,
     cause: StateRevisionCausePreimage,
-    canonical_state_snapshot: &[u8],
+    canonical_state_snapshot: &[&[u8]],
     policy: RuntimePolicyId,
 ) -> StateRevisionId {
     let predecessor = encode_predecessor_or_root(predecessor.as_ref().map(|id| id.as_bytes()));
     let cause = encode_state_revision_cause(cause);
-    StateRevisionId::from_bytes(domain_hash(
-        STATE_REVISION_DOMAIN,
-        &[
-            semantics.as_bytes(),
-            session.as_bytes(),
-            &predecessor,
-            &cause,
-            canonical_state_snapshot,
-            policy.as_bytes(),
-        ],
-    ))
+    let mut hasher = Sha256::new();
+    hasher.update((STATE_REVISION_DOMAIN.len() as u32).to_be_bytes());
+    hasher.update(STATE_REVISION_DOMAIN.as_bytes());
+    for component in [semantics.as_bytes().as_slice(), session.as_bytes().as_slice(), &predecessor, &cause] {
+        hasher.update((component.len() as u64).to_be_bytes());
+        hasher.update(component);
+    }
+    let length = canonical_state_snapshot.iter().map(|part| part.len() as u64).sum::<u64>();
+    hasher.update(length.to_be_bytes());
+    for part in canonical_state_snapshot { hasher.update(part); }
+    hasher.update((policy.as_bytes().len() as u64).to_be_bytes());
+    hasher.update(policy.as_bytes());
+    StateRevisionId::from_bytes(hasher.finalize().into())
 }
 
 /// Derives the exact checked package-byte binding in domain
@@ -199,6 +201,16 @@ pub(crate) fn derive_process_package_id(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_segments_preserve_the_single_identity_component() {
+        let semantics = ClauseSemanticsId::from_bytes([1; IDENTITY_BYTES]);
+        let session = RuntimeSessionId::from_bytes([2; IDENTITY_BYTES]);
+        let cause = StateRevisionCausePreimage::SessionStart(SessionStartOccurrenceId::from_bytes([3; IDENTITY_BYTES]));
+        let policy = RuntimePolicyId::from_bytes([4; IDENTITY_BYTES]);
+        assert_eq!(derive_state_revision_id(semantics, session, None, cause, &[b"state"], policy),
+            derive_state_revision_id(semantics, session, None, cause, &[b"", b"st", b"ate", b""], policy));
+    }
 
     #[test]
     fn domain_hash_matches_independently_computed_framing_vector() {
@@ -264,7 +276,7 @@ mod tests {
                 StateRevisionCausePreimage::SessionStart(SessionStartOccurrenceId::from_bytes(
                     [0x03; IDENTITY_BYTES]
                 ),),
-                b"state",
+                &[b"state"],
                 policy,
             )
             .as_bytes(),
@@ -285,7 +297,7 @@ mod tests {
                     activation: ActivationId::from_bytes([0x08; IDENTITY_BYTES]),
                     step: StepId::from_bytes([0x09; IDENTITY_BYTES]),
                 },
-                b"state",
+                &[b"state"],
                 policy,
             )
             .as_bytes(),
@@ -366,7 +378,7 @@ mod tests {
             session,
             None,
             StateRevisionCausePreimage::SessionStart(start),
-            b"state",
+            &[b"state"],
             policy,
         );
         assert_ne!(
@@ -376,7 +388,7 @@ mod tests {
                 session,
                 None,
                 StateRevisionCausePreimage::SessionStart(start),
-                b"state",
+                &[b"state"],
                 policy,
             )
         );
@@ -387,7 +399,7 @@ mod tests {
                 other_session,
                 None,
                 StateRevisionCausePreimage::SessionStart(start),
-                b"state",
+                &[b"state"],
                 policy,
             )
         );
@@ -398,7 +410,7 @@ mod tests {
                 session,
                 Some(StateRevisionId::from_bytes([0x24; IDENTITY_BYTES])),
                 StateRevisionCausePreimage::SessionStart(start),
-                b"state",
+                &[b"state"],
                 policy,
             )
         );
@@ -409,7 +421,7 @@ mod tests {
                 session,
                 None,
                 StateRevisionCausePreimage::SessionStart(other_start),
-                b"state",
+                &[b"state"],
                 policy,
             )
         );
@@ -420,7 +432,7 @@ mod tests {
                 session,
                 None,
                 StateRevisionCausePreimage::SessionStart(start),
-                b"other state",
+                &[b"other state"],
                 policy,
             )
         );
@@ -431,7 +443,7 @@ mod tests {
                 session,
                 None,
                 StateRevisionCausePreimage::SessionStart(start),
-                b"state",
+                &[b"state"],
                 other_policy,
             )
         );
@@ -448,7 +460,7 @@ mod tests {
         };
         assert_ne!(
             state,
-            derive_state_revision_id(semantics, session, None, admission_cause, b"state", policy,)
+            derive_state_revision_id(semantics, session, None, admission_cause, &[b"state"], policy,)
         );
         for changed_cause in [
             StateRevisionCausePreimage::Admission {
@@ -482,10 +494,10 @@ mod tests {
                     session,
                     None,
                     admission_cause,
-                    b"state",
+                    &[b"state"],
                     policy,
                 ),
-                derive_state_revision_id(semantics, session, None, changed_cause, b"state", policy,)
+                derive_state_revision_id(semantics, session, None, changed_cause, &[b"state"], policy,)
             );
         }
 

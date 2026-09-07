@@ -40,6 +40,25 @@ impl AtomPayloadSegment {
     }
 }
 
+pub(crate) fn compare_segments(a: &[AtomPayloadSegment], b: &[AtomPayloadSegment]) -> std::cmp::Ordering {
+    let mut left = a.iter().map(AtomPayloadSegment::as_bytes).filter(|bytes| !bytes.is_empty());
+    let mut right = b.iter().map(AtomPayloadSegment::as_bytes).filter(|bytes| !bytes.is_empty());
+    let mut a = left.next().unwrap_or(&[]);
+    let mut b = right.next().unwrap_or(&[]);
+    loop {
+        if a.is_empty() || b.is_empty() { return a.len().cmp(&b.len()); }
+        let count = a.len().min(b.len());
+        let (ap, ar) = a.split_at(count);
+        let (bp, br) = b.split_at(count);
+        if !std::ptr::eq(ap, bp) {
+            let order = ap.cmp(bp);
+            if !order.is_eq() { return order; }
+        }
+        a = if ar.is_empty() { left.next().unwrap_or(&[]) } else { ar };
+        b = if br.is_empty() { right.next().unwrap_or(&[]) } else { br };
+    }
+}
+
 #[derive(Clone)]
 struct AtomPayload {
     segments: Arc<[AtomPayloadSegment]>,
@@ -70,15 +89,12 @@ impl AtomPayload {
         })
     }
 
-    fn iter(&self) -> impl Iterator<Item = &u8> {
-        self.segments.iter().flat_map(|segment| segment.as_bytes())
-    }
 }
 
 impl PartialEq for AtomPayload {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.segments, &other.segments)
-            || (self.length == other.length && self.iter().eq(other.iter()))
+            || (self.length == other.length && compare_segments(&self.segments, &other.segments).is_eq())
     }
 }
 impl Eq for AtomPayload {}
@@ -88,7 +104,7 @@ impl PartialOrd for AtomPayload {
 impl Ord for AtomPayload {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if Arc::ptr_eq(&self.segments, &other.segments) { std::cmp::Ordering::Equal }
-        else { self.iter().cmp(other.iter()) }
+        else { compare_segments(&self.segments, &other.segments) }
     }
 }
 impl Hash for AtomPayload {
@@ -449,6 +465,22 @@ mod tests {
 
         assert!(Arc::ptr_eq(&original.value, &cloned.value));
         assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn shared_segment_comparison_matches_octet_order_across_boundaries() {
+        let values: &[&[u8]] = &[b"", b"a", b"ab", b"abc", b"abd", b"ab\0", b"b"];
+        for a in values {
+            for b in values {
+                for split in 0..=a.len() {
+                    let left = [AtomPayloadSegment::Bytes(a[..split].into()), AtomPayloadSegment::Bytes([].as_slice().into()), AtomPayloadSegment::Bytes(a[split..].into())];
+                    let right = [AtomPayloadSegment::Bytes((*b).into())];
+                    assert_eq!(compare_segments(&left, &right), a.cmp(b));
+                }
+            }
+        }
+        let shared = AtomPayloadSegment::Text("same immutable payload".repeat(10_000).into());
+        assert!(compare_segments(&[shared.clone(), AtomPayloadSegment::Bytes(b"a".as_slice().into())], &[shared, AtomPayloadSegment::Bytes(b"b".as_slice().into())]).is_lt());
     }
 
     #[test]
