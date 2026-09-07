@@ -4874,12 +4874,12 @@ fn derive_successor_state_id(state: &StateRevision) -> StateRevisionId {
             step,
         },
     };
-    crate::hash::derive_state_revision_id(
+    crate::hash::derive_shared_state_revision_id(
         state.semantics,
         state.session,
         state.predecessor,
         cause,
-        &state.canonical_state_snapshot.segments().iter().map(crate::AtomPayloadSegment::as_bytes).collect::<Vec<_>>(),
+        &state.canonical_state_snapshot,
         state.policy,
     )
 }

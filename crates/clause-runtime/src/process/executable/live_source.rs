@@ -661,7 +661,7 @@ fn migrate_value(
                                 .collect::<Result<_, ExecutableErrorV1>>()?,
                         ))
                     })
-                    .collect::<Result<_, ExecutableErrorV1>>()?),
+                    .collect::<Result<BTreeMap<_, _>, ExecutableErrorV1>>()?.into()),
             })
         }
         _ => value.clone(),

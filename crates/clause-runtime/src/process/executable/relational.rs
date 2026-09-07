@@ -634,7 +634,7 @@ mod match_ownership_tests {
             total: false, rows: Arc::new((0..MAX_MATCHES).map(|index| {
                 let subject = ExecutableReferentV1::declared(7, index as u32);
                 (subject.clone(), BTreeSet::from([ExecutableValueV1::Referent(subject)]).into())
-            }).collect()),
+            }).collect::<BTreeMap<_, _>>().into()),
         };
         let configuration = [ExecutableValueV1::RelationTable(table).into()];
         let predicates = [
@@ -664,7 +664,7 @@ mod match_ownership_tests {
         let table = ExecutableRelationTableV1 {
             subject_domain: 7, value_kind: ExecutableRelationValueKindV1::Referent,
             value_domain: Some(7), cardinality: ExecutableRelationCardinalityV1::Many,
-            total: false, rows: Arc::new(BTreeMap::from([(subject, BTreeSet::from([value]).into())])),
+            total: false, rows: Arc::new(BTreeMap::from([(subject, BTreeSet::from([value]).into())]).into()),
         };
         let predicate = ExecutableExpressionV1::RelationMatch(0,
             Box::new(ExecutableExpressionV1::Binding(0)),

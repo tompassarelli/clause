@@ -297,6 +297,26 @@ impl<'a> IntoIterator for &'a ExecutableValuesV1 {
     fn into_iter(self) -> Self::IntoIter { self.iter() }
 }
 
+#[derive(Clone, Debug, Default)]
+struct ExecutableRowsV1 {
+    values: BTreeMap<ExecutableReferentV1, ExecutableValuesV1>,
+    encoded: OnceLock<Result<Vec<AtomPayloadSegment>, ExecutableErrorV1>>,
+}
+impl From<BTreeMap<ExecutableReferentV1, ExecutableValuesV1>> for ExecutableRowsV1 {
+    fn from(values: BTreeMap<ExecutableReferentV1, ExecutableValuesV1>) -> Self { Self { values, encoded: OnceLock::new() } }
+}
+impl std::ops::Deref for ExecutableRowsV1 {
+    type Target = BTreeMap<ExecutableReferentV1, ExecutableValuesV1>;
+    fn deref(&self) -> &Self::Target { &self.values }
+}
+impl std::ops::DerefMut for ExecutableRowsV1 {
+    fn deref_mut(&mut self) -> &mut Self::Target { self.encoded.take(); &mut self.values }
+}
+impl PartialEq for ExecutableRowsV1 { fn eq(&self, other: &Self) -> bool { self.values == other.values } }
+impl Eq for ExecutableRowsV1 {}
+impl Ord for ExecutableRowsV1 { fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.values.cmp(&other.values) } }
+impl PartialOrd for ExecutableRowsV1 { fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) } }
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ExecutableRelationTableV1 {
     subject_domain: u32,
@@ -304,7 +324,7 @@ pub struct ExecutableRelationTableV1 {
     value_domain: Option<u32>,
     cardinality: ExecutableRelationCardinalityV1,
     total: bool,
-    rows: Arc<BTreeMap<ExecutableReferentV1, ExecutableValuesV1>>,
+    rows: Arc<ExecutableRowsV1>,
 }
 
 impl ExecutableRelationTableV1 {
@@ -393,6 +413,7 @@ impl ExecutableRelationTableV1 {
             return Err(ExecutableErrorV1::TypeMismatch);
         }
         let subject = self.subject(subject)?.clone();
+        if self.rows.get(&subject).is_some_and(|values| values.len() == 1 && values.first() == Some(&value)) { return Ok(()); }
         Arc::make_mut(&mut self.rows).insert(subject, BTreeSet::from([value]).into());
         Ok(())
     }
@@ -407,13 +428,14 @@ impl ExecutableRelationTableV1 {
             return Err(ExecutableErrorV1::TypeMismatch);
         }
         let subject = self.subject(subject)?.clone();
+        if self.rows.get(&subject).is_some_and(|values| values.contains(&value)) { return Ok(()); }
         Arc::make_mut(&mut self.rows).entry(subject).or_default().insert(value);
         Ok(())
     }
 
     fn remove_row(&mut self, subject: &ExecutableValueV1) -> Result<(), ExecutableErrorV1> {
         let subject = self.subject(subject)?.clone();
-        Arc::make_mut(&mut self.rows).remove(&subject);
+        if self.rows.contains_key(&subject) { Arc::make_mut(&mut self.rows).remove(&subject); }
         Ok(())
     }
 
@@ -1950,7 +1972,7 @@ fn lower_scalar_value(
                     },
                     cardinality,
                     total: table.total,
-                    rows: Arc::new(rows),
+                    rows: Arc::new(rows.into()),
                 },
             ))
         }
@@ -6294,30 +6316,94 @@ fn projected_scalar_value_term(
     scope: TermScope,
     value: &ExecutableValueV1,
 ) -> Result<Term, ExecutableErrorV1> {
-    let (kind, payload) = match value {
-        ExecutableValueV1::Number(bits) => (PROJECTED_NUMBER_KIND, bits.to_le_bytes().to_vec()),
-        ExecutableValueV1::Boolean(value) => (PROJECTED_BOOLEAN_KIND, vec![u8::from(*value)]),
-        ExecutableValueV1::Symbol(value) => (PROJECTED_SYMBOL_KIND, value.as_bytes().to_vec()),
-        ExecutableValueV1::Text(value) => (PROJECTED_TEXT_KIND, value.as_str().as_bytes().to_vec()),
-        ExecutableValueV1::Referent(value) => {
-            let mut payload = Vec::new();
-            encode_referent(&mut payload, value);
-            (PROJECTED_REFERENT_KIND, payload)
-        }
-        ExecutableValueV1::RelationTable(_) => {
-            let mut payload = Vec::new();
-            encode_value(&mut payload, value)?;
-            (PROJECTED_RELATION_TABLE_KIND, payload)
-        }
+    let mut payload = SegmentedBytes::default();
+    let kind = match value {
+        ExecutableValueV1::Number(bits) => { payload.extend_from_slice(&bits.to_le_bytes()); PROJECTED_NUMBER_KIND }
+        ExecutableValueV1::Boolean(value) => { payload.push(u8::from(*value)); PROJECTED_BOOLEAN_KIND }
+        ExecutableValueV1::Symbol(value) => { payload.extend_from_slice(value.as_bytes()); PROJECTED_SYMBOL_KIND }
+        ExecutableValueV1::Text(value) => { payload.text(value); PROJECTED_TEXT_KIND }
+        ExecutableValueV1::Referent(value) => { encode_referent(&mut payload, value); PROJECTED_REFERENT_KIND }
+        ExecutableValueV1::RelationTable(_) => { encode_value(&mut payload, value)?; PROJECTED_RELATION_TABLE_KIND }
         ExecutableValueV1::Set(_) => return Err(ExecutableErrorV1::MalformedProgram),
     };
-    Term::atom(
-        scope,
-        kind.to_vec(),
-        payload,
-        EqualityContract::ExactOctetsV1,
-    )
-    .map_err(|_| ExecutableErrorV1::MalformedProgram)
+    Term::atom_segments(scope, kind.to_vec(), payload.finish(), EqualityContract::ExactOctetsV1)
+        .map_err(|_| ExecutableErrorV1::MalformedProgram)
+}
+
+#[cfg(test)]
+mod shared_projection_tests {
+    use super::*;
+
+    #[test]
+    fn encoded_rows_reuse_unchanged_values_and_invalidate_each_mutation() {
+        let scope = TermScope { universe: UniverseId::from_bytes([1; 32]), semantics: ClauseSemanticsId::from_bytes([2; 32]) };
+        let subject = ExecutableValueV1::Referent(ExecutableReferentV1::declared(1, 1));
+        let first = ExecutableValueV1::text("first").unwrap();
+        let second = ExecutableValueV1::text("second").unwrap();
+        let mut table = ExecutableRelationTableV1 {
+            subject_domain: 1, value_kind: ExecutableRelationValueKindV1::Text,
+            value_domain: None, cardinality: ExecutableRelationCardinalityV1::One, total: false,
+            rows: Arc::default(),
+        };
+        let roundtrip = |table: &ExecutableRelationTableV1| {
+            let term = projected_scalar_value_term(scope, &ExecutableValueV1::RelationTable(table.clone())).unwrap();
+            assert_eq!(projected_relation_table_v1(&term).unwrap(), Some(table.clone()));
+        };
+        table.put(&subject, first.clone()).unwrap();
+        roundtrip(&table);
+        let retained = table.clone();
+        table.put(&subject, first.clone()).unwrap();
+        assert!(Arc::ptr_eq(&table.rows, &retained.rows));
+        table.put(&subject, second.clone()).unwrap();
+        assert!(!Arc::ptr_eq(&table.rows, &retained.rows));
+        roundtrip(&table);
+        roundtrip(&retained);
+        assert_eq!(retained.read(&subject).unwrap(), first);
+        table.remove_row(&subject).unwrap();
+        roundtrip(&table);
+        table.cardinality = ExecutableRelationCardinalityV1::Many;
+        table.insert(&subject, first.clone()).unwrap();
+        roundtrip(&table);
+        table.insert(&subject, second.clone()).unwrap();
+        roundtrip(&table);
+        table.remove_value(&subject, &first).unwrap();
+        roundtrip(&table);
+        table.remove_value(&subject, &second).unwrap();
+        roundtrip(&table);
+        assert!(table.rows.is_empty());
+    }
+
+    #[test]
+    fn text_and_relation_projections_share_payload_with_exact_flat_bytes() {
+        let scope = TermScope { universe: UniverseId::from_bytes([1; 32]), semantics: ClauseSemanticsId::from_bytes([2; 32]) };
+        let text = ExecutableTextV1::new(&"saved history\n".repeat(100_000)).unwrap();
+        let table = ExecutableRelationTableV1 {
+            subject_domain: 1, value_kind: ExecutableRelationValueKindV1::Text,
+            value_domain: None, cardinality: ExecutableRelationCardinalityV1::One, total: true,
+            rows: Arc::new(BTreeMap::from([(ExecutableReferentV1::declared(1, 1), [ExecutableValueV1::Text(text.clone())].into())]).into()),
+        };
+        for value in [ExecutableValueV1::Text(text.clone()), ExecutableValueV1::RelationTable(table.clone())] {
+            let projection = projected_scalar_value_term(scope, &value).unwrap();
+            let shared = canonical_term_shared_bytes(&projection).unwrap();
+            assert!(shared.segments().iter().any(|segment| segment.as_bytes().as_ptr() == text.as_str().as_ptr()));
+            let mut payload = Vec::new();
+            let kind = if matches!(value, ExecutableValueV1::Text(_)) {
+                payload.extend_from_slice(text.as_str().as_bytes());
+                PROJECTED_TEXT_KIND
+            } else {
+                encode_value(&mut payload, &value).unwrap();
+                PROJECTED_RELATION_TABLE_KIND
+            };
+            let flat = Term::atom(scope, kind.to_vec(), payload, EqualityContract::ExactOctetsV1).unwrap();
+            assert_eq!(projection, flat);
+            assert_eq!(canonical_term_bytes(&projection).unwrap(), canonical_term_bytes(&flat).unwrap());
+            if matches!(value, ExecutableValueV1::Text(_)) {
+                assert_eq!(projected_text_value_v1(&projection).unwrap(), Some(text.as_str()));
+            } else {
+                assert_eq!(projected_relation_table_v1(&projection).unwrap(), Some(table.clone()));
+            }
+        }
+    }
 }
 
 /// Decode one exact projected referent without inferring identity from its label.
@@ -6852,6 +6938,9 @@ pub(super) trait ExecutableBytes {
     fn push(&mut self, value: u8);
     fn extend_from_slice(&mut self, value: &[u8]);
     fn text(&mut self, value: &ExecutableTextV1);
+    fn segments(&mut self, segments: &[AtomPayloadSegment]) {
+        for segment in segments { self.extend_from_slice(segment.as_bytes()); }
+    }
 }
 
 impl ExecutableBytes for Vec<u8> {
@@ -6876,12 +6965,16 @@ impl SegmentedBytes {
 }
 
 impl ExecutableBytes for SegmentedBytes {
+    fn segments(&mut self, segments: &[AtomPayloadSegment]) {
+        self.flush();
+        self.segments.extend_from_slice(segments);
+    }
     fn push(&mut self, value: u8) { self.current.push(value); }
     fn extend_from_slice(&mut self, value: &[u8]) { self.current.extend_from_slice(value); }
     fn text(&mut self, value: &ExecutableTextV1) {
         // Coalesce short fields: a shared segment and its prefix allocation
         // cost more than copying a small payload.
-        if value.as_str().len() <= 128 {
+        if value.as_str().len() < 4096 {
             self.current.extend_from_slice(value.as_str().as_bytes());
             return;
         }
@@ -7056,14 +7149,17 @@ pub(super) fn encode_value(
                 }
                 3
             } else { table.cardinality as u8 });
-            encode_count(bytes, table.rows.len())?;
-            for (subject, values) in table.rows.iter() {
-                encode_referent(bytes, subject);
-                encode_count(bytes, values.len())?;
-                for value in values {
-                    encode_value(bytes, value)?;
+            let encoded = table.rows.encoded.get_or_init(|| {
+                let mut encoded = SegmentedBytes::default();
+                encode_count(&mut encoded, table.rows.len())?;
+                for (subject, values) in table.rows.iter() {
+                    encode_referent(&mut encoded, subject);
+                    encode_count(&mut encoded, values.len())?;
+                    for value in values { encode_value(&mut encoded, value)?; }
                 }
-            }
+                Ok(encoded.finish())
+            }).as_ref().map_err(Clone::clone)?;
+            bytes.segments(encoded);
         }
         ExecutableValueV1::Set(set) => {
             bytes.push(3);
