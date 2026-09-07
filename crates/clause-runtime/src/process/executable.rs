@@ -36,6 +36,7 @@ mod checkpoint;
 mod explanation;
 pub use explanation::*;
 mod relational;
+mod evaluation_cache;
 mod closure;
 pub use relational::ExecutableRelationEffectV1;
 mod relational_projection;
@@ -2870,6 +2871,7 @@ pub struct ExecutableProcessRuntimeV1 {
     recorded_events: BTreeMap<u16, explanation::RetainedEventV1>,
     source_metadata: Option<Term>,
     source_continuity: Option<ExecutableSourceContinuityV1>,
+    evaluation_cache: Mutex<evaluation_cache::EvaluationCache>,
 }
 
 impl ExecutableProcessRuntimeV1 {
@@ -3004,6 +3006,7 @@ impl ExecutableProcessRuntimeV1 {
             recorded_events: BTreeMap::new(),
             source_metadata: physical_plan.plan.source_metadata,
             source_continuity: None,
+            evaluation_cache: Mutex::default(),
         })
     }
 }
@@ -4637,6 +4640,7 @@ impl ExecutableProcessRuntimeV1 {
             program: &self.program,
             allocation_root: self.allocation.root,
             configuration_id: self.configuration_id,
+            cache: Some(&self.evaluation_cache),
         }.prepare_step_traced(occurrence, step_ordinal, configuration_ordinal, configuration, trace)
     }
 
@@ -7420,6 +7424,7 @@ struct StepEvaluator<'a> {
     program: &'a Arc<ExecutableProgramV1>,
     allocation_root: [u8; IDENTITY_BYTES],
     configuration_id: ConfigurationId,
+    cache: Option<&'a Mutex<evaluation_cache::EvaluationCache>>,
 }
 
 impl StepEvaluator<'_> {
@@ -7449,6 +7454,45 @@ impl StepEvaluator<'_> {
             closed.as_slice()
         } else { configuration };
         relational::validate_contracts(configuration)?;
+        let traced = trace.is_some();
+        let mut compute = || self.evaluate_effects(&occurrence, configuration, evaluation, trace.as_deref_mut());
+        let (mut next, rule_applied) = if !traced && let Some(cache) = self.cache {
+            cache.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?
+                .evaluate(self.program, occurrence.entry, configuration, &occurrence.arguments, compute)?
+        } else { compute()? };
+        if self.program.rules.iter().any(closure::is_derivation) {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::DerivationClosure);
+            next = closure::close(self.program, &next, evaluation, trace.map(|trace| (self.program, trace)))?;
+        }
+        relational::validate_contracts(&next)?;
+        let before = self.configuration_id;
+        let after = ConfigurationId::from_bytes(runtime_identity_bytes(
+            self.allocation_root,
+            RuntimeIdentityDomainV1::Configuration,
+            configuration_ordinal,
+        )?);
+        let step = ExecutableStepV1 {
+            id: StepId::from_bytes(runtime_identity_bytes(
+                self.allocation_root,
+                RuntimeIdentityDomainV1::Step,
+                step_ordinal,
+            )?),
+            before,
+            after,
+            input_observation: None,
+            occurrence,
+            rule_applied,
+        };
+        Ok((next, step))
+    }
+
+    fn evaluate_effects(
+        &self,
+        occurrence: &ExecutableOccurrenceV1,
+        configuration: &[ExecutableSlotV1],
+        evaluation: EvaluationContextV1,
+        mut trace: Option<&mut ExecutableEvaluationTraceV1>,
+    ) -> Result<(Vec<ExecutableSlotV1>, bool), ExecutableErrorV1> {
         let mut selected = Vec::new();
         let mut selected_targets = BTreeMap::<u16, u8>::new();
         let mut join_visits = 0;
@@ -7702,29 +7746,6 @@ impl StepEvaluator<'_> {
             row_effects.apply(&mut next)?;
         }
         drop(state_effects_profile);
-        if self.program.rules.iter().any(closure::is_derivation) {
-            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::DerivationClosure);
-            next = closure::close(self.program, &next, evaluation, trace.map(|trace| (self.program, trace)))?;
-        }
-        relational::validate_contracts(&next)?;
-        let before = self.configuration_id;
-        let after = ConfigurationId::from_bytes(runtime_identity_bytes(
-            self.allocation_root,
-            RuntimeIdentityDomainV1::Configuration,
-            configuration_ordinal,
-        )?);
-        let step = ExecutableStepV1 {
-            id: StepId::from_bytes(runtime_identity_bytes(
-                self.allocation_root,
-                RuntimeIdentityDomainV1::Step,
-                step_ordinal,
-            )?),
-            before,
-            after,
-            input_observation: None,
-            occurrence,
-            rule_applied: !selected.is_empty(),
-        };
-        Ok((next, step))
+        Ok((next, !selected.is_empty()))
     }
 }
