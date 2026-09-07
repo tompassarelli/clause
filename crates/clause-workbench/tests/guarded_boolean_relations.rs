@@ -16,7 +16,7 @@ fn field<'a>(term: &'a Term, key: &[u8]) -> &'a Term {
 fn run(w: &mut ResidentSourceWorkbenchV1, name: &[u8], arguments: &[V]) -> usize {
     let event = w.handler_occurrence(name, arguments).unwrap();
     w.run_occurrences_to_candidate(&[event]).unwrap();
-    let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+    let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap();
     let powered = projected_relation_table_v1(field(field(&frame, b"relations"), b"powered"))
         .unwrap().unwrap();
     assert!(powered.rows().values().all(|values| values.len() == 1 && values.contains(&V::Boolean(true))));
@@ -53,7 +53,7 @@ fn sums_match_optional_boolean_conclusions_and_retract_their_contributions() {
         run(&mut w, b"set-mounted", &[V::Boolean(mounted)]);
         let event = w.handler_occurrence(b"measure", &[]).unwrap();
         w.run_occurrences_to_candidate(&[event]).unwrap();
-        let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+        let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap();
         let total = f64::from_le_bytes(field(field(&frame, b"report"), b"total")
             .as_atom().unwrap().canonical_payload().try_into().unwrap());
         assert_eq!(total, expected);

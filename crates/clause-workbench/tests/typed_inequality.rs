@@ -37,7 +37,7 @@ fn typed_inequality_is_the_complement_of_equality_in_guards_and_expressions() {
             let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
             let event = w.handler_occurrence(b"launch", &[]).unwrap();
             w.run_occurrences_to_candidate(&[event]).unwrap();
-            let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+            let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap();
             assert_eq!(field(field(&frame, b"workshop"), b"phase").as_atom().unwrap().canonical_payload(), expected.as_bytes());
         }
     }

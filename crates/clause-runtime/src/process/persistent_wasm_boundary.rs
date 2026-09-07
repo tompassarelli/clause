@@ -2113,7 +2113,10 @@ mod tests {
                 state_revision_count: 1,
                 projection: Some(WasmSessionProjectionV1 {
                     observation: ObservationId::from_bytes([8; 32]),
-                    exact_term_bytes: vec![b'x'; 64 * 1024 + 1],
+                    term: Term::atom(
+                        TermScope { universe: UniverseId::from_bytes([1; 32]), semantics: ClauseSemanticsId::from_bytes([2; 32]) },
+                        b"projection".to_vec(), vec![b'x'; 64 * 1024 + 1], EqualityContract::ExactOctetsV1,
+                    ).unwrap(),
                 }),
             },
         };

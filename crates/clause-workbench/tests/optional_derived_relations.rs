@@ -22,7 +22,7 @@ fn run(w: &mut ResidentSourceWorkbenchV1, name: &[u8], arguments: &[V]) {
 fn total(w: &mut ResidentSourceWorkbenchV1) -> f64 {
     let event = w.handler_occurrence(b"measure", &[]).unwrap();
     w.run_occurrences_to_candidate(&[event]).unwrap();
-    let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes).unwrap();
+    let frame = decode_canonical_term_bytes(&w.admit().unwrap().projection.exact_term_bytes()).unwrap();
     f64::from_bits(u64::from_le_bytes(field(field(&frame, b"report"), b"total")
         .as_atom().unwrap().canonical_payload().try_into().unwrap()))
 }

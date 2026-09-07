@@ -770,7 +770,7 @@ fn referent_input_snapshot(workbench: &mut ResidentSourceWorkbenchV1, revision: 
         fixed_tick_milliseconds: 100,
     }).unwrap();
     let admitted = workbench.admit().unwrap();
-    decode_canonical_term_bytes(&admitted.projection.exact_term_bytes).unwrap()
+    decode_canonical_term_bytes(&admitted.projection.exact_term_bytes()).unwrap()
 }
 
 fn referent_input_pick(workbench: &mut ResidentSourceWorkbenchV1, snapshot: &Term,
@@ -3019,7 +3019,7 @@ fn source_keyboard_arguments_preserve_movement_across_reload() {
             configuration_revision: 1, fixed_tick_milliseconds: 16,
         }).unwrap();
         let admission = workbench.admit().unwrap();
-        assert_eq!(player_planar_velocity(&admission.projection.exact_term_bytes), (speed, 0.0));
+        assert_eq!(player_planar_velocity(&admission.projection.exact_term_bytes()), (speed, 0.0));
     }
     for invalid in ["with 1.0", "with 1.0 0.0 2.0", "with NaN 0.0", "with inf 0.0"] {
         let rejected = std::str::from_utf8(WORLD).unwrap()
