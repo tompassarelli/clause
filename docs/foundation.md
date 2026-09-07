@@ -15,6 +15,15 @@ Author each independent semantic fact once. Checking, execution, queries,
 explanations, optimization, and editing must consume that same meaning, not
 parallel descriptions maintained by the author.
 
+Source should make that meaning readable and writable by the person who owns
+the domain: precise phrases and familiar mathematics, with explicit bindings
+and contracts. The specification they audit should be the program that runs.
+Readings let a domain name its concepts and sentence shapes while preserving
+the same checked relations, Modes, effects, and authority obligations. Extending
+that vocabulary must not require a separate semantic implementation for each
+domain. New notation must earn its clarity in an executing example before
+the language grows around it.
+
 Before requiring a declaration, classification, keyword, or wrapper, apply the
 deletion test:
 

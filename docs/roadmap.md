@@ -197,6 +197,22 @@ semantic edits. Clause-defined algebraic data and exhaustive matching must
 accept complete cases and reject missing and unreachable cases through the
 same mechanism.
 
+The next domain-vocabulary proof is pending: express an existing Greywrought
+movement action through a new checked sentence shape with bindings and an
+effect, using only Clause-authored declarations and transformations. Execute
+the action and query its consequences through the same semantic core; reject
+an invalid binding, and change the domain rule in one authored place without
+maintaining a second implementation. Existing custom Reading examples do not
+establish this complete extensibility claim.
+
+The Nix and JavaScript authoring slices must also earn their notation in small
+executing consumer examples before expansion. Compare each with its host
+source for domain readability, familiar mathematical composition, and how many
+places an ordinary rule change touches. Concise function notation can serve
+that goal as well as a domain phrase. A preferred small slice is evidence for
+that slice; domain-expert usability and general extensibility remain separate
+claims to establish.
+
 ### Relations, definitions, and collections
 
 Generalize positive recursive relations beyond the current binary finite

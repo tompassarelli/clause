@@ -6,6 +6,11 @@ scheduling example, task prerequisites determine what is blocked, what can
 complete, and what changes when an obstruction is removed. The application
 need not maintain a second dependency model to answer those questions.
 
+The goal is for domain owners to write and audit the specification as the
+program itself, using precise domain phrases and familiar mathematics. They
+should be able to extend its vocabulary and sentence shapes through checked
+declarations, with every domain using the same semantic core.
+
 Clause combines typed relationships, derivation laws, atomic change proposals,
 and separate admission of those changes. Its
 [design discipline](docs/foundation.md#design-discipline) is to author each
