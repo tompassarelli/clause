@@ -222,7 +222,7 @@ export declare function decodeSourcePreparationHex(source: unknown): ExactBytes;
 /** Check compiler-owned source preparation against the captured live session.
  * Preparation imports no state and advances neither generation nor sequence. */
 export declare function prepareSourceSession(module: unknown, incomingSession: unknown, preparation: ExactBytes): void;
-/** Apply compiler-owned CET1 to this exact live Wasm session. No source parsing,
+/** Apply a compiler-owned source edit to this exact live Wasm session. No source parsing,
  * identity inference, native shadow-state import, or automatic Admission. */
 export declare function editSourceSession(module: unknown, incomingSession: unknown, generation: number, request: ExactProcessRequest, witness: ExactBytes, policy: workbench.WorkbenchPolicy): workbench.SessionCompletion;
 /** Read the package-declared projection of the current accepted world without

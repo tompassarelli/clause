@@ -1003,4 +1003,29 @@ test.test("source preparation uses captured custody without advancing sequence",
     port.disposeSession(started.session);
     expect(() => wasm.prepareSourceSession(module, started.session, bytes)).toThrow("Wasm session is disposed");
 });
+test.test("compact scalar edits dispatch only the transaction with captured custody", () => {
+    const requests = [];
+    const calls = [];
+    const module = {
+        ...module_for_bang([opened_event_bang(), cse_header_bang(1, 6)], requests),
+        clause_session_v1_scalar_edit_bulk(slot, generation, sequence, bytes) {
+            calls.push([slot, generation, sequence, [...bytes]]);
+            bytes.fill(0);
+            return 3;
+        },
+        clause_session_v1_source_edit_bulk() { throw new Error("scalar edit dispatched as structural edit"); },
+    };
+    const port = wasm["create-wasm-cartridge-port"](module, policy());
+    const request = wasm["->ExactProcessRequest"](minimal_cwr1_bang());
+    const started = startSession(port, acceptPackage(port, request).acceptedPackage);
+    const transaction = wasm["decode-cet1-hex"]("43455831ff");
+    const first = wasm.editSourceSession(module, started.session, 2, request, transaction, policy());
+    expect(first._tag).toBe("SessionFailed");
+    if (first._tag === "SessionFailed")
+        expect(first.reason).toContain("checked source edit rejected: 3");
+    expect(wasm.editSourceSession(module, started.session, 2, request, transaction, policy())._tag).toBe("SessionFailed");
+    expect(calls).toEqual([[0, 1, 0n, [67, 69, 88, 49, 255]], [0, 1, 0n, [67, 69, 88, 49, 255]]]);
+    expect(transaction).toEqual([67, 69, 88, 49, 255]);
+    port.disposeSession(started.session);
+});
 //# sourceMappingURL=wasm-cartridge-port-test.js.map

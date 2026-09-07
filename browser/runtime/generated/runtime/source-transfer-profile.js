@@ -46,6 +46,7 @@ for (const name of ["encounter", "collections"]) {
         const started = completed(done => port.startSession(checked.acceptedPackage, 1, done));
         if (started._tag !== "SessionStarted")
             throw new Error(started.reason);
+        wasm.prepareSourceSession(module, started.session, await bytes(`${name}/initial.cps1`));
         const key = (code) => ({ kind: "keyboard", code, phase: "down", repeat: false });
         const values = [key("BeginEncounter"), key("Attack")];
         if (name === "collections")

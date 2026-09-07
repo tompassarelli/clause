@@ -22,6 +22,7 @@ interface GenerationPayload {
   readonly compilerMicros: number;
   readonly cwr1: string;
   readonly cet1: string | null;
+  readonly sourcePreparation: string | null;
   readonly scalarEffects: readonly ScalarEffectPayload[];
   readonly completeEntry: number;
 }
@@ -69,7 +70,7 @@ function spawnSourceServer() {
   function parse(line: string): GenerationPayload {
     const fields = line.split("\t");
     if (fields[0] === "error") throw new Error(decodeHexText(fields[1] ?? ""));
-    if (fields[0] !== "generation" || fields.length !== 7) {
+    if (fields[0] !== "generation" || fields.length !== 8) {
       throw new Error("resident scheduling source protocol failed");
     }
     const catalog = fields[5] ?? "";
@@ -78,6 +79,7 @@ function spawnSourceServer() {
       compilerMicros: Number.parseInt(fields[2]!, 10),
       cwr1: fields[3]!,
       cet1: fields[4]!.length === 0 ? null : fields[4]!,
+      sourcePreparation: fields[7]!.length === 0 ? null : fields[7]!,
       scalarEffects: Object.freeze(catalog.length === 0 ? [] : catalog.split(";").map(value => {
         const [index, entry, start, end, artifact, expression, designation] = value.split(",");
         if ([index, entry, start, end, artifact, expression, designation].some(field => field === undefined)) {
@@ -123,7 +125,18 @@ function spawnSourceServer() {
 
   return {
     child,
-    current: () => serialized(current),
+    current: () => serialized(async () => {
+      const generation = await current();
+      if (generation.sourcePreparation !== null) return generation;
+      child.stdin.write("prepare\n");
+      child.stdin.flush();
+      const fields = (await readLine()).split("\t");
+      if (fields.length !== 3 || fields[0] !== "preparation" || Number(fields[1]) !== generation.generation || fields[2]!.length === 0) {
+        throw new Error("resident scheduling source preparation failed");
+      }
+      latest = Object.freeze({ ...generation, sourcePreparation: fields[2]! });
+      return latest;
+    }),
     edit: (capturedGeneration: number, catalogIndex: number, expression: string) =>
       serialized(() => editUnserialized(capturedGeneration, catalogIndex, expression)),
   };

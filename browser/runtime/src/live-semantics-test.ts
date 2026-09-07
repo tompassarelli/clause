@@ -27,6 +27,7 @@ test("fresh live Wasm preserves actual encounter, explains executed contribution
   if (accepted._tag !== "PackageAccepted") throw new Error(accepted.reason);
   const started = completed<workbench.SessionCompletion>(done => port.startSession(accepted.acceptedPackage, 1, done));
   if (started._tag !== "SessionStarted") throw new Error(started.reason);
+  wasm.prepareSourceSession(module, started.session, await bytes("initial.cps1"));
   let session = started.session;
   let generation = 1;
   let revision = 0;

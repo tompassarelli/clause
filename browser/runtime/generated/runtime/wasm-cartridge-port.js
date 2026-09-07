@@ -51,6 +51,10 @@ function is_source_edit_module(module) {
     return is_session_wasm_module(module) && "clause_session_v1_source_edit_bulk" in module
         && typeof module.clause_session_v1_source_edit_bulk === "function";
 }
+function is_scalar_edit_module(module) {
+    return is_session_wasm_module(module) && "clause_session_v1_scalar_edit_bulk" in module
+        && typeof module.clause_session_v1_scalar_edit_bulk === "function";
+}
 function checked_referent(value) {
     const u32 = (value) => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 0xffffffff;
     if (typeof value !== "object" || value === null || !("kind" in value) ||
@@ -2040,21 +2044,31 @@ export function prepareSourceSession(module, incomingSession, preparation) {
     if (status !== 0)
         throw new Error(`checked source preparation rejected: ${process_status(status)}`);
 }
-/** Apply compiler-owned CET1 to this exact live Wasm session. No source parsing,
+/** Apply a compiler-owned source edit to this exact live Wasm session. No source parsing,
  * identity inference, native shadow-state import, or automatic Admission. */
 export function editSourceSession(module, incomingSession, generation, request, witness, policy) {
     const profile = enterSourceTransferPhase("adapter");
     try {
         const previous = require_live_session(incomingSession);
+        if (!is_session_wasm_module(module))
+            throw new Error("Wasm runtime lacks checked session API");
         if (!Number.isSafeInteger(generation) || generation <= previous.sourceGeneration) {
             throw new Error("source edit requires a fresh captured generation");
         }
-        if (!is_source_edit_module(module))
-            throw new Error("Wasm runtime lacks checked source edit API");
         if (!observeSourceTransferPhase("witness-validation", () => exact_byte_array_p(witness, cet1_max_bytes)))
             throw new Error("source edit witness exceeds bound");
         const cartridge = parse_persistent_cartridge_bang(request);
-        const status = observeSourceTransferPhase("bulk-call", () => module.clause_session_v1_source_edit_bulk(previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(cartridge.openBytes)), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(witness))));
+        const scalarEdit = witness[0] === 67 && witness[1] === 69 && witness[2] === 88 && witness[3] === 49;
+        const status = observeSourceTransferPhase("bulk-call", () => {
+            if (scalarEdit) {
+                if (!is_scalar_edit_module(module))
+                    throw new Error("Wasm runtime lacks checked scalar edit API");
+                return module.clause_session_v1_scalar_edit_bulk(previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(witness)));
+            }
+            if (!is_source_edit_module(module))
+                throw new Error("Wasm runtime lacks checked source edit API");
+            return module.clause_session_v1_source_edit_bulk(previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(cartridge.openBytes)), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(witness)));
+        });
         if (status !== 0)
             throw new Error(`checked source edit rejected: ${process_status(status)}`);
         const eventBytes = observeSourceTransferPhase("event-array-construction", () => [...observeSourceTransferPhase("event-bulk", () => module.clause_session_v1_event_bulk())]);
