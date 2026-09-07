@@ -1147,6 +1147,40 @@ fn canonical_cell_initially_present(cell: &CanonicalStateCellV1) -> bool {
     cell.initial_value.is_some() || matches!(cell.state.path, CanonicalStatePathV1::Many)
 }
 
+/// Native refinement of one checked pure callable; no world slots or effects.
+#[derive(Clone, Debug)]
+pub struct ExecutableCallableV1 {
+    arguments: Vec<ExecutableValueKindV1>,
+    result: ExecutableValueKindV1,
+    expression: ExecutableExpressionV1,
+}
+
+pub fn lower_canonical_callable_v1(callable: &CanonicalCallableV1) -> Result<ExecutableCallableV1, ExecutableErrorV1> {
+    check_canonical_callable_v1(callable).map_err(|_| ExecutableErrorV1::TypeMismatch)?;
+    Ok(ExecutableCallableV1 {
+        arguments: callable.arguments.iter().map(|a| lower_scalar_value_kind(a.value_kind)).collect(),
+        result: lower_scalar_value_kind(callable.result_kind),
+        expression: lower_canonical_expression(&callable.expression, &BTreeMap::new(), 0)?,
+    })
+}
+
+impl ExecutableCallableV1 {
+    /// Executes the checked expression with exact typed positional arguments.
+    /// Arity/type errors and ordinary bounded expression failures return errors.
+    pub fn invoke(&self, arguments: &[ExecutableValueV1]) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+        if arguments.len() != self.arguments.len()
+            || arguments.iter().zip(&self.arguments).any(|(a, k)| a.kind() != *k) {
+            return Err(ExecutableErrorV1::TypeMismatch);
+        }
+        let value = evaluate(&self.expression, &[], arguments, EvaluationContextV1 {
+            allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None,
+            sum_queries: None, bindings: None, relational_occurrence: None,
+        })?;
+        if value.kind() != self.result { return Err(ExecutableErrorV1::TypeMismatch); }
+        Ok(value)
+    }
+}
+
 fn lower_canonical_expression(
     expression: &CanonicalExecutableExpressionV1,
     slots: &BTreeMap<CanonicalStateRefV1, u16>,

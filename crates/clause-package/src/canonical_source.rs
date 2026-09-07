@@ -19,6 +19,8 @@ use crate::identity::*;
 use crate::process::{CheckedProcessPackage, ProcessPackageV2};
 use crate::term::{EqualityContract, Term, TermError, TermScope};
 
+mod callable;
+pub use callable::{CanonicalCallableV1, CanonicalCallableArgumentV1, check_canonical_callable_v1};
 mod scalar_laws;
 use scalar_laws::*;
 mod live_edit;
@@ -70,6 +72,8 @@ pub enum CanonicalSourceProductionV1 {
     Handler,
     HandlerInclude,
     Capability,
+    CallableDefinition,
+    CallableExport,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -563,6 +567,7 @@ pub struct CanonicalSourceCstV1 {
     subject_focuses: Vec<CanonicalSubjectFocusV1>,
     declared_frontend: CanonicalDeclaredFrontendV1,
     conformance: std::sync::OnceLock<conformance::Domains>,
+    callables: Vec<CanonicalCallableV1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -750,6 +755,7 @@ pub struct CanonicalSourcePackageSliceV1 {
     pub state_cells: Vec<CanonicalStateCellV1>,
     pub relational_projection: Vec<CanonicalRelationalProjectionV1>,
     pub executable_handlers: Vec<CanonicalExecutableHandlerV1>,
+    pub callables: Vec<CanonicalCallableV1>,
     pub keyboard_bindings: Vec<CanonicalKeyboardBindingV1>,
     pub scalar_input_bindings: Vec<CanonicalScalarInputBindingV1>,
     pub referent_input_bindings: Vec<CanonicalReferentInputBindingV1>,
@@ -775,6 +781,7 @@ pub enum CanonicalSourceErrorV1 {
     ScalarLawExpansionLimit {
         origin: CanonicalSourceOriginV1,
     },
+    InvalidCallable { origin: CanonicalSourceOriginV1, reason: &'static str },
     InvalidUtf8,
     TabIndentation {
         offset: u64,
@@ -1464,6 +1471,7 @@ pub fn read_canonical_source_with_declared_frontend_v1(
     let lines = source_lines(source)?;
     let scalar_laws = ScalarLawEnvironment::read(artifact, &lines, frontend)?;
     let mut items = Vec::new();
+    let mut callables = Vec::new();
     let mut vocabularies = Vec::new();
     let mut subject_focuses = Vec::new();
     let mut cursor = 0;
@@ -1495,6 +1503,11 @@ pub fn read_canonical_source_with_declared_frontend_v1(
             start: block[0].start as u64,
             end: last.end as u64,
         };
+        if let Some((definition, relation)) = callable::read(block, origin)? {
+            callables.push(definition);
+            items.push(CstItem { origin, kind: CstKind::Relation(relation) });
+            continue;
+        }
         if declaration_designation(block, artifact)?.is_some() {
             let declaration = scalar_laws
                 .declarations
@@ -1606,6 +1619,7 @@ pub fn read_canonical_source_with_declared_frontend_v1(
         subject_focuses,
         declared_frontend: frontend.clone(),
         conformance: std::sync::OnceLock::new(),
+        callables,
     };
     normalize_focused_state_assertions(&mut cst);
     Ok(cst)
@@ -2179,6 +2193,15 @@ fn allocation_requests(
             | CstKind::ScalarInputBinding(_)
             | CstKind::ReferentInputBinding(_)
             | CstKind::Unsupported(_) => {}
+        }
+    }
+    for definition in &cst.callables {
+        for production in callable::productions(definition) {
+            requested.push(AllocationRequest {
+                producer: semantic_producer(production, &definition.designation),
+                slot: head_slot(production),
+                domain: AllocationDomain::Formation,
+            });
         }
     }
     requested.extend(many_assertions);
@@ -6733,6 +6756,17 @@ pub fn elaborate_canonical_source_package_v1(
             &scalar_parts,
         )
     };
+    for definition in &cst.callables {
+        check_canonical_callable_v1(definition)?;
+        for production in callable::productions(definition) {
+            let producer = semantic_producer(production, &definition.designation);
+            let slot = head_slot(production);
+            formations.push(source_formation(scope, formation_id(plan, &producer, &slot)?,
+                cst.source_slice(definition.origin).expect("owned callable origin"),
+                definition.origin, if production == CanonicalSourceProductionV1::CallableExport { "callable-export" } else { "callable-definition" })?);
+            emissions.push(emission(plan, producer, slot, definition.origin));
+        }
+    }
     let check_package = || {
         formations.sort_by_key(|formation| formation.id);
         schemas.sort_by_key(|schema| schema.id);
@@ -6794,6 +6828,7 @@ pub fn elaborate_canonical_source_package_v1(
         scalar_handlers,
     } = checked_execution;
     Ok(CanonicalSourcePackageSliceV1 {
+        callables: cst.callables.clone(),
         checked_package,
         emissions,
         denotations,
@@ -8748,6 +8783,7 @@ fn parse_scalar_expression(source: &str, current: &str) -> Option<CanonicalScala
         source: source.as_bytes(),
         cursor: 0,
         current,
+        interpolate: false,
     };
     let expression = parser.comparison()?;
     parser.skip_spaces();
@@ -8818,6 +8854,7 @@ struct ScalarExpressionParser<'a> {
     source: &'a [u8],
     cursor: usize,
     current: &'a str,
+    interpolate: bool,
 }
 
 impl ScalarExpressionParser<'_> {
@@ -8933,6 +8970,11 @@ impl ScalarExpressionParser<'_> {
             self.skip_spaces();
             (self.source.get(self.cursor) == Some(&b')')).then(|| self.cursor += 1)?;
             return Some(CanonicalScalarExpressionV1::SquareRoot(Box::new(value)));
+        }
+        if self.source.get(self.cursor) == Some(&b'"') && self.interpolate {
+            let (value, consumed) = callable::text_template(std::str::from_utf8(&self.source[self.cursor..]).ok()?)?;
+            self.cursor += consumed;
+            return Some(value);
         }
         if self.source.get(self.cursor) == Some(&b'"') {
             let start = self.cursor;

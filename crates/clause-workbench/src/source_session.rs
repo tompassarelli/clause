@@ -103,11 +103,28 @@ pub struct ResidentSourceWorkbenchV1 {
     exact_source: Vec<u8>,
     default_occurrences: Vec<Vec<u8>>,
     handlers: BTreeMap<Vec<u8>, Vec<ExecutableCanonicalHandlerBindingV1>>,
+    callables: BTreeMap<Vec<u8>, clause_runtime::ExecutableCallableV1>,
     last_source_edit: Option<Vec<u8>>,
     declared_frontend: CanonicalDeclaredFrontendV1,
 }
 
 impl ResidentSourceWorkbenchV1 {
+    /// Returns checked meaning under this resident compiler's exact source context.
+    pub fn checked_source_package(&self) -> Result<clause_package::CanonicalSourcePackageSliceV1, ResidentSourceWorkbenchErrorV1> {
+        let cst = self.read_source(&self.exact_source).map_err(|e| debug_error("canonical source read", e))?;
+        let plan = plan_independent_canonical_source_allocations_v1(&cst, ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change)))
+            .map_err(|e| debug_error("source allocation", e))?;
+        elaborate_canonical_source_package_v1(&cst, CanonicalSourceContextV1 {
+            universe: self.template_scope.universe, semantics: self.template_scope.semantics,
+        }, &plan).map_err(|e| debug_error("canonical source elaboration", e))
+    }
+
+    /// Calls a public pure source definition without proposing or changing state.
+    pub fn invoke_callable(&self, designation: &[u8], arguments: &[ExecutableValueV1]) -> Result<ExecutableValueV1, ResidentSourceWorkbenchErrorV1> {
+        self.callables.get(designation).ok_or_else(|| ResidentSourceWorkbenchErrorV1("unknown exported callable".into()))?
+            .invoke(arguments).map_err(|e| boxed_error("pure callable execution", e))
+    }
+
     pub fn open(exact_source: &[u8]) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
         Self::open_with_declared_frontend(exact_source, DECLARED_FOCUSED_FRONTEND_SOURCE_V1)
     }
@@ -197,6 +214,7 @@ impl ResidentSourceWorkbenchV1 {
             exact_source: Vec::new(),
             default_occurrences: Vec::new(),
             handlers: BTreeMap::new(),
+            callables: BTreeMap::new(),
             last_source_edit: None,
             declared_frontend,
         };
@@ -759,6 +777,12 @@ impl ResidentSourceWorkbenchV1 {
             &allocation_plan,
         )
         .map_err(|error| debug_error("canonical source elaboration", error))?;
+        let mut callables = BTreeMap::new();
+        for definition in &compiled.callables {
+            let lowered = clause_runtime::lower_canonical_callable_v1(definition)
+                .map_err(|e| boxed_error("pure callable lowering", e))?;
+            if definition.exported { callables.insert(definition.designation.clone(), lowered); }
+        }
         let mut template = self.coherent_template.clone();
         template.authority.budget_units = SOURCE_AUTHORITY_BUDGET_UNITS;
         let (template, projection_roles, physical_plan) = projection_template_for_state_count(
@@ -1008,6 +1032,7 @@ impl ResidentSourceWorkbenchV1 {
         let exact_cwr1 = encode_wasm_process_request_v1(&cwr1)
             .expect("a valid fixed-width allocation preserves the prechecked CWR1 shape");
         self.handlers = handlers;
+        self.callables = callables;
         self.default_occurrences = default_occurrences;
         self.next_change = next_change;
         self.exact_source = exact_source.to_vec();
