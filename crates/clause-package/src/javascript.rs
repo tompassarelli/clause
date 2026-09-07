@@ -144,6 +144,16 @@ impl Lowerer<'_> {
     ) -> Result<(String, ValueType)> {
         use CanonicalExecutableExpressionV1 as E;
         let result = match expression {
+            E::Let { binding, value, body } => {
+                let (value, kind) = self.expression(value, None)?;
+                let previous = self.bindings.insert(*binding, kind);
+                let result = self.expression(body, expected);
+                if let Some(previous) = previous { self.bindings.insert(*binding, previous); }
+                else { self.bindings.remove(binding); }
+                let (body, kind) = result?;
+                (format!("((b{binding})=>({body}))({value})"), kind)
+            }
+
             E::Constant(value) => constant(value)?,
             E::Argument(index) => {
                 let entry = self.arguments.get_mut(usize::from(*index)).ok_or_else(|| {

@@ -851,6 +851,8 @@ pub fn decode_executable_occurrence_v1(
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExecutableExpressionV1 {
+    /// Evaluate the value once, then evaluate the body in its lexical binding scope.
+    Let { binding: u16, value: Box<Self>, body: Box<Self> },
     ContainsText(Box<Self>, Box<Self>),
     TextTransform(CanonicalTextTransformV1, Box<Self>),
     StartsWith(Box<Self>, Box<Self>),
@@ -1198,6 +1200,11 @@ fn lower_canonical_expression(
         ))
     };
     Ok(match expression {
+        CanonicalExecutableExpressionV1::Let { binding, value, body } => ExecutableExpressionV1::Let {
+            binding: *binding,
+            value: Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+            body: Box::new(lower_canonical_expression(body, slots, depth + 1)?),
+        },
         CanonicalExecutableExpressionV1::Conditional(condition, yes, no) => {
             let (yes, no) = pair(yes, no)?;
             ExecutableExpressionV1::Conditional(Box::new(
@@ -1785,6 +1792,7 @@ fn lower_scalar_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::Call { .. } => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             let (yes, no) = pair(yes, no)?;
             ExecutableExpressionV1::Conditional(Box::new(
@@ -5837,6 +5845,7 @@ fn validate_value_expression(
     }
     use ExecutableExpressionV1 as E;
     let children: Vec<&E> = match expression {
+        E::Let { value, body, .. } => vec![value, body],
         E::Sum { inputs, predicates, value } => {
             if predicates.is_empty() || predicates.len() > MAX_PROGRAM_ITEMS {
                 return Err(ExecutableErrorV1::MalformedProgram);
@@ -5855,12 +5864,7 @@ fn validate_value_expression(
             return Err(ExecutableErrorV1::MalformedProgram);
         }
         E::Constant(_) | E::Slot(_) | E::Argument(_) | E::FreshReferent { .. } => vec![],
-        E::Binding(binding) => {
-            if *binding >= 128 {
-                return Err(ExecutableErrorV1::ResourceLimit);
-            }
-            vec![]
-        }
+        E::Binding(_) => vec![],
         E::Not(value) | E::SquareRoot(value) | E::TextTransform(_, value) => vec![value],
         E::ReferentFacet { value, members, .. } => {
             if members.len() > MAX_PROGRAM_ITEMS
@@ -6103,6 +6107,48 @@ fn projected_scalar_value_term(
     };
     Term::atom_segments(scope, kind.to_vec(), payload.finish(), EqualityContract::ExactOctetsV1)
         .map_err(|_| ExecutableErrorV1::MalformedProgram)
+}
+
+#[cfg(test)]
+mod lexical_binding_tests {
+    use super::*;
+
+    #[test]
+    fn lexical_binding_evaluates_actuals_once_in_order_and_roundtrips() {
+        use ExecutableExpressionV1 as E;
+        let expression = E::Let { binding: 200, value: Box::new(E::Argument(0)), body: Box::new(
+            E::Let { binding: 201, value: Box::new(E::Argument(1)), body: Box::new(
+                E::Add(Box::new(E::Binding(200)), Box::new(E::Binding(200)))
+            ) }
+        ) };
+        validate_value_expression(&expression, 0).unwrap();
+        let mut encoded = Vec::new();
+        encode_expression(&mut encoded, &expression).unwrap();
+        let mut decoder = Decoder::new(&encoded);
+        let decoded = decoder.expression(0).unwrap();
+        assert!(decoder.is_complete());
+        assert_eq!(decoded, expression);
+        let reads = std::cell::RefCell::new(Vec::new());
+        let a = ExecutableValueV1::number(3.0).unwrap();
+        let b = ExecutableValueV1::number(9.0).unwrap();
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
+            reads: Some(&reads), sum_queries: None, bindings: None, relational_occurrence: None };
+        assert_eq!(evaluate(&decoded, &[], &[a.clone(), b.clone()], context).unwrap(), ExecutableValueV1::number(6.0).unwrap());
+        assert_eq!(*reads.borrow(), vec![ExecutableReadV1::Argument(0, a.clone()),
+            ExecutableReadV1::Argument(1, b), ExecutableReadV1::Binding(200, a.clone()), ExecutableReadV1::Binding(200, a)]);
+    }
+
+    #[test]
+    fn lexical_binding_shadowing_restores_the_enclosing_value() {
+        use ExecutableExpressionV1 as E;
+        let expression = E::Let { binding: 0, value: Box::new(E::Argument(0)), body: Box::new(E::Add(
+            Box::new(E::Let { binding: 0, value: Box::new(E::Argument(1)), body: Box::new(E::Binding(0)) }),
+            Box::new(E::Binding(0)),
+        )) };
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
+            reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+        assert_eq!(evaluate(&expression, &[], &[ExecutableValueV1::number(3.0).unwrap(), ExecutableValueV1::number(9.0).unwrap()], context).unwrap(), ExecutableValueV1::number(12.0).unwrap());
+    }
 }
 
 #[cfg(test)]
@@ -6382,6 +6428,12 @@ fn evaluate(
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
     match expression {
+        E::Let { binding, value, body } => {
+            let value = evaluate(value, slots, arguments, context)?;
+            let mut bindings = context.bindings.cloned().unwrap_or_default();
+            bindings.insert(*binding, value);
+            evaluate(body, slots, arguments, EvaluationContextV1 { bindings: Some(&bindings), ..context })
+        },
         E::Constant(value) => Ok(value.clone()),
         E::Sum {
             inputs,
@@ -6981,6 +7033,12 @@ fn encode_expression(
 ) -> Result<(), ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
     match expression {
+        E::Let { binding, value, body } => {
+            bytes.push(36);
+            bytes.extend_from_slice(&binding.to_le_bytes());
+            encode_expression(bytes, value)?;
+            encode_expression(bytes, body)?;
+        },
         E::Constant(value) => {
             bytes.push(0);
             encode_value(bytes, value)?;
@@ -7404,6 +7462,7 @@ impl<'a> Decoder<'a> {
                 E::TextTransform(operation, Box::new(self.expression(next)?))
             }
             33 => E::StartsWith(Box::new(self.expression(next)?), Box::new(self.expression(next)?)),
+            36 => E::Let { binding: self.u16()?, value: Box::new(self.expression(next)?), body: Box::new(self.expression(next)?) },
             35 => E::ContainsText(Box::new(self.expression(next)?), Box::new(self.expression(next)?)),
             31 => E::Conditional(
                 Box::new(self.expression(next)?),

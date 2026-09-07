@@ -1,0 +1,5 @@
+export unused-failure(?divisor: F64): Text
+  ignore(1.0 / ?divisor)
+
+ignore(?unused: F64): Text
+  "unused"

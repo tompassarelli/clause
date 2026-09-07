@@ -20,6 +20,10 @@ fn dependencies(
     use ExecutableExpressionV1 as E;
     if depth > MAX_EXPRESSION_DEPTH { return Err(ExecutableErrorV1::ResourceLimit); }
     match value {
+        E::Let { value, body, .. } => {
+            dependencies(value, depth + 1, query, reads)?;
+            dependencies(body, depth + 1, query, reads)
+        },
         E::Constant(_) | E::Binding(_) => Ok(()),
         E::Argument(_) if query => Ok(()),
         E::ReferentFacet { value, .. } | E::Not(value) | E::SquareRoot(value) =>

@@ -1,0 +1,5 @@
+export missing-command(?node: Text, ?edge: Text): Text
+  if(?edge = "add", missing-leaf(?node, ?edge, "<name>", "Add a module"), "")
+
+missing-leaf(?node: Text, ?edge: Text, ?leaf: Text, ?summary: Text): Text
+  "firn: '{?node} {?edge}' requires a leaf node\nUsage: firn {?node} {?edge} {?leaf}\n  {?summary}\n"

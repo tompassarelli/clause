@@ -86,6 +86,7 @@ impl Entry {
 fn dependencies(expression: &ExecutableExpressionV1, reads: &mut BTreeSet<u16>) -> bool {
     use ExecutableExpressionV1 as E;
     match expression {
+        E::Let { value, body, .. } => dependencies(value, reads) & dependencies(body, reads),
         E::Constant(_) | E::Binding(_) | E::Argument(_) => true,
         E::FreshReferent { .. } => false,
         E::Slot(slot) => { reads.insert(*slot); true }

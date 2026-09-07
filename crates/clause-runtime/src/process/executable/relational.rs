@@ -49,6 +49,13 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
             return Err(ExecutableErrorV1::ResourceLimit);
         }
         match value {
+            E::Let { binding, value, body } => {
+                if pattern { return Err(ExecutableErrorV1::MalformedProgram); }
+                check(value, bound, false, depth + 1, query_inputs)?;
+                let mut nested = bound.clone();
+                nested.insert(*binding);
+                check(body, &mut nested, false, depth + 1, query_inputs)?;
+            }
             E::Sum { inputs, predicates, value } => {
                 if query_inputs.is_some() || pattern {
                     return Err(ExecutableErrorV1::MalformedProgram);
@@ -63,7 +70,7 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
                 check(value, &mut local, false, depth + 1, Some(inputs.len()))?;
             }
             E::Binding(binding) => {
-                if usize::from(*binding) >= MAX_BINDINGS {
+                if pattern && usize::from(*binding) >= MAX_BINDINGS {
                     return Err(ExecutableErrorV1::ResourceLimit);
                 }
                 if pattern {

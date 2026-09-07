@@ -322,6 +322,8 @@ pub struct CanonicalStateCellV1 {
 /// declared argument ordinals local to the handler, never physical slots.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalExecutableExpressionV1 {
+    /// Evaluate the value once, then evaluate the body in its lexical binding scope.
+    Let { binding: u16, value: Box<Self>, body: Box<Self> },
     ContainsText(Box<Self>, Box<Self>),
     TextTransform(CanonicalTextTransformV1, Box<Self>),
     StartsWith(Box<Self>, Box<Self>),
@@ -511,6 +513,8 @@ pub enum CanonicalTextTransformV1 {
 /// Physical state coordinates are deliberately supplied only by refinement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalScalarExpressionV1 {
+    /// Parsed pure definition application; eliminated by checked callable expansion.
+    Call { designation: Vec<u8>, arguments: Vec<Self> },
     ContainsText(Box<Self>, Box<Self>),
     TextTransform(CanonicalTextTransformV1, Box<Self>),
     StartsWith(Box<Self>, Box<Self>),
@@ -1609,6 +1613,7 @@ pub fn read_canonical_source_with_declared_frontend_v1(
             _ => None,
         })
         .collect();
+    let callables = callable::check_definitions(&callables)?;
     let mut cst = CanonicalSourceCstV1 {
         artifact,
         exact_source: exact_source.into(),
@@ -4500,6 +4505,7 @@ fn canonical_scalar_executable_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::Call { .. } => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             let (yes, no) = pair(yes, no)?;
             CanonicalExecutableExpressionV1::Conditional(Box::new(
@@ -4885,6 +4891,7 @@ fn relational_scalar_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::Call { .. } => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             let domain = expected_domain.or_else(|| relational::expression_domain(yes, domains))
                 .or_else(|| relational::expression_domain(no, domains));
@@ -9013,6 +9020,22 @@ impl ScalarExpressionParser<'_> {
         }
         (self.cursor > start).then_some(())?;
         let atom = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
+        if self.interpolate {
+            self.skip_spaces();
+            if self.take_exact(b"(") {
+                let mut arguments = Vec::new();
+                self.skip_spaces();
+                if !self.take_exact(b")") {
+                    loop {
+                        arguments.push(self.comparison()?);
+                        self.skip_spaces();
+                        if self.take_exact(b")") { break; }
+                        self.take_exact(b",").then_some(())?;
+                    }
+                }
+                return Some(CanonicalScalarExpressionV1::Call { designation: atom.as_bytes().to_vec(), arguments });
+            }
+        }
         parse_scalar_atom(atom, self.current)
     }
 
@@ -9094,6 +9117,7 @@ fn collect_scalar_expression_parameters(
     parameters: &mut BTreeSet<Vec<u8>>,
 ) {
     match expression {
+        CanonicalScalarExpressionV1::Call { arguments, .. } => { for value in arguments { collect_scalar_expression_parameters(value, parameters); } },
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             for value in [condition, yes, no] {
                 collect_scalar_expression_parameters(value, parameters);
@@ -10563,6 +10587,7 @@ fn scalar_expression_matches_kind(
     let matches = |value, kind| scalar_expression_matches_kind(value, kind, current);
     let initial = expected;
     match expression {
+        CanonicalScalarExpressionV1::Call { .. } => false,
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             matches(condition, &CanonicalScalarValueV1::Boolean(false))
                 && matches(yes, expected) && matches(no, expected)
