@@ -180,6 +180,7 @@ struct SumPrefix {
 }
 
 struct SumQuery {
+    shape: Option<Arc<[u8]>>,
     predicates: Vec<ExecutableExpressionV1>,
     contribution: ExecutableExpressionV1,
     captured_reads: bool,
@@ -200,12 +201,30 @@ pub(super) fn sum(
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    sum_with_shape(inputs, predicates, value, configuration, arguments, context, None)
+}
+
+pub(super) fn sum_with_shape(
+    inputs: &[ExecutableExpressionV1],
+    predicates: &[ExecutableExpressionV1],
+    value: &ExecutableExpressionV1,
+    configuration: &[ExecutableSlotV1],
+    arguments: &[ExecutableValueV1],
+    context: EvaluationContextV1,
+    shape: Option<&Arc<[u8]>>,
+) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    let same_query = |previous: &SumQuery| {
+        previous.captured_reads == context.reads.is_some()
+            && match (shape, previous.shape.as_ref()) {
+                (Some(left), Some(right)) => left == right,
+                _ => previous.contribution == *value && previous.predicates == predicates,
+            }
+    };
     let inputs = inputs.iter().map(|input| evaluate(input, configuration, arguments, context))
         .collect::<Result<Vec<_>, _>>()?;
     if let Some(queries) = context.sum_queries {
         if let Some(previous) = queries.borrow().entries.iter().find(|previous|
-            previous.captured_reads == context.reads.is_some()
-                && previous.contribution == *value && previous.predicates == predicates)
+            same_query(previous))
             .and_then(|query| query.results.iter().find(|previous| previous.inputs == inputs)) {
             if let Some(reads) = context.reads {
                 reads.borrow_mut().extend(previous.reads.iter().cloned());
@@ -246,12 +265,11 @@ pub(super) fn sum(
         let mut queries = queries.borrow_mut();
         let result = SumResult { inputs, result: result.clone(), reads: query_reads };
         if let Some(query) = queries.entries.iter_mut().find(|previous|
-            previous.captured_reads == context.reads.is_some()
-                && previous.contribution == *value && previous.predicates == predicates) {
+            same_query(previous)) {
             query.results.push(result);
         } else {
             queries.entries.push(SumQuery {
-                predicates: predicates.to_vec(), contribution: value.clone(),
+                shape: shape.cloned(), predicates: predicates.to_vec(), contribution: value.clone(),
                 captured_reads: context.reads.is_some(), results: vec![result],
             });
         }
