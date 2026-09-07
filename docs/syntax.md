@@ -286,6 +286,26 @@ complete collection language.
 
 ## Laws and finite queries
 
+A compact pure callable names one deterministic, single-result direction and
+its definition. Arguments and the result carry their types once:
+
+```clause
+export greeting(?name: Text): Text
+  "Hello, {trim(?name)}."
+```
+
+The body returns its value without introducing world state. `export` selects
+public visibility; omitting it keeps the callable private. The compiler retains
+the relation, mode, definition, and export as separate semantic emissions.
+The current subset accepts `Text`, `F64`, and `Bool` arguments and results, with
+checked pure scalar expressions. Effects, unresolved bindings, and mismatched
+argument or result types reject.
+
+Text interpolation inside a callable body evaluates the enclosed Clause
+expression and requires Text; it performs no implicit numeric conversion.
+Ordinary source text outside these callable bodies retains literal braces.
+The compact callable subset does not yet support calling other callables.
+
 A law binds variables in premises before using them in conclusions:
 
 ```clause
