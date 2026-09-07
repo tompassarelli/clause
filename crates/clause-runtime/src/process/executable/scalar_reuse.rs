@@ -186,67 +186,64 @@ struct ScalarEvaluation<'a> {
     context: EvaluationContextV1<'a>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum ScalarKind { Number, Boolean, Other }
-
 #[derive(Clone, Copy, PartialEq)]
-struct ScalarValue { kind: ScalarKind, payload: u64 }
+enum ScalarValue {
+    Number(u64),
+    Boolean(bool),
+    Other(usize),
+}
 
 impl ScalarValue {
-    fn number_bits(bits: u64) -> Self { Self { kind: ScalarKind::Number, payload: bits } }
-    fn boolean(value: bool) -> Self { Self { kind: ScalarKind::Boolean, payload: u64::from(value) } }
-    fn other(index: usize) -> Self { Self { kind: ScalarKind::Other, payload: index as u64 } }
-
     fn number(value: f64) -> Result<Self, ExecutableErrorV1> {
         if !value.is_finite() { return Err(ExecutableErrorV1::NumericDomain); }
-        Ok(Self::number_bits(canonical_number_bits(value)))
+        Ok(Self::Number(canonical_number_bits(value)))
     }
 
     fn as_number(self) -> Result<f64, ExecutableErrorV1> {
-        if self.kind == ScalarKind::Number { Ok(f64::from_bits(self.payload)) }
-        else { Err(ExecutableErrorV1::TypeMismatch) }
-    }
-
-    // The instruction builder guards dynamic operands before arithmetic;
-    // numeric instructions themselves always produce checked finite numbers.
-    fn number_payload(self) -> f64 {
-        debug_assert_eq!(self.kind, ScalarKind::Number);
-        f64::from_bits(self.payload)
+        match self {
+            Self::Number(bits) => Ok(f64::from_bits(bits)),
+            _ => Err(ExecutableErrorV1::TypeMismatch),
+        }
     }
 
     fn as_boolean(self) -> Result<bool, ExecutableErrorV1> {
-        if self.kind == ScalarKind::Boolean { Ok(self.payload != 0) }
-        else { Err(ExecutableErrorV1::TypeMismatch) }
+        match self {
+            Self::Boolean(value) => Ok(value),
+            _ => Err(ExecutableErrorV1::TypeMismatch),
+        }
     }
 }
 
 impl ScalarMemo<'_> {
     fn retain(&self, value: &ExecutableValueV1) -> ScalarValue {
         match value {
-            ExecutableValueV1::Number(bits) => ScalarValue::number_bits(*bits),
-            ExecutableValueV1::Boolean(value) => ScalarValue::boolean(*value),
+            ExecutableValueV1::Number(bits) => ScalarValue::Number(*bits),
+            ExecutableValueV1::Boolean(value) => ScalarValue::Boolean(*value),
             value => {
                 let mut other = self.other_values.borrow_mut();
                 let index = other.len();
                 other.push(value.clone());
-                ScalarValue::other(index)
+                ScalarValue::Other(index)
             },
         }
     }
 
     fn expand(&self, value: ScalarValue) -> ExecutableValueV1 {
-        match value.kind {
-            ScalarKind::Number => ExecutableValueV1::Number(value.payload),
-            ScalarKind::Boolean => ExecutableValueV1::Boolean(value.payload != 0),
-            ScalarKind::Other => self.other_values.borrow()[value.payload as usize].clone(),
+        match value {
+            ScalarValue::Number(bits) => ExecutableValueV1::Number(bits),
+            ScalarValue::Boolean(value) => ExecutableValueV1::Boolean(value),
+            ScalarValue::Other(index) => self.other_values.borrow()[index].clone(),
         }
     }
 
     fn equal(&self, left: ScalarValue, right: ScalarValue) -> bool {
-        if left.kind == ScalarKind::Other && right.kind == ScalarKind::Other {
-            let other = self.other_values.borrow();
-            other[left.payload as usize] == other[right.payload as usize]
-        } else { left == right }
+        match (left, right) {
+            (ScalarValue::Other(a), ScalarValue::Other(b)) => {
+                let other = self.other_values.borrow();
+                other[a] == other[b]
+            },
+            _ => left == right,
+        }
     }
 
     pub fn evaluate(&self, expression: &ExecutableExpressionV1,
@@ -295,7 +292,7 @@ impl ScalarMemo<'_> {
         values: &[Option<ScalarValue>])
         -> Result<ScalarValue, ExecutableErrorV1> {
         macro_rules! eval { ($index:expr) => { values[$index].ok_or(ExecutableErrorV1::MalformedProgram) }; }
-        macro_rules! numeric { ($index:expr) => { eval!($index).map(ScalarValue::number_payload) }; }
+        macro_rules! numeric { ($index:expr) => { eval!($index)?.as_number() }; }
         macro_rules! boolean_value { ($index:expr) => { eval!($index)?.as_boolean() }; }
         let value = match self.plan.nodes[index].0 {
             Node::Value(ref expression) => self.retain(&evaluate_uncached(expression, evaluation.configuration, evaluation.arguments, evaluation.context)?),
@@ -307,8 +304,8 @@ impl ScalarMemo<'_> {
                 self.retain(&relational::sum_with_shape(inputs, predicates, value,
                     evaluation.configuration, evaluation.arguments, evaluation.context, Some(shape))?)
             },
-            Node::Number(bits) => ScalarValue::number_bits(bits),
-            Node::Boolean(value) => ScalarValue::boolean(value),
+            Node::Number(bits) => ScalarValue::Number(bits),
+            Node::Boolean(value) => ScalarValue::Boolean(value),
             Node::Slot(slot) => self.retain(evaluation.configuration.get(usize::from(slot))
                 .ok_or(ExecutableErrorV1::UnknownSlot(slot))?.value().ok_or(ExecutableErrorV1::MissingState)?),
             Node::Argument(argument) => self.retain(evaluation.arguments.get(usize::from(argument))
@@ -323,11 +320,11 @@ impl ScalarMemo<'_> {
                 if denominator == 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
                 ScalarValue::number(numeric!(a)? / denominator)?
             },
-            Node::GreaterThan(a, b) => ScalarValue::boolean(numeric!(a)? > numeric!(b)?),
-            Node::LessThanOrEqual(a, b) => ScalarValue::boolean(numeric!(a)? <= numeric!(b)?),
-            Node::Equal(a, b) => ScalarValue::boolean(self.equal(eval!(a)?, eval!(b)?)),
-            Node::And(a, b) => ScalarValue::boolean(boolean_value!(a)? && boolean_value!(b)?),
-            Node::Not(a) => ScalarValue::boolean(!boolean_value!(a)?),
+            Node::GreaterThan(a, b) => ScalarValue::Boolean(numeric!(a)? > numeric!(b)?),
+            Node::LessThanOrEqual(a, b) => ScalarValue::Boolean(numeric!(a)? <= numeric!(b)?),
+            Node::Equal(a, b) => ScalarValue::Boolean(self.equal(eval!(a)?, eval!(b)?)),
+            Node::And(a, b) => ScalarValue::Boolean(boolean_value!(a)? && boolean_value!(b)?),
+            Node::Not(a) => ScalarValue::Boolean(!boolean_value!(a)?),
             Node::SquareRoot(a) => {
                 let value = numeric!(a)?;
                 if value < 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
