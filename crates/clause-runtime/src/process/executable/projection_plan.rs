@@ -85,7 +85,6 @@ impl ProjectionPlan {
             }
             Node::Row(scope, slot, subject) => {
                 let table = Self::row(*slot, configuration)?;
-                if !table.present(subject)? { return Err(ExecutableErrorV1::MissingState); }
                 self.cached_value(*scope, table.read(subject)?)
             }
             Node::Triple(children, field) => {
