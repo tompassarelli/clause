@@ -115,6 +115,37 @@ Admission. Current browser adapters are passive for the tested projections,
 but the complete process carrier, semantic refinement proof, controlled
 frame-allocation proof, and uniform frontend remain open.
 
+### Executing target and game-tooling slices
+
+The JavaScript backend executes checked pure calls, typed foreign CLI bindings,
+ordered mapping, count, Text join, and scalar interpolation in Bun. An actual
+TypeScript consumer accepts the emitted declarations and rejects five invalid
+uses. The host-list source matches its handwritten TypeScript counterpart on
+empty and repeated inputs. This is a bounded CLI/rendering slice, not arbitrary
+TypeScript interoperation.
+
+Checked delayed Nix construction preserves exact foreign type identities and
+keeps target construction distinct from strict runtime calls. The source-authored
+btop module passes actual `lib.evalModules` evaluation with the package present
+when enabled and absent when disabled. Its current standalone source is 61 lines
+against eight lines of handwritten Nix; source preference and full configuration
+migration remain unfinished. The assembled target checks passed 12 tests.
+
+[Game replay](game-replay.md) records an actual encounter's explicit inputs and
+compares native/Wasm session events without normalizing values or identities.
+The demonstrated trace agrees on 14 inputs, 29 events, and seven admissions.
+An altered expected vitality observation reports the first divergent input,
+entity, field, and source-state coordinates. The focused check passed 15
+assertions against the integrated compiler. Arbitrary mid-game state, referent
+picking, and external-effect receipt inputs remain unsupported.
+
+Greywrought's developer explanation journey uses its existing checked source,
+recorded conditions, finite intervention query, and separate admission. It
+identifies the absent attack signal, reports exhaustion separately, then
+executes the actual input change and matches the predicted full configuration
+with vitality changing from four to zero. It reports handler-level source
+origins; a general interactive explanation tool remains unfinished.
+
 ### Scheduling delivery
 
 The demonstrated scheduling vertical uses five Tasks—design, prototype, validation,
@@ -206,16 +237,20 @@ semantic edits. Clause-defined algebraic data and exhaustive matching must
 accept complete cases and reject missing and unreachable cases through the
 same mechanism.
 
-The next domain-vocabulary proof is pending: have an author other than the
-frontend implementer express an existing Greywrought movement action through
-a new checked sentence shape with bindings and an effect, using only
-Clause-authored declarations and transformations. Execute the action and query
-its consequences through the same semantic core; reject an invalid binding,
-and change the domain rule in one authored place without maintaining a second
-implementation. This is an early gate before broad language expansion, not a
-reason to stop existing consumer repairs. Existing custom Reading examples do
-not establish this complete extensibility claim. A separate agent can exercise
-the extension contract; human domain-expert usability remains unproved.
+A bounded independently authored sentence now executes in Jump Arena. Its
+game-owned Reading preserves horizontal velocity, requires groundedness, and
+applies the jump through ordinary checked conditions and effects. The native
+journey produces velocity `[2, 8, -3]`, rejects a numeric arena binding, and
+produces `[2, 12, -3]` after changing one upward-velocity expression. The generic
+bootstrap admits one nonrecursive sentence as a handler body; it has no
+game-specific runtime callback. It does not complete the Clause-authored
+frontend, Greywrought movement journey, or physical resource guarantees.
+
+The independent author prefers the original single-use handler: 11 lines
+against 14 for the declaration and invocation. The call is easier to scan,
+but net authoring improvement and human domain-expert usability remain
+unproved. Broader expansion still needs a compelling actual authoring example;
+additional uses should not be invented merely to improve the comparison.
 
 The Nix and JavaScript authoring slices must also earn their notation in small
 executing consumer examples before expansion. Compare each with its host
