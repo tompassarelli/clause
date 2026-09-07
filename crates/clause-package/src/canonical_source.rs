@@ -22,6 +22,8 @@ use crate::term::{EqualityContract, Term, TermError, TermScope};
 mod scalar_laws;
 use scalar_laws::*;
 mod live_edit;
+mod source_analysis;
+pub use source_analysis::CheckedCanonicalSourceAnalysisV1;
 mod relational;
 mod contracts;
 mod conformance;
@@ -5018,6 +5020,7 @@ fn checked_executable_handlers(
     input: Option<(&InputHandlerCst, &VectorAssertionCst)>,
     scalar: &[ScalarHandlerParts<'_>],
     keyboard: &[CanonicalKeyboardBindingV1],
+    selected: Option<&BTreeSet<FormationLocalId>>,
 ) -> Result<Vec<CanonicalExecutableHandlerV1>, CanonicalSourceErrorV1> {
     let mut handlers = Vec::new();
     let handler_id = |producer: &CanonicalSemanticProducerV1| {
@@ -5027,7 +5030,9 @@ fn checked_executable_handlers(
             &head_slot(CanonicalSourceProductionV1::Handler),
         )
     };
-    if let Some((source, assertion)) = input {
+    let input = input.map(|(source, assertion)| Ok::<_, CanonicalSourceErrorV1>((source, assertion, handler_id(&source.producer)?)))
+        .transpose()?;
+    if let Some((source, assertion, _)) = input.filter(|(_, _, id)| selected.is_none_or(|ids| ids.contains(id))) {
         let x = state_ref_for_origin(cst, plan, assertion.origin, Some(b"x"))?;
         let z = state_ref_for_origin(cst, plan, assertion.origin, Some(b"z"))?;
         handlers.push(CanonicalExecutableHandlerV1 {
@@ -5056,6 +5061,7 @@ fn checked_executable_handlers(
     }
     let derives = resolved_boolean_derives(cst, plan)?;
     for derive in &derives {
+        if selected.is_some_and(|ids| !ids.contains(&derive.state.assertion)) { continue; }
         let mut rules = Vec::with_capacity(derive.cases.len() + 1);
         let mut cases = Vec::new();
         for case in &derive.cases {
@@ -5109,6 +5115,7 @@ fn checked_executable_handlers(
         }
     }
     for parts in scalar {
+        if let Some(ids) = selected { if !ids.contains(&handler_id(&parts.handler.producer)?) { continue; } }
         let mut rules = Vec::with_capacity(parts.cases.len());
         for case in &parts.cases {
             let mut assignments = Vec::with_capacity(case.components.len());
@@ -5211,6 +5218,7 @@ fn checked_executable_handlers(
         CstKind::GeneralHandler(handler) => Some(handler),
         _ => None,
     }) {
+        if let Some(ids) = selected { if !ids.contains(&handler_id(&source.producer)?) { continue; } }
         if relational_handler_origins(cst).contains(&source.origin) {
             continue;
         }
@@ -5665,7 +5673,11 @@ fn checked_executable_handlers(
             .iter()
             .filter_map(|item| match &item.kind {
                 CstKind::GeneralHandler(handler) if relational.contains(&handler.origin) => {
-                    Some(relational_checked_handler(cst, plan, handler))
+                    match handler_id(&handler.producer) {
+                        Err(error) => Some(Err(error)),
+                        Ok(id) if selected.is_none_or(|ids| ids.contains(&id)) => Some(relational_checked_handler(cst, plan, handler)),
+                        Ok(_) => None,
+                    }
                 }
                 _ => None,
             })
@@ -5958,6 +5970,7 @@ fn checked_canonical_source_execution_v1(
     plan: &CanonicalSourceAllocationPlanV1,
     input_parts: Option<(&InputHandlerCst, &VectorAssertionCst)>,
     scalar_parts: &[ScalarHandlerParts<'_>],
+    reused: Option<(&[CanonicalExecutableHandlerV1], &BTreeSet<FormationLocalId>)>,
 ) -> Result<CheckedCanonicalSourceExecutionV1, CanonicalSourceErrorV1> {
     let input_handler = input_parts
         .as_ref()
@@ -5993,13 +6006,18 @@ fn checked_canonical_source_execution_v1(
     let keyboard_bindings = source_keyboard_bindings(cst)?;
     let scalar_input_bindings = source_scalar_input_bindings(cst)?;
     let state_cells = checked_source_state_cells(cst, plan)?;
-    let executable_handlers = checked_executable_handlers(
+    let mut executable_handlers = checked_executable_handlers(
         cst,
         plan,
         input_parts,
         scalar_parts,
         &keyboard_bindings,
+        reused.map(|(_, selected)| selected),
     )?;
+    if let Some((handlers, _)) = reused {
+        executable_handlers.extend_from_slice(handlers);
+        executable_handlers.sort_by_key(|handler| handler.id);
+    }
     validate_keyboard_handler_targets(cst, &keyboard_bindings, &executable_handlers)?;
     validate_scalar_input_handler_targets(cst, &scalar_input_bindings, &executable_handlers)?;
     let referent_input_bindings = checked_referent_input_bindings(cst, plan, &executable_handlers)?;
@@ -6020,6 +6038,15 @@ pub fn elaborate_canonical_source_package_v1(
     cst: &CanonicalSourceCstV1,
     context: CanonicalSourceContextV1,
     plan: &CanonicalSourceAllocationPlanV1,
+) -> Result<CanonicalSourcePackageSliceV1, CanonicalSourceErrorV1> {
+    elaborate_canonical_source_package_inner(cst, context, plan, None)
+}
+
+fn elaborate_canonical_source_package_inner(
+    cst: &CanonicalSourceCstV1,
+    context: CanonicalSourceContextV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    reused: Option<(&[CanonicalExecutableHandlerV1], &BTreeSet<FormationLocalId>)>,
 ) -> Result<CanonicalSourcePackageSliceV1, CanonicalSourceErrorV1> {
     if plan.artifact != cst.artifact {
         return Err(CanonicalSourceErrorV1::AllocationArtifactMismatch);
@@ -6736,6 +6763,7 @@ pub fn elaborate_canonical_source_package_v1(
             plan,
             input_parts,
             &scalar_parts,
+            reused,
         )
     };
     let check_package = || {

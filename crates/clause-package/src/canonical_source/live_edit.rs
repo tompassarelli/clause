@@ -23,6 +23,9 @@ pub struct CanonicalScalarEffectV1 {
 /// connect their continuing semantic occurrences across snapshot addresses.
 #[derive(Clone, Debug)]
 pub struct CanonicalSourceEditV1 {
+    pub(super) old_artifact: CanonicalSourceArtifactIdV1,
+    pub(super) old_root: ProgramChangeOccurrenceId,
+    pub(super) scalar_change: Option<(FormationLocalId, u64, u64, u64)>,
     source: CanonicalSourceCstV1,
     plan: CanonicalSourceAllocationPlanV1,
     retained: BTreeMap<CanonicalAllocatedIdentityV1, CanonicalAllocatedIdentityV1>,
@@ -350,6 +353,8 @@ pub fn replace_canonical_scalar_effect_v1(
         retained.insert(old, new);
     }
     Ok(CanonicalSourceEditV1 {
+        old_artifact: cst.artifact(), old_root: old_plan.root(),
+        scalar_change: Some((selected.handler, selected.expression_origin.start, selected.expression_origin.end, replacement.len() as u64)),
         source,
         plan,
         retained,
@@ -574,6 +579,7 @@ pub fn replace_canonical_source_items_v1(
         return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
     }
     Ok(CanonicalSourceEditV1 {
+        old_artifact: cst.artifact(), old_root: old_plan.root(), scalar_change: None,
         source,
         plan,
         retained,
