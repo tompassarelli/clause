@@ -78,6 +78,12 @@ pub(super) struct ScalarMemo<'a> {
     row_values: std::cell::RefCell<Vec<usize>>,
 }
 
+struct ScalarEvaluation<'a> {
+    configuration: &'a [ExecutableSlotV1],
+    arguments: &'a [ExecutableValueV1],
+    context: EvaluationContextV1<'a>,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum ScalarValue {
     Number(u64),
@@ -145,26 +151,26 @@ impl ScalarMemo<'_> {
         let mut values = self.values.borrow_mut();
         let mut row_values = self.row_values.borrow_mut();
         for index in row_values.drain(..) { values[index] = None; }
-        Ok(self.expand(self.node(self.plan.root, configuration, arguments,
-            EvaluationContextV1 { scalar_memo: None, ..context }, &mut values, &mut row_values)?))
+        let evaluation = ScalarEvaluation { configuration, arguments, context: EvaluationContextV1 { scalar_memo: None, ..context } };
+        Ok(self.expand(self.node(self.plan.root, &evaluation, &mut values, &mut row_values)?))
     }
 
-    fn node(&self, index: usize, configuration: &[ExecutableSlotV1], arguments: &[ExecutableValueV1], context: EvaluationContextV1,
+    fn node(&self, index: usize, evaluation: &ScalarEvaluation,
         values: &mut [Option<ScalarValue>], row_values: &mut Vec<usize>)
         -> Result<ScalarValue, ExecutableErrorV1> {
         if let Some(value) = values[index] { return Ok(value); }
-        macro_rules! eval { ($index:expr) => { self.node($index, configuration, arguments, context, values, row_values) }; }
+        macro_rules! eval { ($index:expr) => { self.node($index, evaluation, values, row_values) }; }
         macro_rules! numeric { ($index:expr) => { eval!($index)?.as_number() }; }
         macro_rules! boolean_value { ($index:expr) => { eval!($index)?.as_boolean() }; }
         let value = match self.plan.nodes[index].0 {
-            Node::Value(ref expression) => self.retain(&evaluate_uncached(expression, configuration, arguments, context)?),
+            Node::Value(ref expression) => self.retain(&evaluate_uncached(expression, evaluation.configuration, evaluation.arguments, evaluation.context)?),
             Node::Number(bits) => ScalarValue::Number(bits),
             Node::Boolean(value) => ScalarValue::Boolean(value),
-            Node::Slot(slot) => self.retain(configuration.get(usize::from(slot))
+            Node::Slot(slot) => self.retain(evaluation.configuration.get(usize::from(slot))
                 .ok_or(ExecutableErrorV1::UnknownSlot(slot))?.value().ok_or(ExecutableErrorV1::MissingState)?),
-            Node::Argument(argument) => self.retain(arguments.get(usize::from(argument))
+            Node::Argument(argument) => self.retain(evaluation.arguments.get(usize::from(argument))
                 .ok_or(ExecutableErrorV1::UnknownArgument(argument))?),
-            Node::Binding(binding) => self.retain(context.bindings.and_then(|bindings| bindings.get(&binding))
+            Node::Binding(binding) => self.retain(evaluation.context.bindings.and_then(|bindings| bindings.get(&binding))
                 .ok_or(ExecutableErrorV1::MalformedProgram)?),
             Node::Add(a, b) => ScalarValue::number(numeric!(a)? + numeric!(b)?)?,
             Node::Subtract(a, b) => ScalarValue::number(numeric!(a)? - numeric!(b)?)?,
