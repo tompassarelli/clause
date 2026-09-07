@@ -587,16 +587,12 @@ impl ExecutableProcessRuntimeV1 {
                 boolean(recorded.step.rule_applied)?,
             ),
         ];
-        if let Some(projection) = &self.program.projection {
-            let bindings = projection.bindings.iter().copied()
-                .map(|binding| (binding.role, binding)).collect::<BTreeMap<_, _>>();
+        if let Some(plan) = &self.projection_plan {
             for (name, configuration) in [
                 (b"before-projection".as_slice(), &recorded.before),
                 (b"after-projection".as_slice(), &recorded.after),
             ] {
-                fields.push((name.to_vec(), realize_projection_term(
-                    &projection.template, &bindings, configuration,
-                )?));
+                fields.push((name.to_vec(), plan.realize(configuration)?));
             }
         }
         if let Some(metadata) = metadata {

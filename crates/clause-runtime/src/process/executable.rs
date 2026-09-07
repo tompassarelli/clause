@@ -41,6 +41,7 @@ mod scalar_reuse;
 mod closure;
 pub use relational::ExecutableRelationEffectV1;
 mod relational_projection;
+mod projection_plan;
 mod source_profile;
 pub use source_profile::*;
 
@@ -2880,6 +2881,7 @@ pub struct ExecutableProcessRuntimeV1 {
     source_metadata: Option<Term>,
     source_continuity: Option<ExecutableSourceContinuityV1>,
     evaluation_cache: Mutex<evaluation_cache::EvaluationCache>,
+    projection_plan: Option<projection_plan::ProjectionPlan>,
 }
 
 impl ExecutableProcessRuntimeV1 {
@@ -2986,6 +2988,7 @@ impl ExecutableProcessRuntimeV1 {
         let input = physical_plan.plan.input;
         let program = std::sync::Arc::new(physical_plan.plan.program);
         let configuration = materialize_initial_configuration(&program)?;
+        let projection_plan = program.projection.as_ref().map(projection_plan::ProjectionPlan::new).transpose()?;
         Ok(Self {
             carrier,
             package,
@@ -3015,6 +3018,7 @@ impl ExecutableProcessRuntimeV1 {
             source_metadata: physical_plan.plan.source_metadata,
             source_continuity: None,
             evaluation_cache: Mutex::default(),
+            projection_plan,
         })
     }
 }
@@ -3109,16 +3113,7 @@ fn validate_projection_roles(
 
 impl ExecutableProcessRuntimeV1 {
     pub(crate) fn current_projection_term(&self) -> Result<Option<Term>, ExecutableErrorV1> {
-        let Some(projection) = &self.program.projection else {
-            return Ok(None);
-        };
-        let bindings = projection
-            .bindings
-            .iter()
-            .copied()
-            .map(|binding| (binding.role, binding))
-            .collect::<BTreeMap<_, _>>();
-        realize_projection_term(&projection.template, &bindings, &self.configuration).map(Some)
+        self.projection_plan.as_ref().map(|plan| plan.realize(&self.configuration)).transpose()
     }
 
     /// Start the unique stateful or effectful Mode constituted for this
@@ -5145,16 +5140,10 @@ impl ExecutableProcessRuntimeV1 {
         ExecutableCarrierErrorV1,
     > {
         let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RowProjection);
-        let Some(projection) = &self.program.projection else {
+        let Some(plan) = &self.projection_plan else {
             return Ok(None);
         };
-        let bindings = projection
-            .bindings
-            .iter()
-            .copied()
-            .map(|binding| (binding.role, binding))
-            .collect::<BTreeMap<_, _>>();
-        let term = realize_projection_term(&projection.template, &bindings, &state.configuration)
+        let term = plan.realize(&state.configuration)
             .map_err(ExecutableCarrierErrorV1::Executable)?;
         let (ordinal, next_ordinal) =
             stage_runtime_ordinal(self.identity_ordinals.next_state_observation)
@@ -6240,99 +6229,6 @@ fn projected_set_tree(
         projected_set_tree(scope, right)?,
     ])
     .map_err(|_| ExecutableErrorV1::MalformedProgram)
-}
-
-fn realize_projection_term(
-    template: &Term,
-    bindings: &BTreeMap<LocalRoleRefV2, ExecutableProjectionBindingV1>,
-    configuration: &[ExecutableSlotV1],
-) -> Result<Term, ExecutableErrorV1> {
-    if relational_projection::row_selection(template).is_some() {
-        return projected_value_term(
-            template.scope(),
-            relational_projection::selected_value(template, bindings, configuration)?
-                .ok_or(ExecutableErrorV1::MissingState)?,
-        );
-    }
-    if let Some(atom) = template.as_atom() {
-        let Some((role, kind)) = projection_role(atom)? else {
-            return Ok(template.clone());
-        };
-        let binding = bindings
-            .get(&role)
-            .ok_or(ExecutableErrorV1::MalformedProgram)?;
-        let slot = configuration
-            .get(usize::from(binding.slot))
-            .ok_or(ExecutableErrorV1::UnknownSlot(binding.slot))?;
-        let value = slot.value().ok_or(ExecutableErrorV1::MissingState)?;
-        if binding.value_kind != kind || value.kind() != kind {
-            return Err(ExecutableErrorV1::TypeMismatch);
-        }
-        return projected_value_term(template.scope(), value.clone());
-    }
-    let triple = template
-        .as_triple()
-        .ok_or(ExecutableErrorV1::MalformedProgram)?;
-    let [left, operator, right] = triple.slots();
-    if left
-        .as_atom()
-        .is_some_and(|atom| atom.kind() == b"clause/js-field-v1")
-        && projection_subtree_has_role(operator)?
-        && !projection_subtree_has_present_role(operator, bindings, configuration)?
-    {
-        return realize_projection_term(right, bindings, configuration);
-    }
-    Term::triple([
-        realize_projection_term(left, bindings, configuration)?,
-        realize_projection_term(operator, bindings, configuration)?,
-        realize_projection_term(right, bindings, configuration)?,
-    ])
-    .map_err(|_| ExecutableErrorV1::MalformedProgram)
-}
-
-fn projection_subtree_has_role(term: &Term) -> Result<bool, ExecutableErrorV1> {
-    if let Some(atom) = term.as_atom() {
-        return Ok(projection_role(atom)?.is_some());
-    }
-    let triple = term
-        .as_triple()
-        .ok_or(ExecutableErrorV1::MalformedProgram)?;
-    for child in triple.slots() {
-        if projection_subtree_has_role(child)? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-fn projection_subtree_has_present_role(
-    term: &Term,
-    bindings: &BTreeMap<LocalRoleRefV2, ExecutableProjectionBindingV1>,
-    configuration: &[ExecutableSlotV1],
-) -> Result<bool, ExecutableErrorV1> {
-    if relational_projection::row_selection(term).is_some() {
-        return Ok(relational_projection::selected_value(term, bindings, configuration)?.is_some());
-    }
-    if let Some(atom) = term.as_atom() {
-        let Some((role, _)) = projection_role(atom)? else {
-            return Ok(false);
-        };
-        let binding = bindings
-            .get(&role)
-            .ok_or(ExecutableErrorV1::MalformedProgram)?;
-        return Ok(configuration
-            .get(usize::from(binding.slot))
-            .is_some_and(|slot| slot.value().is_some()));
-    }
-    let triple = term
-        .as_triple()
-        .ok_or(ExecutableErrorV1::MalformedProgram)?;
-    for child in triple.slots() {
-        if projection_subtree_has_present_role(child, bindings, configuration)? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 #[derive(Clone, Copy)]

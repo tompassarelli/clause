@@ -191,32 +191,3 @@ pub(super) fn validate_selector(term: &Term) -> Result<(), ExecutableErrorV1> {
     }
     Ok(())
 }
-
-pub(super) fn selected_value(
-    term: &Term,
-    bindings: &BTreeMap<LocalRoleRefV2, ExecutableProjectionBindingV1>,
-    configuration: &[ExecutableSlotV1],
-) -> Result<Option<ExecutableValueV1>, ExecutableErrorV1> {
-    let (table, subject) = row_selection(term).ok_or(ExecutableErrorV1::MalformedProgram)?;
-    let (role, kind) =
-        projection_role(table.as_atom().ok_or(ExecutableErrorV1::MalformedProgram)?)?
-            .ok_or(ExecutableErrorV1::MalformedProgram)?;
-    if kind != ExecutableValueKindV1::RelationTable {
-        return Err(ExecutableErrorV1::MalformedProgram);
-    }
-    let binding = bindings
-        .get(&role)
-        .ok_or(ExecutableErrorV1::MalformedProgram)?;
-    let Some(ExecutableValueV1::RelationTable(table)) =
-        configuration[usize::from(binding.slot)].value()
-    else {
-        return Err(ExecutableErrorV1::TypeMismatch);
-    };
-    let subject =
-        projected_referent_value_v1(subject)?.ok_or(ExecutableErrorV1::MalformedProgram)?;
-    let subject = ExecutableValueV1::Referent(subject);
-    if !table.present(&subject)? {
-        return Ok(None);
-    }
-    Ok(Some(table.read(&subject)?))
-}
