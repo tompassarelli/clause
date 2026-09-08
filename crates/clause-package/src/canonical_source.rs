@@ -6269,10 +6269,6 @@ fn elaborate_canonical_source_package_inner(
     }
     let expanded = structured_bindings::expand(cst, plan)?;
     let cst = expanded.as_ref();
-    let source_formation = |scope, id, source: &[u8], origin, kind: &str| {
-        source_formation(scope, id, source, origin, kind,
-            reused.as_ref().and_then(|retained| retained.formations.get(&id).copied()))
-    };
     let scope = TermScope {
         universe: context.universe,
         semantics: context.semantics,
@@ -6287,577 +6283,651 @@ fn elaborate_canonical_source_package_inner(
     let mut unsupported = Vec::new();
     let mut named_formations = BTreeMap::new();
     let mut named_capabilities = BTreeMap::new();
-    for item in &cst.items {
-        match &item.kind {
-            CstKind::Referent { designation, .. } => {
-                let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Referent, designation);
-                let slot = head_slot(CanonicalSourceProductionV1::Referent);
-                named_formations.insert(designation.clone(), formation_id(plan, &producer, &slot)?);
+    if reused.is_none() {
+        for item in &cst.items {
+            match &item.kind {
+                CstKind::Referent { designation, .. } => {
+                    let producer =
+                        semantic_producer(CanonicalSourceProductionV1::Referent, designation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Referent);
+                    named_formations.insert(designation.clone(), formation_id(plan, &producer, &slot)?);
+                }
+                CstKind::Capability { designation } => {
+                    let producer =
+                        semantic_producer(CanonicalSourceProductionV1::Capability, designation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Capability);
+                    named_formations.insert(designation.clone(), formation_id(plan, &producer, &slot)?);
+                    named_capabilities
+                        .insert(designation.clone(), capability_id(plan, &producer, &slot)?);
+                }
+                _ => {}
             }
-            CstKind::Capability { designation } => {
-                let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Capability, designation);
-                let slot = head_slot(CanonicalSourceProductionV1::Capability);
-                named_formations.insert(designation.clone(), formation_id(plan, &producer, &slot)?);
-                named_capabilities
-                    .insert(designation.clone(), capability_id(plan, &producer, &slot)?);
-            }
-            _ => {}
         }
     }
     let input_parts = input_handler_parts(cst)?;
-
     let scalar_parts = scalar_handler_parts(cst)?;
-
-    let mut emitted_referents = BTreeSet::new();
-    let mut application_repetitions = BTreeMap::<(Vec<u8>, Vec<u8>), u64>::new();
-    let mut initial_assertion_repetitions = BTreeMap::new();
-    for item in &cst.items {
-        if let Some(subject) = assertion_subject(&item.kind)
-            && emitted_referents.insert(subject.to_vec())
-        {
-            let producer = semantic_producer(CanonicalSourceProductionV1::Referent, subject);
-            let slot = head_slot(CanonicalSourceProductionV1::Referent);
-            formations.push(source_formation(
-                scope,
-                formation_id(plan, &producer, &slot)?,
-                cst.source_slice(item.origin).expect("owned assertion origin"),
-                item.origin,
-                "referent",
-            )?);
-            emissions.push(emission(plan, producer, slot, item.origin));
-        }
-        match &item.kind {
-            CstKind::Referent { designation, .. } => {
-                if !emitted_referents.insert(designation.clone()) {
-                    continue;
-                }
-                let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Referent, designation);
+    if let Some(retained) = &reused {
+        let declarations = source_analysis::rebind_declarations(retained.previous, retained.edit)?;
+        formations = declarations.formations;
+        schemas = declarations.schemas;
+        capabilities = declarations.capabilities;
+        operators = declarations.operators;
+        emissions = declarations.emissions;
+        denotations = declarations.denotations;
+        unsupported = declarations.unsupported;
+    } else {
+        let mut emitted_referents = BTreeSet::new();
+        let mut application_repetitions = BTreeMap::<(Vec<u8>, Vec<u8>), u64>::new();
+        let mut initial_assertion_repetitions = BTreeMap::new();
+        for item in &cst.items {
+            if let Some(subject) = assertion_subject(&item.kind)
+                && emitted_referents.insert(subject.to_vec())
+            {
+                let producer = semantic_producer(CanonicalSourceProductionV1::Referent, subject);
                 let slot = head_slot(CanonicalSourceProductionV1::Referent);
-                let id = formation_id(plan, &producer, &slot)?;
                 formations.push(source_formation(
                     scope,
-                    id,
-                    cst.source_slice(item.origin).expect("owned origin"),
+                    formation_id(plan, &producer, &slot)?,
+                    cst.source_slice(item.origin).expect("owned assertion origin"),
                     item.origin,
                     "referent",
                 )?);
                 emissions.push(emission(plan, producer, slot, item.origin));
             }
-            CstKind::Denotation(denotation) => {
-                emissions.extend(denotation.emissions.iter().cloned());
-                denotations.push(CanonicalSourceDenotationV1 {
-                    name: denotation.name.clone(),
-                    value: denotation.value.clone(),
-                    origin: item.origin,
-                });
-            }
-            CstKind::Application(application) => {
-                if application.role == MEMBERSHIP_ROLE {
-                    let CanonicalScalarValueV1::Symbol(domain) = &application.object else {
-                        return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
-                            origin: item.origin,
-                        });
-                    };
-                    referent_type_id(cst, plan, domain, item.origin)?;
-                }
-                if application.role == b"shape"
-                    && let CanonicalScalarValueV1::Symbol(domain) = &application.object
-                {
-                    if conformance::is_structural(cst, domain)
-                        && !declared_domain_facet(cst, &application.subject, domain)
-                    {
-                        return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
-                            origin: item.origin,
-                        });
+            match &item.kind {
+                CstKind::Referent { designation, .. } => {
+                    if !emitted_referents.insert(designation.clone()) {
+                        continue;
                     }
-                    if !named_formations.contains_key(domain)
-                        && !source_vocabulary_declares_domain(cst, domain)
-                    {
-                        return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
-                            origin: item.origin,
-                        });
-                    }
-                }
-                let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Referent, &application.subject);
-                let slot = head_slot(CanonicalSourceProductionV1::Referent);
-                if emitted_referents.insert(application.subject.clone()) {
+                    let producer =
+                        semantic_producer(CanonicalSourceProductionV1::Referent, designation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Referent);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
                         id,
-                        cst.source_slice(item.origin)
-                            .expect("owned application origin"),
+                        cst.source_slice(item.origin).expect("owned origin"),
                         item.origin,
                         "referent",
                     )?);
                     emissions.push(emission(plan, producer, slot, item.origin));
                 }
-                let repetition_key = (
-                    application.subject.clone(),
-                    application.emission.slot.local.clone(),
-                );
-                let occurrence = application_repetitions.entry(repetition_key).or_default();
-                let mut application_emission = application.emission.clone();
-                application_emission.slot.repetition = (*occurrence > 0).then_some(*occurrence);
-                *occurrence = occurrence.checked_add(1).ok_or(
-                    CanonicalSourceErrorV1::InvalidApplication {
+                CstKind::Denotation(denotation) => {
+                    emissions.extend(denotation.emissions.iter().cloned());
+                    denotations.push(CanonicalSourceDenotationV1 {
+                        name: denotation.name.clone(),
+                        value: denotation.value.clone(),
                         origin: item.origin,
-                    },
-                )?;
-                emissions.push(application_emission);
-            }
-            CstKind::Capability { designation } => {
-                let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Capability, designation);
-                let slot = head_slot(CanonicalSourceProductionV1::Capability);
-                let formation = formation_id(plan, &producer, &slot)?;
-                let capability = capability_id(plan, &producer, &slot)?;
-                formations.push(source_formation(
-                    scope,
-                    formation,
-                    cst.source_slice(item.origin).expect("owned origin"),
-                    item.origin,
-                    "capability",
-                )?);
-                capabilities.push(CapabilityDeclarationPreimageV2 {
-                    id: capability,
-                    formation,
-                    direct_dependencies: vec![],
-                });
-                emissions.push(emission(plan, producer, slot, item.origin));
-            }
-            CstKind::ForeignType { designation, .. } => {
-                let producer = semantic_producer(CanonicalSourceProductionV1::ForeignType, designation);
-                let slot = head_slot(CanonicalSourceProductionV1::ForeignType);
-                formations.push(source_formation(scope, formation_id(plan, &producer, &slot)?,
-                    cst.source_slice(item.origin).expect("owned origin"), item.origin, "foreign-type")?);
-                emissions.push(emission(plan, producer, slot, item.origin));
-            }
-            CstKind::Shape {
-                designation,
-                fields,
-            } => {
-                let producer = semantic_producer(CanonicalSourceProductionV1::Shape, designation);
-                let slot = head_slot(CanonicalSourceProductionV1::Shape);
-                let id = formation_id(plan, &producer, &slot)?;
-                formations.push(source_formation(
-                    scope,
-                    id,
-                    cst.source_slice(item.origin).expect("owned origin"),
-                    item.origin,
-                    "shape",
-                )?);
-                emissions.push(emission(plan, producer.clone(), slot, item.origin));
-                for field in fields {
-                    let slot = child_slot(CanonicalSourceProductionV1::ShapeField, &field.name);
-                    let id = formation_id(plan, &producer, &slot)?;
-                    formations.push(FormationJudgmentPreimageV2 {
-                        id,
-                        context: vec![origin_term(scope, field.origin)?],
-                        term: source_term(
-                            scope,
-                            cst.source_slice(field.origin).expect("owned origin"),
-                        )?,
-                        target: target(scope, b"clause/source-shape-field-type-v1", &field.domain)?,
-                        direct_dependencies: vec![],
                     });
-                    emissions.push(emission(plan, producer.clone(), slot, field.origin));
                 }
-            }
-            CstKind::Relation(relation) => {
-                let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Relation, &relation.designation);
-                let slot = head_slot(CanonicalSourceProductionV1::Relation);
-                let formation = formation_id(plan, &producer, &slot)?;
-                let schema = schema_id(plan, &producer, &slot)?;
-                let operator = operator_id(plan, &producer, &slot)?;
-                formations.push(source_formation(
-                    scope,
-                    formation,
-                    cst.source_slice(item.origin).expect("owned origin"),
-                    item.origin,
-                    "relation",
-                )?);
-                emissions.push(emission(plan, producer.clone(), slot, item.origin));
-                let mut roles = Vec::new();
-                let mut role_ids = BTreeMap::new();
-                for role in &relation.roles {
-                    let role_slot =
-                        child_slot(CanonicalSourceProductionV1::RelationRole, &role.name);
-                    let role_ref = role_id(plan, &producer, &role_slot)?;
-                    if role_ref.schema != schema {
-                        return Err(CanonicalSourceErrorV1::MissingAllocation {
-                            slot: role_slot,
-                            domain: AllocationDomain::Role.label(),
-                        });
+                CstKind::Application(application) => {
+                    if application.role == MEMBERSHIP_ROLE {
+                        let CanonicalScalarValueV1::Symbol(domain) = &application.object else {
+                            return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+                                origin: item.origin,
+                            });
+                        };
+                        referent_type_id(cst, plan, domain, item.origin)?;
                     }
-                    role_ids.insert(role.name.clone(), role_ref.role);
-                    roles.push(RoleDeclarationPreimageV2 {
-                        id: role_ref.role,
-                        target: target(scope, b"clause/source-role-domain-v1", &role.domain)?,
-                        cardinality: exactly_one(),
-                        direct_dependencies: vec![],
-                    });
-                    emissions.push(emission(plan, producer.clone(), role_slot, role.origin));
-                }
-                roles.sort_by_key(|role| role.id);
-                let result_domain = target(
-                    scope,
-                    b"clause/source-relation-result-v1",
-                    &relation.designation,
-                )?;
-                schemas.push(RelationSchemaPreimageV2 {
-                    id: schema,
-                    roles,
-                    constraints: vec![],
-                    result_domain: result_domain.clone(),
-                    direct_dependencies: vec![],
-                });
-                let mut modes = Vec::new();
-                for mode in &relation.modes {
-                    let mode_slot =
-                        child_slot(CanonicalSourceProductionV1::RelationMode, &mode.canonical);
-                    let mode_ref = mode_id(plan, &producer, &mode_slot)?;
-                    if mode_ref.operator != operator {
-                        return Err(CanonicalSourceErrorV1::MissingAllocation {
-                            slot: mode_slot,
-                            domain: AllocationDomain::Mode.label(),
-                        });
-                    }
-                    let mut known_roles = mode
-                        .known
-                        .iter()
-                        .map(|name| role_ids[name])
-                        .collect::<Vec<_>>();
-                    let mut produced_roles = mode
-                        .produced
-                        .iter()
-                        .map(|name| role_ids[name])
-                        .collect::<Vec<_>>();
-                    known_roles.sort();
-                    produced_roles.sort();
-                    let productivity = match &mode.reactive_obligation {
-                        Some(designation) => ProductivityContractV2 {
-                            kind: ProductivityKindV2::Reactive,
-                            obligations: vec![*named_formations.get(designation).ok_or_else(
-                                || CanonicalSourceErrorV1::UnknownModeFormation {
-                                    designation: designation.clone(),
-                                },
-                            )?],
-                        },
-                        None => ProductivityContractV2 {
-                            kind: ProductivityKindV2::Partial,
-                            obligations: vec![],
-                        },
-                    };
-                    let (effect_intents, capability_requirements) = match &mode.effect {
-                        Some(effect) => {
-                            let capability = *named_capabilities
-                                .get(&effect.capability)
-                                .ok_or_else(|| CanonicalSourceErrorV1::UnknownModeCapability {
-                                    designation: effect.capability.clone(),
-                                })?;
-                            (
-                                vec![EffectIntentContractPreimageV2 {
-                                    intent_domain: target(
-                                        scope,
-                                        b"clause/source-effect-intent-v1",
-                                        &relation.designation,
-                                    )?,
-                                    action_role: role_ids[&effect.action_role],
-                                    resource_role: role_ids[&effect.resource_role],
-                                    payload_role: role_ids[&effect.payload_role],
-                                    required_capability: capability,
-                                }],
-                                vec![capability],
-                            )
+                    if application.role == b"shape"
+                        && let CanonicalScalarValueV1::Symbol(domain) = &application.object
+                    {
+                        if conformance::is_structural(cst, domain)
+                            && !declared_domain_facet(cst, &application.subject, domain)
+                        {
+                            return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+                                origin: item.origin,
+                            });
                         }
-                        None => (vec![], vec![]),
-                    };
-                    modes.push(ModePreimageV2 {
-                        id: mode_ref.mode,
-                        schema,
-                        known_roles,
-                        produced_roles,
-                        static_basis: StaticActivationBasisPreimageV2 {
-                            context_requirements: vec![],
-                            constitutive_dependencies: vec![],
+                        if !named_formations.contains_key(domain)
+                            && !source_vocabulary_declares_domain(cst, domain)
+                        {
+                            return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+                                origin: item.origin,
+                            });
+                        }
+                    }
+                    let producer =
+                        semantic_producer(CanonicalSourceProductionV1::Referent, &application.subject);
+                    let slot = head_slot(CanonicalSourceProductionV1::Referent);
+                    if emitted_referents.insert(application.subject.clone()) {
+                        let id = formation_id(plan, &producer, &slot)?;
+                        formations.push(source_formation(
+                            scope,
+                            id,
+                            cst.source_slice(item.origin)
+                                .expect("owned application origin"),
+                            item.origin,
+                            "referent",
+                        )?);
+                        emissions.push(emission(plan, producer, slot, item.origin));
+                    }
+                    let repetition_key = (
+                        application.subject.clone(),
+                        application.emission.slot.local.clone(),
+                    );
+                    let occurrence = application_repetitions.entry(repetition_key).or_default();
+                    let mut application_emission = application.emission.clone();
+                    application_emission.slot.repetition = (*occurrence > 0).then_some(*occurrence);
+                    *occurrence = occurrence.checked_add(1).ok_or(
+                        CanonicalSourceErrorV1::InvalidApplication {
+                            origin: item.origin,
                         },
-                        authorization_requirements: vec![],
-                        dynamic_prerequisites: vec![],
-                        contract: ModeContractV2 {
-                            foreign_accesses: cst.callables.iter()
-                                .find(|callable| callable.designation == relation.designation)
-                                .map(|callable| callable::foreign_accesses(&callable.expression))
-                                .unwrap_or_default(),
-                            determinism: DeterminismContractV2::Deterministic,
-                            result_cardinality: mode.cardinality.as_contract(),
-                            result_order: ResultOrderContractV2::UnorderedFiniteSet,
-                            failure_domain: None,
-                            state_delta_domain: None,
-                            budget_exhaustion_domain: None,
-                            effect_intents,
-                            formation_checks: vec![],
-                            productivity,
-                            scheduling_requirements: vec![],
-                            resource_requirements: vec![],
-                            capability_requirements,
-                            continuation: if mode.continues_linearly {
-                                ContinuationContractV2::Suspensible {
-                                    use_policy: ContinuationUseV2::Linear,
-                                    may_handoff: false,
-                                    may_cancel: false,
-                                }
-                            } else {
-                                ContinuationContractV2::TerminalOnly { may_cancel: false }
-                            },
-                        },
+                    )?;
+                    emissions.push(application_emission);
+                }
+                CstKind::Capability { designation } => {
+                    let producer =
+                        semantic_producer(CanonicalSourceProductionV1::Capability, designation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Capability);
+                    let formation = formation_id(plan, &producer, &slot)?;
+                    let capability = capability_id(plan, &producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        formation,
+                        cst.source_slice(item.origin).expect("owned origin"),
+                        item.origin,
+                        "capability",
+                    )?);
+                    capabilities.push(CapabilityDeclarationPreimageV2 {
+                        id: capability,
+                        formation,
                         direct_dependencies: vec![],
                     });
-                    emissions.push(emission(plan, producer.clone(), mode_slot, mode.origin));
+                    emissions.push(emission(plan, producer, slot, item.origin));
                 }
-                modes.sort_by_key(|mode| mode.id);
-                operators.push(OperatorPreimageV2 {
-                    id: operator,
-                    modes,
-                    direct_dependencies: vec![],
-                });
-            }
-            CstKind::InputHandler(handler) => {
-                let head = head_slot(CanonicalSourceProductionV1::Handler);
-                let head_id = formation_id(plan, &handler.producer, &head)?;
-                formations.push(source_formation(
-                    scope,
-                    head_id,
-                    cst.source_slice(handler.origin)
-                        .expect("owned handler origin"),
-                    handler.origin,
-                    "input-handler",
-                )?);
-                emissions.push(emission(
-                    plan,
-                    handler.producer.clone(),
-                    head,
-                    handler.origin,
-                ));
-
-                let include = child_slot(
-                    CanonicalSourceProductionV1::HandlerInclude,
-                    &handler.include_local,
-                );
-                let include_id = formation_id(plan, &handler.producer, &include)?;
-                formations.push(source_formation(
-                    scope,
-                    include_id,
-                    cst.source_slice(handler.include_origin)
-                        .expect("owned handler include origin"),
-                    handler.include_origin,
-                    "handler-include",
-                )?);
-                emissions.push(emission(
-                    plan,
-                    handler.producer.clone(),
-                    include,
-                    handler.include_origin,
-                ));
-            }
-            CstKind::ScalarHandler(handler) => {
-                let head = head_slot(CanonicalSourceProductionV1::Handler);
-                let head_id = formation_id(plan, &handler.producer, &head)?;
-                formations.push(source_formation(
-                    scope,
-                    head_id,
-                    cst.source_slice(handler.origin)
-                        .expect("owned scalar handler origin"),
-                    handler.origin,
-                    "scalar-handler",
-                )?);
-                emissions.push(emission(
-                    plan,
-                    handler.producer.clone(),
-                    head,
-                    handler.origin,
-                ));
-                let include = child_slot(
-                    CanonicalSourceProductionV1::HandlerInclude,
-                    &handler.include.local,
-                );
-                let include_id = formation_id(plan, &handler.producer, &include)?;
-                formations.push(source_formation(
-                    scope,
-                    include_id,
-                    cst.source_slice(handler.include.origin)
-                        .expect("owned scalar handler include origin"),
-                    handler.include.origin,
-                    "handler-include",
-                )?);
-                emissions.push(emission(
-                    plan,
-                    handler.producer.clone(),
-                    include,
-                    handler.include.origin,
-                ));
-            }
-            CstKind::GeneralHandler(handler) => {
-                let head = head_slot(handler.producer.production);
-                let head_id = formation_id(plan, &handler.producer, &head)?;
-                formations.push(source_formation(
-                    scope,
-                    head_id,
-                    cst.source_slice(handler.origin)
-                        .expect("owned general handler origin"),
-                    handler.origin,
-                    if handler.derivation { "relational-law" } else { "general-handler" },
-                )?);
-                emissions.push(emission(
-                    plan,
-                    handler.producer.clone(),
-                    head,
-                    handler.origin,
-                ));
-                for include in &handler.includes {
-                    let slot =
-                        child_slot(CanonicalSourceProductionV1::HandlerInclude, &include.local);
-                    let id = formation_id(plan, &handler.producer, &slot)?;
+                CstKind::ForeignType { designation, .. } => {
+                    let producer = semantic_producer(CanonicalSourceProductionV1::ForeignType, designation);
+                    let slot = head_slot(CanonicalSourceProductionV1::ForeignType);
+                    formations.push(source_formation(scope, formation_id(plan, &producer, &slot)?,
+                        cst.source_slice(item.origin).expect("owned origin"), item.origin, "foreign-type")?);
+                    emissions.push(emission(plan, producer, slot, item.origin));
+                }
+                CstKind::Shape {
+                    designation,
+                    fields,
+                } => {
+                    let producer = semantic_producer(CanonicalSourceProductionV1::Shape, designation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Shape);
+                    let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
                         id,
-                        cst.source_slice(include.origin)
-                            .expect("owned general handler include origin"),
-                        include.origin,
+                        cst.source_slice(item.origin).expect("owned origin"),
+                        item.origin,
+                        "shape",
+                    )?);
+                    emissions.push(emission(plan, producer.clone(), slot, item.origin));
+                    for field in fields {
+                        let slot = child_slot(CanonicalSourceProductionV1::ShapeField, &field.name);
+                        let id = formation_id(plan, &producer, &slot)?;
+                        formations.push(FormationJudgmentPreimageV2 {
+                            id,
+                            context: vec![origin_term(scope, field.origin)?],
+                            term: source_term(
+                                scope,
+                                cst.source_slice(field.origin).expect("owned origin"),
+                            )?,
+                            target: target(scope, b"clause/source-shape-field-type-v1", &field.domain)?,
+                            direct_dependencies: vec![],
+                        });
+                        emissions.push(emission(plan, producer.clone(), slot, field.origin));
+                    }
+                }
+                CstKind::Relation(relation) => {
+                    let producer =
+                        semantic_producer(CanonicalSourceProductionV1::Relation, &relation.designation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Relation);
+                    let formation = formation_id(plan, &producer, &slot)?;
+                    let schema = schema_id(plan, &producer, &slot)?;
+                    let operator = operator_id(plan, &producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        formation,
+                        cst.source_slice(item.origin).expect("owned origin"),
+                        item.origin,
+                        "relation",
+                    )?);
+                    emissions.push(emission(plan, producer.clone(), slot, item.origin));
+                    let mut roles = Vec::new();
+                    let mut role_ids = BTreeMap::new();
+                    for role in &relation.roles {
+                        let role_slot =
+                            child_slot(CanonicalSourceProductionV1::RelationRole, &role.name);
+                        let role_ref = role_id(plan, &producer, &role_slot)?;
+                        if role_ref.schema != schema {
+                            return Err(CanonicalSourceErrorV1::MissingAllocation {
+                                slot: role_slot,
+                                domain: AllocationDomain::Role.label(),
+                            });
+                        }
+                        role_ids.insert(role.name.clone(), role_ref.role);
+                        roles.push(RoleDeclarationPreimageV2 {
+                            id: role_ref.role,
+                            target: target(scope, b"clause/source-role-domain-v1", &role.domain)?,
+                            cardinality: exactly_one(),
+                            direct_dependencies: vec![],
+                        });
+                        emissions.push(emission(plan, producer.clone(), role_slot, role.origin));
+                    }
+                    roles.sort_by_key(|role| role.id);
+                    let result_domain = target(
+                        scope,
+                        b"clause/source-relation-result-v1",
+                        &relation.designation,
+                    )?;
+                    schemas.push(RelationSchemaPreimageV2 {
+                        id: schema,
+                        roles,
+                        constraints: vec![],
+                        result_domain: result_domain.clone(),
+                        direct_dependencies: vec![],
+                    });
+                    let mut modes = Vec::new();
+                    for mode in &relation.modes {
+                        let mode_slot =
+                            child_slot(CanonicalSourceProductionV1::RelationMode, &mode.canonical);
+                        let mode_ref = mode_id(plan, &producer, &mode_slot)?;
+                        if mode_ref.operator != operator {
+                            return Err(CanonicalSourceErrorV1::MissingAllocation {
+                                slot: mode_slot,
+                                domain: AllocationDomain::Mode.label(),
+                            });
+                        }
+                        let mut known_roles = mode
+                            .known
+                            .iter()
+                            .map(|name| role_ids[name])
+                            .collect::<Vec<_>>();
+                        let mut produced_roles = mode
+                            .produced
+                            .iter()
+                            .map(|name| role_ids[name])
+                            .collect::<Vec<_>>();
+                        known_roles.sort();
+                        produced_roles.sort();
+                        let productivity = match &mode.reactive_obligation {
+                            Some(designation) => ProductivityContractV2 {
+                                kind: ProductivityKindV2::Reactive,
+                                obligations: vec![*named_formations.get(designation).ok_or_else(
+                                    || CanonicalSourceErrorV1::UnknownModeFormation {
+                                        designation: designation.clone(),
+                                    },
+                                )?],
+                            },
+                            None => ProductivityContractV2 {
+                                kind: ProductivityKindV2::Partial,
+                                obligations: vec![],
+                            },
+                        };
+                        let (effect_intents, capability_requirements) = match &mode.effect {
+                            Some(effect) => {
+                                let capability = *named_capabilities
+                                    .get(&effect.capability)
+                                    .ok_or_else(|| CanonicalSourceErrorV1::UnknownModeCapability {
+                                        designation: effect.capability.clone(),
+                                    })?;
+                                (
+                                    vec![EffectIntentContractPreimageV2 {
+                                        intent_domain: target(
+                                            scope,
+                                            b"clause/source-effect-intent-v1",
+                                            &relation.designation,
+                                        )?,
+                                        action_role: role_ids[&effect.action_role],
+                                        resource_role: role_ids[&effect.resource_role],
+                                        payload_role: role_ids[&effect.payload_role],
+                                        required_capability: capability,
+                                    }],
+                                    vec![capability],
+                                )
+                            }
+                            None => (vec![], vec![]),
+                        };
+                        modes.push(ModePreimageV2 {
+                            id: mode_ref.mode,
+                            schema,
+                            known_roles,
+                            produced_roles,
+                            static_basis: StaticActivationBasisPreimageV2 {
+                                context_requirements: vec![],
+                                constitutive_dependencies: vec![],
+                            },
+                            authorization_requirements: vec![],
+                            dynamic_prerequisites: vec![],
+                            contract: ModeContractV2 {
+                                foreign_accesses: cst.callables.iter()
+                                    .find(|callable| callable.designation == relation.designation)
+                                    .map(|callable| callable::foreign_accesses(&callable.expression))
+                                    .unwrap_or_default(),
+                                determinism: DeterminismContractV2::Deterministic,
+                                result_cardinality: mode.cardinality.as_contract(),
+                                result_order: ResultOrderContractV2::UnorderedFiniteSet,
+                                failure_domain: None,
+                                state_delta_domain: None,
+                                budget_exhaustion_domain: None,
+                                effect_intents,
+                                formation_checks: vec![],
+                                productivity,
+                                scheduling_requirements: vec![],
+                                resource_requirements: vec![],
+                                capability_requirements,
+                                continuation: if mode.continues_linearly {
+                                    ContinuationContractV2::Suspensible {
+                                        use_policy: ContinuationUseV2::Linear,
+                                        may_handoff: false,
+                                        may_cancel: false,
+                                    }
+                                } else {
+                                    ContinuationContractV2::TerminalOnly { may_cancel: false }
+                                },
+                            },
+                            direct_dependencies: vec![],
+                        });
+                        emissions.push(emission(plan, producer.clone(), mode_slot, mode.origin));
+                    }
+                    modes.sort_by_key(|mode| mode.id);
+                    operators.push(OperatorPreimageV2 {
+                        id: operator,
+                        modes,
+                        direct_dependencies: vec![],
+                    });
+                }
+                CstKind::InputHandler(handler) => {
+                    let head = head_slot(CanonicalSourceProductionV1::Handler);
+                    let head_id = formation_id(plan, &handler.producer, &head)?;
+                    formations.push(source_formation(
+                        scope,
+                        head_id,
+                        cst.source_slice(handler.origin)
+                            .expect("owned handler origin"),
+                        handler.origin,
+                        "input-handler",
+                    )?);
+                    emissions.push(emission(
+                        plan,
+                        handler.producer.clone(),
+                        head,
+                        handler.origin,
+                    ));
+
+                    let include = child_slot(
+                        CanonicalSourceProductionV1::HandlerInclude,
+                        &handler.include_local,
+                    );
+                    let include_id = formation_id(plan, &handler.producer, &include)?;
+                    formations.push(source_formation(
+                        scope,
+                        include_id,
+                        cst.source_slice(handler.include_origin)
+                            .expect("owned handler include origin"),
+                        handler.include_origin,
                         "handler-include",
                     )?);
                     emissions.push(emission(
                         plan,
                         handler.producer.clone(),
-                        slot,
-                        include.origin,
+                        include,
+                        handler.include_origin,
                     ));
                 }
-            }
-            CstKind::ScalarLaw(law) => {
-                let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Law, &law.designation);
-                let slot = head_slot(CanonicalSourceProductionV1::Law);
-                let id = formation_id(plan, &producer, &slot)?;
-                formations.push(source_formation(
-                    scope,
-                    id,
-                    cst.source_slice(law.origin)
-                        .expect("owned scalar law origin"),
-                    law.origin,
-                    "scalar-law",
-                )?);
-                emissions.push(emission(plan, producer, slot, law.origin));
-            }
-            CstKind::ScalarDerive(derive) => {
-                let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Derive, &derive.designation);
-                let slot = head_slot(CanonicalSourceProductionV1::Derive);
-                let id = formation_id(plan, &producer, &slot)?;
-                formations.push(source_formation(
-                    scope,
-                    id,
-                    cst.source_slice(derive.origin)
-                        .expect("owned scalar derive origin"),
-                    derive.origin,
-                    "scalar-derive",
-                )?);
-                emissions.push(emission(plan, producer, slot, derive.origin));
-            }
-            CstKind::BooleanLaw(law) => {
-                let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Law, &law.designation);
-                let slot = head_slot(CanonicalSourceProductionV1::Law);
-                let id = formation_id(plan, &producer, &slot)?;
-                formations.push(source_formation(
-                    scope,
-                    id,
-                    cst.source_slice(law.origin)
-                        .expect("owned Boolean law origin"),
-                    law.origin,
-                    "boolean-law",
-                )?);
-                emissions.push(emission(plan, producer, slot, law.origin));
-            }
-            CstKind::BooleanDerive(derive) => {
-                let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Derive, &derive.designation);
-                let slot = head_slot(CanonicalSourceProductionV1::Derive);
-                let id = formation_id(plan, &producer, &slot)?;
-                formations.push(source_formation(
-                    scope,
-                    id,
-                    cst.source_slice(derive.origin)
-                        .expect("owned Boolean derive origin"),
-                    derive.origin,
-                    "boolean-derive",
-                )?);
-                emissions.push(emission(plan, producer, slot, derive.origin));
-            }
-            CstKind::VectorAssertion(assertion) => {
-                if input_parts
-                    .as_ref()
-                    .is_some_and(|(_, selected)| selected.origin == assertion.origin)
-                    || scalar_parts.iter().any(|parts| {
-                        scalar_parts_use_initial(parts, assertion.origin)
-                            || scalar_parts_use_parameter(
-                                parts,
-                                &assertion.subject,
-                                &assertion.relation,
-                                true,
-                            )
-                    })
-                    || declared_state_relation(cst, &assertion.relation)
-                {
-                    let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
-                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
+                CstKind::ScalarHandler(handler) => {
+                    let head = head_slot(CanonicalSourceProductionV1::Handler);
+                    let head_id = formation_id(plan, &handler.producer, &head)?;
+                    formations.push(source_formation(
+                        scope,
+                        head_id,
+                        cst.source_slice(handler.origin)
+                            .expect("owned scalar handler origin"),
+                        handler.origin,
+                        "scalar-handler",
+                    )?);
+                    emissions.push(emission(
+                        plan,
+                        handler.producer.clone(),
+                        head,
+                        handler.origin,
+                    ));
+                    let include = child_slot(
+                        CanonicalSourceProductionV1::HandlerInclude,
+                        &handler.include.local,
+                    );
+                    let include_id = formation_id(plan, &handler.producer, &include)?;
+                    formations.push(source_formation(
+                        scope,
+                        include_id,
+                        cst.source_slice(handler.include.origin)
+                            .expect("owned scalar handler include origin"),
+                        handler.include.origin,
+                        "handler-include",
+                    )?);
+                    emissions.push(emission(
+                        plan,
+                        handler.producer.clone(),
+                        include,
+                        handler.include.origin,
+                    ));
+                }
+                CstKind::GeneralHandler(handler) => {
+                    let head = head_slot(handler.producer.production);
+                    let head_id = formation_id(plan, &handler.producer, &head)?;
+                    formations.push(source_formation(
+                        scope,
+                        head_id,
+                        cst.source_slice(handler.origin)
+                            .expect("owned general handler origin"),
+                        handler.origin,
+                        if handler.derivation { "relational-law" } else { "general-handler" },
+                    )?);
+                    emissions.push(emission(
+                        plan,
+                        handler.producer.clone(),
+                        head,
+                        handler.origin,
+                    ));
+                    for include in &handler.includes {
+                        let slot =
+                            child_slot(CanonicalSourceProductionV1::HandlerInclude, &include.local);
+                        let id = formation_id(plan, &handler.producer, &slot)?;
+                        formations.push(source_formation(
+                            scope,
+                            id,
+                            cst.source_slice(include.origin)
+                                .expect("owned general handler include origin"),
+                            include.origin,
+                            "handler-include",
+                        )?);
+                        emissions.push(emission(
+                            plan,
+                            handler.producer.clone(),
+                            slot,
+                            include.origin,
+                        ));
+                    }
+                }
+                CstKind::ScalarLaw(law) => {
+                    let producer =
+                        semantic_producer(CanonicalSourceProductionV1::Law, &law.designation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Law);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
                         id,
-                        cst.source_slice(assertion.origin)
-                            .expect("owned initial assertion origin"),
-                        assertion.origin,
-                        "initial-assertion",
+                        cst.source_slice(law.origin)
+                            .expect("owned scalar law origin"),
+                        law.origin,
+                        "scalar-law",
                     )?);
-                    emissions.push(emission(plan, producer, slot, assertion.origin));
-                } else {
-                    unsupported.push(CanonicalUnsupportedProductionV1 {
-                        production: CanonicalSourceProductionV1::Assertion,
-                        origin: assertion.origin,
-                        emissions: vec![],
-                    });
+                    emissions.push(emission(plan, producer, slot, law.origin));
                 }
-            }
-            CstKind::ShapeAssertion(assertion) => {
-                if declared_state_relation(cst, &assertion.relation) {
-                    let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
-                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
+                CstKind::ScalarDerive(derive) => {
+                    let producer =
+                        semantic_producer(CanonicalSourceProductionV1::Derive, &derive.designation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Derive);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
                         id,
-                        cst.source_slice(assertion.origin)
-                            .expect("owned shaped assertion origin"),
-                        assertion.origin,
-                        "initial-assertion",
+                        cst.source_slice(derive.origin)
+                            .expect("owned scalar derive origin"),
+                        derive.origin,
+                        "scalar-derive",
                     )?);
-                    emissions.push(emission(plan, producer, slot, assertion.origin));
-                } else {
-                    unsupported.push(CanonicalUnsupportedProductionV1 {
-                        production: CanonicalSourceProductionV1::Assertion,
-                        origin: assertion.origin,
-                        emissions: vec![],
-                    });
+                    emissions.push(emission(plan, producer, slot, derive.origin));
                 }
-            }
-            CstKind::BooleanAssertion(assertion) => {
-                if scalar_parts.iter().any(|parts| {
+                CstKind::BooleanLaw(law) => {
+                    let producer =
+                        semantic_producer(CanonicalSourceProductionV1::Law, &law.designation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Law);
+                    let id = formation_id(plan, &producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        id,
+                        cst.source_slice(law.origin)
+                            .expect("owned Boolean law origin"),
+                        law.origin,
+                        "boolean-law",
+                    )?);
+                    emissions.push(emission(plan, producer, slot, law.origin));
+                }
+                CstKind::BooleanDerive(derive) => {
+                    let producer =
+                        semantic_producer(CanonicalSourceProductionV1::Derive, &derive.designation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Derive);
+                    let id = formation_id(plan, &producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        id,
+                        cst.source_slice(derive.origin)
+                            .expect("owned Boolean derive origin"),
+                        derive.origin,
+                        "boolean-derive",
+                    )?);
+                    emissions.push(emission(plan, producer, slot, derive.origin));
+                }
+                CstKind::VectorAssertion(assertion) => {
+                    if input_parts
+                        .as_ref()
+                        .is_some_and(|(_, selected)| selected.origin == assertion.origin)
+                        || scalar_parts.iter().any(|parts| {
+                            scalar_parts_use_initial(parts, assertion.origin)
+                                || scalar_parts_use_parameter(
+                                    parts,
+                                    &assertion.subject,
+                                    &assertion.relation,
+                                    true,
+                                )
+                        })
+                        || declared_state_relation(cst, &assertion.relation)
+                    {
+                        let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
+                        let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
+                        let id = formation_id(plan, &producer, &slot)?;
+                        formations.push(source_formation(
+                            scope,
+                            id,
+                            cst.source_slice(assertion.origin)
+                                .expect("owned initial assertion origin"),
+                            assertion.origin,
+                            "initial-assertion",
+                        )?);
+                        emissions.push(emission(plan, producer, slot, assertion.origin));
+                    } else {
+                        unsupported.push(CanonicalUnsupportedProductionV1 {
+                            production: CanonicalSourceProductionV1::Assertion,
+                            origin: assertion.origin,
+                            emissions: vec![],
+                        });
+                    }
+                }
+                CstKind::ShapeAssertion(assertion) => {
+                    if declared_state_relation(cst, &assertion.relation) {
+                        let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
+                        let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
+                        let id = formation_id(plan, &producer, &slot)?;
+                        formations.push(source_formation(
+                            scope,
+                            id,
+                            cst.source_slice(assertion.origin)
+                                .expect("owned shaped assertion origin"),
+                            assertion.origin,
+                            "initial-assertion",
+                        )?);
+                        emissions.push(emission(plan, producer, slot, assertion.origin));
+                    } else {
+                        unsupported.push(CanonicalUnsupportedProductionV1 {
+                            production: CanonicalSourceProductionV1::Assertion,
+                            origin: assertion.origin,
+                            emissions: vec![],
+                        });
+                    }
+                }
+                CstKind::BooleanAssertion(assertion) => {
+                    if scalar_parts.iter().any(|parts| {
+                            scalar_parts_use_initial(parts, assertion.origin)
+                                || scalar_parts_use_parameter(
+                                    parts,
+                                    &assertion.subject,
+                                    &assertion.relation,
+                                    false,
+                                )
+                        })
+                        || declared_state_relation(cst, &assertion.relation)
+                    {
+                        let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
+                        let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
+                        let id = formation_id(plan, &producer, &slot)?;
+                        formations.push(source_formation(
+                            scope,
+                            id,
+                            cst.source_slice(assertion.origin)
+                                .expect("owned grounded assertion origin"),
+                            assertion.origin,
+                            "initial-assertion",
+                        )?);
+                        emissions.push(emission(plan, producer, slot, assertion.origin));
+                    } else {
+                        unsupported.push(CanonicalUnsupportedProductionV1 {
+                            production: CanonicalSourceProductionV1::Assertion,
+                            origin: assertion.origin,
+                            emissions: vec![],
+                        });
+                    }
+                }
+                CstKind::NumberAssertion(assertion) => {
+                    if scalar_parts.iter().any(|parts| {
+                            scalar_parts_use_initial(parts, assertion.origin)
+                                || scalar_parts_use_parameter(
+                                    parts,
+                                    &assertion.subject,
+                                    &assertion.relation,
+                                    false,
+                                )
+                        })
+                        || declared_state_relation(cst, &assertion.relation)
+                    {
+                        let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
+                        let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
+                        let id = formation_id(plan, &producer, &slot)?;
+                        formations.push(source_formation(
+                            scope,
+                            id,
+                            cst.source_slice(assertion.origin)
+                                .expect("owned jump-speed assertion origin"),
+                            assertion.origin,
+                            "initial-assertion",
+                        )?);
+                        emissions.push(emission(plan, producer, slot, assertion.origin));
+                    } else {
+                        unsupported.push(CanonicalUnsupportedProductionV1 {
+                            production: CanonicalSourceProductionV1::Assertion,
+                            origin: assertion.origin,
+                            emissions: vec![],
+                        });
+                    }
+                }
+                CstKind::SymbolAssertion(assertion) => {
+                    if scalar_parts.iter().any(|parts| {
                         scalar_parts_use_initial(parts, assertion.origin)
                             || scalar_parts_use_parameter(
                                 parts,
@@ -6865,31 +6935,30 @@ fn elaborate_canonical_source_package_inner(
                                 &assertion.relation,
                                 false,
                             )
-                    })
-                    || declared_state_relation(cst, &assertion.relation)
-                {
-                    let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
-                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
-                    let id = formation_id(plan, &producer, &slot)?;
-                    formations.push(source_formation(
-                        scope,
-                        id,
-                        cst.source_slice(assertion.origin)
-                            .expect("owned grounded assertion origin"),
-                        assertion.origin,
-                        "initial-assertion",
-                    )?);
-                    emissions.push(emission(plan, producer, slot, assertion.origin));
-                } else {
-                    unsupported.push(CanonicalUnsupportedProductionV1 {
-                        production: CanonicalSourceProductionV1::Assertion,
-                        origin: assertion.origin,
-                        emissions: vec![],
-                    });
+                    }) || declared_state_relation(cst, &assertion.relation)
+                    {
+                        let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
+                        let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
+                        let id = formation_id(plan, &producer, &slot)?;
+                        formations.push(source_formation(
+                            scope,
+                            id,
+                            cst.source_slice(assertion.origin)
+                                .expect("owned scalar assertion origin"),
+                            assertion.origin,
+                            "initial-assertion",
+                        )?);
+                        emissions.push(emission(plan, producer, slot, assertion.origin));
+                    } else {
+                        unsupported.push(CanonicalUnsupportedProductionV1 {
+                            production: CanonicalSourceProductionV1::Assertion,
+                            origin: assertion.origin,
+                            emissions: vec![],
+                        });
+                    }
                 }
-            }
-            CstKind::NumberAssertion(assertion) => {
-                if scalar_parts.iter().any(|parts| {
+                CstKind::TextAssertion(assertion) => {
+                    if scalar_parts.iter().any(|parts| {
                         scalar_parts_use_initial(parts, assertion.origin)
                             || scalar_parts_use_parameter(
                                 parts,
@@ -6897,106 +6966,44 @@ fn elaborate_canonical_source_package_inner(
                                 &assertion.relation,
                                 false,
                             )
-                    })
-                    || declared_state_relation(cst, &assertion.relation)
-                {
-                    let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
-                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
-                    let id = formation_id(plan, &producer, &slot)?;
-                    formations.push(source_formation(
-                        scope,
-                        id,
-                        cst.source_slice(assertion.origin)
-                            .expect("owned jump-speed assertion origin"),
-                        assertion.origin,
-                        "initial-assertion",
-                    )?);
-                    emissions.push(emission(plan, producer, slot, assertion.origin));
-                } else {
-                    unsupported.push(CanonicalUnsupportedProductionV1 {
-                        production: CanonicalSourceProductionV1::Assertion,
-                        origin: assertion.origin,
-                        emissions: vec![],
-                    });
+                    }) || declared_state_relation(cst, &assertion.relation)
+                    {
+                        let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
+                        let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
+                        let id = formation_id(plan, &producer, &slot)?;
+                        formations.push(source_formation(
+                            scope,
+                            id,
+                            cst.source_slice(assertion.origin)
+                                .expect("owned Text assertion origin"),
+                            assertion.origin,
+                            "initial-assertion",
+                        )?);
+                        emissions.push(emission(plan, producer, slot, assertion.origin));
+                    } else {
+                        unsupported.push(CanonicalUnsupportedProductionV1 {
+                            production: CanonicalSourceProductionV1::Assertion,
+                            origin: assertion.origin,
+                            emissions: vec![],
+                        });
+                    }
                 }
+                CstKind::KeyboardBinding(_)
+                | CstKind::ScalarInputBinding(_)
+                | CstKind::ReferentInputBinding(_) => {}
+                CstKind::Unsupported(value) => unsupported.push(value.clone()),
             }
-            CstKind::SymbolAssertion(assertion) => {
-                if scalar_parts.iter().any(|parts| {
-                    scalar_parts_use_initial(parts, assertion.origin)
-                        || scalar_parts_use_parameter(
-                            parts,
-                            &assertion.subject,
-                            &assertion.relation,
-                            false,
-                        )
-                }) || declared_state_relation(cst, &assertion.relation)
-                {
-                    let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
-                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
-                    let id = formation_id(plan, &producer, &slot)?;
-                    formations.push(source_formation(
-                        scope,
-                        id,
-                        cst.source_slice(assertion.origin)
-                            .expect("owned scalar assertion origin"),
-                        assertion.origin,
-                        "initial-assertion",
-                    )?);
-                    emissions.push(emission(plan, producer, slot, assertion.origin));
-                } else {
-                    unsupported.push(CanonicalUnsupportedProductionV1 {
-                        production: CanonicalSourceProductionV1::Assertion,
-                        origin: assertion.origin,
-                        emissions: vec![],
-                    });
-                }
-            }
-            CstKind::TextAssertion(assertion) => {
-                if scalar_parts.iter().any(|parts| {
-                    scalar_parts_use_initial(parts, assertion.origin)
-                        || scalar_parts_use_parameter(
-                            parts,
-                            &assertion.subject,
-                            &assertion.relation,
-                            false,
-                        )
-                }) || declared_state_relation(cst, &assertion.relation)
-                {
-                    let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
-                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
-                    let id = formation_id(plan, &producer, &slot)?;
-                    formations.push(source_formation(
-                        scope,
-                        id,
-                        cst.source_slice(assertion.origin)
-                            .expect("owned Text assertion origin"),
-                        assertion.origin,
-                        "initial-assertion",
-                    )?);
-                    emissions.push(emission(plan, producer, slot, assertion.origin));
-                } else {
-                    unsupported.push(CanonicalUnsupportedProductionV1 {
-                        production: CanonicalSourceProductionV1::Assertion,
-                        origin: assertion.origin,
-                        emissions: vec![],
-                    });
-                }
-            }
-            CstKind::KeyboardBinding(_)
-            | CstKind::ScalarInputBinding(_)
-            | CstKind::ReferentInputBinding(_) => {}
-            CstKind::Unsupported(value) => unsupported.push(value.clone()),
         }
-    }
-    for definition in &cst.callables {
-        check_canonical_callable_v1(definition)?;
-        for production in callable::productions(definition) {
-            let producer = semantic_producer(production, &definition.designation);
-            let slot = head_slot(production);
-            formations.push(source_formation(scope, formation_id(plan, &producer, &slot)?,
-                cst.source_slice(definition.origin).expect("owned callable origin"),
-                definition.origin, if production == CanonicalSourceProductionV1::CallableExport { "callable-export" } else { "callable-definition" })?);
-            emissions.push(emission(plan, producer, slot, definition.origin));
+        for definition in &cst.callables {
+            check_canonical_callable_v1(definition)?;
+            for production in callable::productions(definition) {
+                let producer = semantic_producer(production, &definition.designation);
+                let slot = head_slot(production);
+                formations.push(source_formation(scope, formation_id(plan, &producer, &slot)?,
+                    cst.source_slice(definition.origin).expect("owned callable origin"),
+                    definition.origin, if production == CanonicalSourceProductionV1::CallableExport { "callable-export" } else { "callable-definition" })?);
+                emissions.push(emission(plan, producer, slot, definition.origin));
+            }
         }
     }
     let check_execution = || {
@@ -11659,30 +11666,13 @@ fn source_formation(
     source: &[u8],
     origin: CanonicalSourceOriginV1,
     kind: &str,
-    retained: Option<&FormationJudgmentPreimageV2>,
 ) -> Result<FormationJudgmentPreimageV2, CanonicalSourceErrorV1> {
     let type_kind = format!("clause/source-{kind}-type-v1");
-    let exact_atom = |term: &Term, kind: &[u8], payload: &[u8]| {
-        term.scope() == scope && term.as_atom().is_some_and(|atom|
-            atom.kind() == kind && atom.canonical_payload() == payload
-                && atom.equality_contract() == EqualityContract::ExactOctetsV1)
-    };
-    // Only explicit occurrence continuity offers a previous derivation. Its
-    // source and semantic scope must still be exact; origins are always new.
-    let retained = retained.filter(|old|
-        old.direct_dependencies.is_empty()
-            && exact_atom(&old.term, b"clause/canonical-source-slice-v1", source)
-            && exact_atom(&old.target.type_term, type_kind.as_bytes(), b"closed")
-            && exact_atom(&old.target.interpretation, b"clause/canonical-reading-v1", b"declaration-profile-v1"));
-    let (term, target) = match retained {
-        Some(old) => (old.term.clone(), old.target.clone()),
-        None => (source_term(scope, source)?, target(scope, type_kind.as_bytes(), b"closed")?),
-    };
     Ok(FormationJudgmentPreimageV2 {
         id,
         context: vec![origin_term(scope, origin)?],
-        term,
-        target,
+        term: source_term(scope, source)?,
+        target: target(scope, type_kind.as_bytes(), b"closed")?,
         direct_dependencies: vec![],
     })
 }

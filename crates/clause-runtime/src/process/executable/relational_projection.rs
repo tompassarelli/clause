@@ -1,7 +1,7 @@
 //! Declared projection views of runtime-owned relation rows; no mirrored state.
 use super::*;
 
-const ROW_SELECTOR: &[u8] = b"clause/js-relation-row-selector-v1";
+pub(super) const ROW_SELECTOR: &[u8] = b"clause/js-relation-row-selector-v1";
 
 fn fields(term: &Term) -> Result<BTreeMap<Vec<u8>, Term>, ExecutableErrorV1> {
     let mut result = BTreeMap::new();
@@ -31,9 +31,9 @@ fn fields(term: &Term) -> Result<BTreeMap<Vec<u8>, Term>, ExecutableErrorV1> {
 impl ExecutablePhysicalPlanV1 {
     pub(super) fn project_source_rows(
         &mut self,
-        scope: TermScope,
         package: &clause_package::CanonicalSourcePackageSliceV1,
         states: &[ExecutableCanonicalStateBindingV1],
+        retained: &mut live_source::SourceMetadataBuilder<'_>,
     ) -> Result<(), ExecutableErrorV1> {
         let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RowProjection);
         if package.relational_projection.is_empty() {
@@ -83,16 +83,7 @@ impl ExecutablePhysicalPlanV1 {
                 let binding = bindings
                     .get(&view.state)
                     .ok_or(ExecutableErrorV1::CanonicalLoweringUnknownState)?;
-                let value = Term::triple([
-                    projection_literal(scope, ROW_SELECTOR, &[])?,
-                    executable_projection_role_term_v1(
-                        scope,
-                        binding.projection_role,
-                        ExecutableValueKindV1::RelationTable,
-                    )?,
-                    projected_scalar_value_term(scope, &ExecutableValueV1::Referent(referent))?,
-                ])
-                .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
+                let value = retained.row(binding.projection_role, referent)?;
                 let field = match &view.state.path {
                     CanonicalStatePathV1::Field { designation, .. } => Some(designation.clone()),
                     _ => None,
@@ -108,8 +99,7 @@ impl ExecutablePhysicalPlanV1 {
                     }
                     value
                 } else {
-                    projection_object(
-                        scope,
+                    retained.object(
                         row_fields
                             .into_iter()
                             .map(|(key, value)| {
@@ -125,37 +115,29 @@ impl ExecutablePhysicalPlanV1 {
             if facets.len() == 1 {
                 properties.insert(
                     b"$referent".to_vec(),
-                    projected_scalar_value_term(
-                        scope,
-                        &ExecutableValueV1::Referent(facets.into_iter().next().unwrap()),
-                    )?,
+                    retained.referent(facets.into_iter().next().unwrap())?,
                 );
             } else if !facets.is_empty() {
+                let references = facets
+                    .into_iter()
+                    .map(|reference| {
+                        Ok((
+                            reference.domain.to_string().into_bytes(),
+                            retained.referent(reference)?,
+                        ))
+                    })
+                    .collect::<Result<_, ExecutableErrorV1>>()?;
                 properties.insert(
                     b"$referents".to_vec(),
-                    projection_object(
-                        scope,
-                        facets
-                            .into_iter()
-                            .map(|reference| {
-                                Ok((
-                                    reference.domain.to_string().into_bytes(),
-                                    projected_scalar_value_term(
-                                        scope,
-                                        &ExecutableValueV1::Referent(reference),
-                                    )?,
-                                ))
-                            })
-                            .collect::<Result<_, ExecutableErrorV1>>()?,
-                    )?,
+                    retained.object(references)?,
                 );
             }
             subjects.insert(
                 name,
-                projection_object(scope, properties.into_iter().collect())?,
+                retained.object(properties.into_iter().collect())?,
             );
         }
-        projection.template = projection_object(scope, subjects.into_iter().collect())?;
+        projection.template = retained.object(subjects.into_iter().collect())?;
         Ok(())
     }
 }

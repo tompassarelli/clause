@@ -1,5 +1,7 @@
 //! Compiler-checked source transitions applied to runtime-owned live state.
 use super::*;
+mod metadata;
+pub(super) use metadata::{SourceMetadataGraph, SourceMetadataBuilder};
 use clause_package::{
     CheckedCanonicalSourceAnalysisV1, CanonicalAllocatedIdentityV1, CanonicalDeclaredFrontendV1, CanonicalSourceEditV1, CanonicalSourceContextV1,
     ProgramChangeOccurrenceId,
@@ -85,8 +87,21 @@ impl ExecutablePhysicalPlanV1 {
         root: ProgramChangeOccurrenceId,
         states: &[ExecutableCanonicalStateBindingV1],
     ) -> Result<(), ExecutableErrorV1> {
+        self.bind_source_snapshot_retaining(scope, package, artifact, root, states, None).map(|_| ())
+    }
+
+    fn bind_source_snapshot_retaining(
+        &mut self,
+        scope: TermScope,
+        package: &clause_package::CanonicalSourcePackageSliceV1,
+        artifact: clause_package::CanonicalSourceArtifactIdV1,
+        root: ProgramChangeOccurrenceId,
+        states: &[ExecutableCanonicalStateBindingV1],
+        previous: Option<&SourceMetadataGraph>,
+    ) -> Result<SourceMetadataGraph, ExecutableErrorV1> {
         let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SnapshotMetadata);
-        self.project_source_rows(scope, package, states)?;
+        let mut retained = SourceMetadataBuilder::new(scope, previous)?;
+        self.project_source_rows(package, states, &mut retained)?;
         let projection = self
             .program
             .projection
@@ -127,8 +142,8 @@ impl ExecutablePhysicalPlanV1 {
             projection.template.clone(),
         ])
         .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
-        self.source_metadata = Some(source_metadata(scope, package, artifact, states)?);
-        Ok(())
+        self.source_metadata = Some(retained.source(package, artifact, states)?);
+        Ok(retained.finish())
     }
 }
 
@@ -684,6 +699,7 @@ pub struct CheckedExecutableSourcePreparationV1 {
     pub(crate) identity: ExecutablePhysicalPlanIdV1,
     pub(crate) plan: ExecutablePhysicalPlanV1,
     pub(crate) lowered: ExecutableCanonicalProgramV1,
+    metadata: SourceMetadataGraph,
 }
 
 pub fn check_executable_source_preparation_v1(
@@ -722,9 +738,9 @@ pub fn check_executable_source_preparation_v1(
         expected.program.rules.push(checkpoint.clone());
     }
     expected.project_referent_input_domains(scope)?;
-    expected.bind_source_snapshot(scope, package, analysis.source().artifact(), root, &lowered.states)?;
+    let metadata = expected.bind_source_snapshot_retaining(scope, package, analysis.source().artifact(), root, &lowered.states, None)?;
     if expected != plan { return Err(ExecutableErrorV1::SourceContinuityRejected("prepared source does not realize exact bound CPP1")); }
-    Ok(CheckedExecutableSourcePreparationV1 { analysis: Arc::new(analysis), declared_frontend: declared_frontend.to_vec(), scope, exact_cpp1: exact_cpp1.to_vec(), identity: physical_plan_identity(exact_cpp1), plan, lowered })
+    Ok(CheckedExecutableSourcePreparationV1 { analysis: Arc::new(analysis), declared_frontend: declared_frontend.to_vec(), scope, exact_cpp1: exact_cpp1.to_vec(), identity: physical_plan_identity(exact_cpp1), plan: expected, lowered, metadata })
 }
 
 pub fn check_executable_source_edit_v1(
@@ -939,7 +955,7 @@ fn derive_prepared_source_edit(
         input.tick.entries.dedup();
     }
     expected_new.add_referent_input_projection(scope)?;
-    expected_new.bind_source_snapshot(scope, &new, edit.source().artifact(), new_root, &new_lowered.states)?;
+    let metadata = expected_new.bind_source_snapshot_retaining(scope, &new, edit.source().artifact(), new_root, &new_lowered.states, Some(&preparation.metadata))?;
     let _compare = source_profile_scope_v1(SourceProfilePhaseV1::CompareAndMap);
     let exact_cpp1 = encode_executable_physical_plan_v1(&expected_new)?;
     let mut slots = Vec::new();
@@ -972,7 +988,7 @@ fn derive_prepared_source_edit(
         edit,
         preparation: Arc::new(CheckedExecutableSourcePreparationV1 {
             analysis: Arc::new(next_analysis), declared_frontend: preparation.declared_frontend.clone(), scope,
-            exact_cpp1, identity: new_plan, plan: expected_new, lowered: new_lowered,
+            exact_cpp1, identity: new_plan, plan: expected_new, lowered: new_lowered, metadata,
         }),
     })
 }

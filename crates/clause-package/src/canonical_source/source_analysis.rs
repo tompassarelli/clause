@@ -1,4 +1,6 @@
 use super::*;
+mod declarations;
+pub(super) use declarations::rebind_declarations;
 
 /// A retained analysis belongs to one exact parsed source, allocation root and
 /// semantic context. Its checked executable results cannot be replaced by callers.
@@ -15,7 +17,8 @@ pub struct CheckedCanonicalSourceAnalysisV1 {
 pub(super) struct RetainedSourceDerivations<'a> {
     pub handlers: Vec<CanonicalExecutableHandlerV1>,
     pub selected: &'a BTreeSet<FormationLocalId>,
-    pub formations: BTreeMap<FormationLocalId, &'a FormationJudgmentPreimageV2>,
+    pub previous: &'a CanonicalSourcePackageSliceV1,
+    pub edit: &'a CanonicalSourceEditV1,
 }
 
 impl CheckedCanonicalSourceAnalysisV1 {
@@ -104,10 +107,7 @@ impl CheckedCanonicalSourceAnalysisV1 {
                 }).collect();
                 retained.push(handler);
             }
-            let formations = self.package.checked_package.constitution().preimage().formations.iter()
-                .filter_map(|formation| edit.formation(formation.id).ok().map(|id| (id, formation)))
-                .collect();
-            let derivations = RetainedSourceDerivations { handlers: retained, selected: &selected, formations };
+            let derivations = RetainedSourceDerivations { handlers: retained, selected: &selected, previous: &self.package, edit };
             elaborate_canonical_source_package_inner(edit.source(), self.context, edit.plan(), Some(derivations))?
         } else {
             elaborate_canonical_source_package_v1(edit.source(), self.context, edit.plan())?
