@@ -285,6 +285,19 @@ pub(super) fn sum_with_shape(
     context: EvaluationContextV1,
     shape: Option<&Arc<[u8]>>,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    let inputs = inputs.iter().map(|input| evaluate(input, configuration, arguments, context))
+        .collect::<Result<Vec<_>, _>>()?;
+    sum_with_values(inputs, predicates, value, configuration, context, shape)
+}
+
+pub(super) fn sum_with_values(
+    inputs: Vec<ExecutableValueV1>,
+    predicates: &[ExecutableExpressionV1],
+    value: &ExecutableExpressionV1,
+    configuration: &[ExecutableSlotV1],
+    context: EvaluationContextV1,
+    shape: Option<&Arc<[u8]>>,
+) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     let same_query = |previous: &SumQuery| {
         previous.captured_reads == context.reads.is_some()
             && match (shape, previous.shape.as_ref()) {
@@ -292,8 +305,6 @@ pub(super) fn sum_with_shape(
                 _ => previous.contribution == *value && previous.predicates == predicates,
             }
     };
-    let inputs = inputs.iter().map(|input| evaluate(input, configuration, arguments, context))
-        .collect::<Result<Vec<_>, _>>()?;
     if let Some(queries) = context.sum_queries {
         if let Some(previous) = queries.borrow().entries.iter().find(|previous|
             same_query(previous))

@@ -12,7 +12,7 @@ pub(super) struct ScalarPlan {
 
 enum Node {
     Value(Box<ExecutableExpressionV1>),
-    Sum { expression: Box<ExecutableExpressionV1>, shape: Arc<[u8]> },
+    Sum { expression: Box<ExecutableExpressionV1>, inputs: Vec<usize>, shape: Arc<[u8]> },
     Number(u64), Boolean(bool), Slot(u16), Argument(u16), Binding(u16),
     Add(usize, usize), Subtract(usize, usize), Multiply(usize, usize), Divide(usize, usize),
     GreaterThan(usize, usize), LessThanOrEqual(usize, usize), Equal(usize, usize), And(usize, usize),
@@ -155,6 +155,10 @@ fn emit_scalar_instructions(index: usize, nodes: &[(Node, bool, bool)], code: &m
             code.push(Instruction::Copy { from: a, to: index });
             code[jump] = Instruction::Jump(code.len());
         }
+        Node::Sum { ref inputs, .. } => {
+            for input in inputs { emit_scalar_instructions(*input, nodes, code); }
+            code.push(Instruction::Evaluate(index));
+        }
         _ => code.push(Instruction::Evaluate(index)),
     }
     if let Some(position) = cached { code[position] = Instruction::Cached { node: index, end: code.len() }; }
@@ -197,13 +201,14 @@ impl ScalarPlan {
                 E::Slot(index) => Node::Slot(*index),
                 E::Argument(index) => Node::Argument(*index),
                 E::Binding(index) => { input_only = false; Node::Binding(*index) },
-                E::Sum { predicates, value, .. } => {
+                E::Sum { inputs, predicates, value } => {
+                    let inputs = inputs.iter().map(&mut child).collect::<Result<Vec<_>, _>>()?;
                     input_only = false;
                     let mut shape = Vec::new();
                     encode_expression(&mut shape, &E::Sum {
                         inputs: Vec::new(), predicates: predicates.clone(), value: value.clone(),
                     })?;
-                    Node::Sum { expression: Box::new(expression.clone()), shape: shape.into() }
+                    Node::Sum { expression: Box::new(expression.clone()), inputs, shape: shape.into() }
                 },
                 _ => { reusable = false; input_only = false; Node::Value(Box::new(expression.clone())) },
             };
@@ -224,6 +229,7 @@ impl ScalarPlan {
                 Node::Conditional(a, b, c) | Node::Clamp(a, b, c) => {
                     uses[a] += 1; uses[b] += 1; uses[c] += 1;
                 }
+                Node::Sum { ref inputs, .. } => { for input in inputs { uses[*input] += 1; } }
                 _ => {}
             }
         }
@@ -378,13 +384,15 @@ impl ScalarMemo<'_> {
         macro_rules! boolean_value { ($index:expr) => { eval!($index)?.as_boolean() }; }
         let value = match self.plan.nodes[index].0 {
             Node::Value(ref expression) => self.retain(&evaluate_uncached(expression, evaluation.configuration, evaluation.arguments, evaluation.context)?),
-            Node::Sum { ref expression, ref shape } => {
-                let ExecutableExpressionV1::Sum { inputs, predicates, value } = expression.as_ref() else {
+            Node::Sum { ref expression, ref inputs, ref shape } => {
+                let ExecutableExpressionV1::Sum { predicates, value, .. } = expression.as_ref() else {
                     return Err(ExecutableErrorV1::MalformedProgram);
                 };
                 let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumEvaluation);
-                self.retain(&relational::sum_with_shape(inputs, predicates, value,
-                    evaluation.configuration, evaluation.arguments, evaluation.context, Some(shape))?)
+                let inputs = inputs.iter().map(|input| eval!(*input).map(|value| self.expand(value)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.retain(&relational::sum_with_values(inputs, predicates, value,
+                    evaluation.configuration, evaluation.context, Some(shape))?)
             },
             Node::Number(bits) => ScalarValue::Number(bits),
             Node::Boolean(value) => ScalarValue::Boolean(value),
@@ -429,6 +437,100 @@ impl ScalarMemo<'_> {
 mod tests {
     use super::*;
     use ExecutableExpressionV1 as E;
+
+    #[test]
+    #[ignore = "owning-loop timing with an explicitly supplied consumer fixture"]
+    fn measure_consumer_sum_inputs() {
+        use clause_package::*;
+        let source = std::fs::read(std::env::var("CLAUSE_SUM_INPUT_SOURCE").unwrap()).unwrap();
+        let frontend = CanonicalDeclaredFrontendV1::read(DECLARED_FOCUSED_FRONTEND_SOURCE_V1).unwrap();
+        let cst = read_canonical_source_with_declared_frontend_v1(&source, &frontend).unwrap();
+        let allocation = plan_independent_canonical_source_allocations_v1(&cst,
+            ProgramChangeOccurrenceId::from_bytes([17; 32])).unwrap();
+        let scope = TermScope { universe: UniverseId::from_bytes([1;32]), semantics: ClauseSemanticsId::from_bytes([2;32]) };
+        let compiled = elaborate_canonical_source_package_v1(&cst,
+            CanonicalSourceContextV1 { universe: scope.universe, semantics: scope.semantics }, &allocation).unwrap();
+        let roles = (0..compiled.state_cells.len()).map(|id| LocalRoleRefV2 {
+            schema: RelationSchemaLocalId::new(2), role: RoleLocalId::new(id as u32),
+        }).collect::<Vec<_>>();
+        let lowered = lower_canonical_executable_program_v1(scope, &compiled.state_cells, &compiled.executable_handlers, &roles).unwrap();
+        let slots = lowered.program.initial_configuration.iter().cloned().map(Into::into).collect::<Vec<ExecutableSlotV1>>();
+        let configuration = slots.as_slice();
+        let arguments = [ExecutableValueV1::number(0.016).unwrap()];
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
+            reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
+        let mut cases = Vec::new();
+        let mut seen = BTreeSet::new();
+        for rule in &lowered.program.rules {
+            let joins = rule.predicates.iter().filter(|p| matches!(p, E::RelationMatch(..))).cloned().collect::<Vec<_>>();
+            let Ok(matches) = relational::match_rule(&joins, configuration, &arguments, context, &mut 0, false) else { continue; };
+            for (_, expression) in &rule.assignments {
+                let expressions: Vec<_> = match expression {
+                    E::RelationEffects(effects) => effects.iter().map(|effect| effect.parts().2).collect(),
+                    _ => vec![expression],
+                };
+                for expression in expressions {
+                    let plan = ScalarPlan::new(expression).unwrap();
+                    for (node, _, _) in &plan.nodes {
+                        let Node::Sum { expression, .. } = node else { continue; };
+                        let E::Sum { inputs, .. } = expression.as_ref() else { unreachable!() };
+                        // Isolate the measured invocation-input loop, retaining the
+                        // consumer's exact lowered arithmetic and substitutions.
+                        let expression = E::Sum { inputs: inputs.clone(), predicates: vec![],
+                            value: Box::new(E::Constant(ExecutableValueV1::number(0.0).unwrap())) };
+                        let mut key = Vec::new(); encode_expression(&mut key, &expression).unwrap();
+                        if !seen.insert(key) { continue; }
+                        let rows = matches.iter().filter(|(matched, accepted)| *accepted &&
+                            inputs.iter().all(|input| evaluate(input, configuration, &arguments,
+                                EvaluationContextV1 { bindings: Some(&matched.bindings), ..context }).is_ok()))
+                            .map(|(matched, _)| matched.bindings.clone()).collect::<Vec<_>>();
+                        if !rows.is_empty() { cases.push((ScalarPlan::new(&expression).unwrap(), rows)); }
+                    }
+                }
+            }
+        }
+        assert!(!cases.is_empty());
+        let mut samples = Vec::new();
+        for _ in 0..7 {
+            let started = std::time::Instant::now();
+            for _ in 0..100 {
+                for (plan, rows) in &cases {
+                    let memo = plan.memo();
+                    for bindings in rows {
+                        std::hint::black_box(evaluate(&plan.expression, configuration, &arguments,
+                            EvaluationContextV1 { bindings: Some(bindings), scalar_memo: Some(&memo), ..context }).unwrap());
+                    }
+                }
+            }
+            samples.push(started.elapsed().as_secs_f64() * 1000.0 / 100.0);
+        }
+        eprintln!("sum-input-loop cases={} rows={} ms_per_sweep={samples:?}", cases.len(), cases.iter().map(|(_,rows)|rows.len()).sum::<usize>());
+    }
+
+    #[test]
+    fn compiled_sum_inputs_preserve_binding_changes_and_selected_errors() {
+        let number = |value| ExecutableValueV1::number(value).unwrap();
+        let input = E::Divide(Box::new(E::Binding(0)), Box::new(E::Argument(1)));
+        let sum = E::Sum { inputs: vec![input.clone(), input.clone()], predicates: vec![],
+            value: Box::new(E::Add(Box::new(E::Argument(0)), Box::new(E::Argument(1)))) };
+        let expression = E::Conditional(Box::new(E::Argument(0)),
+            Box::new(E::Add(Box::new(sum), Box::new(input))), Box::new(E::Constant(number(7.0))));
+        let plan = ScalarPlan::new(&expression).unwrap();
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
+            reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
+        for arguments in [vec![ExecutableValueV1::Boolean(true), number(2.0)],
+            vec![ExecutableValueV1::Boolean(true), number(0.0)],
+            vec![ExecutableValueV1::Boolean(true)], vec![ExecutableValueV1::Boolean(false)]] {
+            let memo = plan.memo();
+            for value in [number(2.0), number(9.0), ExecutableValueV1::Boolean(false)] {
+                let bindings = relational::Bindings::from([(0, value)]);
+                let context = EvaluationContextV1 { bindings: Some(&bindings), ..context };
+                assert_eq!(evaluate(&plan.expression, &[], &arguments,
+                    EvaluationContextV1 { scalar_memo: Some(&memo), ..context }),
+                    evaluate(&expression, &[], &arguments, context));
+            }
+        }
+    }
 
     #[test]
     fn compiled_boolean_branches_preserve_selected_types_and_errors() {
