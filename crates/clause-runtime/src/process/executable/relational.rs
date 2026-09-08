@@ -237,6 +237,41 @@ pub(super) struct SumQueries {
 #[derive(Default)]
 pub(super) struct ScalarPlans(Mutex<Vec<Arc<scalar_reuse::ScalarPlan>>>, Mutex<EffectPlans>);
 
+impl ScalarPlans {
+    pub(super) fn continue_for_program(&self, program: &Arc<ExecutableProgramV1>, edit: Option<&CanonicalSourceEditV1>)
+        -> Result<Self, ExecutableErrorV1> {
+        let previous = self.0.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+        let mut member_sets = BTreeMap::new();
+        let previous = previous.iter().filter_map(|plan| match edit {
+            Some(edit) => plan.rebind(edit, &mut member_sets).ok(),
+            None => Some(plan.clone()),
+        }).collect::<Vec<_>>();
+        let mut plans = Vec::<Arc<scalar_reuse::ScalarPlan>>::new();
+        let mut effects = EffectPlans { program: Some(program.clone()), plans: BTreeMap::new() };
+        for (rule_index, rule) in program.rules.iter().enumerate() {
+            for (assignment, (_, expression)) in rule.assignments.iter().enumerate() {
+                let ExecutableExpressionV1::RelationEffects(values) = expression else { continue };
+                for (effect, value) in values.iter().enumerate() {
+                    let (_, _, expression) = value.parts();
+                    let Some(plan) = previous.iter().find(|plan| plan.expression.as_ref() == expression) else { continue };
+                    effects.plans.insert((rule_index, assignment, effect), Some(plan.clone()));
+                    if !plans.iter().any(|retained| Arc::ptr_eq(retained, plan)) { plans.push(plan.clone()); }
+                    for value in plan.sum_values() {
+                        if let Some(query) = previous.iter().find(|plan| plan.expression.as_ref() == value)
+                            && !plans.iter().any(|retained| Arc::ptr_eq(retained, query)) {
+                            plans.push(query.clone());
+                        }
+                    }
+                }
+            }
+        }
+        // Coordinates belong to the receiving program. Exact expressions may
+        // retain code; obsolete expressions and all preparation-local results
+        // remain outside this new cache.
+        Ok(Self(Mutex::new(plans), Mutex::new(effects)))
+    }
+}
+
 #[derive(Default)]
 struct EffectPlans {
     program: Option<Arc<ExecutableProgramV1>>,
@@ -1084,6 +1119,50 @@ mod ordered_specialization_tests {
 #[cfg(test)]
 mod sum_reuse_tests {
     use super::*;
+
+    #[test]
+    fn continuing_plans_rebind_exact_expressions_and_release_unused_code() {
+        use ExecutableExpressionV1 as E;
+        let number = |n| E::Constant(ExecutableValueV1::number(n).unwrap());
+        let contribution = E::Multiply(Box::new(E::Argument(0)), Box::new(number(2.0)));
+        let expression = E::Sum { inputs: vec![E::Argument(0)], predicates: vec![],
+            value: Box::new(contribution.clone()) };
+        let unused = E::Add(Box::new(E::Argument(0)), Box::new(number(99.0)));
+        let plans = Arc::new(ScalarPlans::default());
+        let queries = std::cell::RefCell::new(SumQueries { scalar_plans: plans.clone(), ..Default::default() });
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
+            reads: None, sum_queries: Some(&queries), scalar_memo: None, bindings: None, relational_occurrence: None };
+        let root = scalar_plan(&expression, context).unwrap().unwrap();
+        let query = scalar_plan(&contribution, context).unwrap().unwrap();
+        let obsolete = scalar_plan(&unused, context).unwrap().unwrap();
+        let changed = E::Add(Box::new(expression.clone()), Box::new(number(5.0)));
+        let program = Arc::new(ExecutableProgramV1 { initial_configuration: vec![], projection: None,
+            rules: vec![ExecutableRuleV1 { entry: 2, predicates: vec![], required_present: vec![],
+                required_absent: vec![], removals: vec![], assignments: vec![(0,
+                    E::RelationEffects(vec![ExecutableRelationEffectV1::Put(number(0.0), changed.clone()),
+                        ExecutableRelationEffectV1::Put(number(0.0), expression.clone())]))] }].into() });
+        let continued = Arc::new(plans.continue_for_program(&program, None).unwrap());
+        {
+            let retained = continued.0.lock().unwrap();
+            assert_eq!(retained.len(), 2);
+            assert!(retained.iter().any(|plan| Arc::ptr_eq(plan, &root)));
+            assert!(retained.iter().any(|plan| Arc::ptr_eq(plan, &query)));
+            assert!(!retained.iter().any(|plan| Arc::ptr_eq(plan, &obsolete)));
+        }
+        let queries = std::cell::RefCell::new(SumQueries { scalar_plans: continued, ..Default::default() });
+        let context = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
+        assert!(Arc::ptr_eq(&effect_scalar_plan(&program, (0, 0, 1), &expression, context).unwrap().unwrap(), &root));
+        let replaced = effect_scalar_plan(&program, (0, 0, 0), &changed, context).unwrap().unwrap();
+        assert!(!Arc::ptr_eq(&replaced, &root));
+        for input in [3.0, 11.0] {
+            let memo = replaced.memo();
+            let value = evaluate(replaced.expression.as_ref(), &[], &[ExecutableValueV1::number(input).unwrap()],
+                EvaluationContextV1 { scalar_memo: Some(&memo), ..context }).unwrap();
+            assert_eq!(value, ExecutableValueV1::number(input * 2.0 + 5.0).unwrap());
+        }
+        assert!(matches!(evaluate(&changed, &[], &[ExecutableValueV1::Boolean(true)], context),
+            Err(ExecutableErrorV1::TypeMismatch)));
+    }
 
     #[test]
     fn shared_join_prefix_preserves_input_filtering_sum_order_and_reads() {

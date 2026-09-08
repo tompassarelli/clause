@@ -693,6 +693,7 @@ mod engine {
                 .lock()
                 .map_err(|_| ExecutableErrorV1::CarrierRejected)?;
             if retained.is_none() {
+                let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanBuild);
                 static ENGINE: std::sync::OnceLock<Engine> = std::sync::OnceLock::new();
                 let engine = ENGINE.get_or_init(Engine::default);
                 let module = Module::new(engine, &query.code)

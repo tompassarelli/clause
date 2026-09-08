@@ -1103,7 +1103,7 @@ fn retain_lowered_source_rules(
 
 // Physical slots remain fixed, while semantic constants still belong to the
 // newly checked allocation root. Reuse never preserves an old semantic address.
-fn rebind_lowered_expression(value: &mut ExecutableExpressionV1, edit: &CanonicalSourceEditV1, member_sets: &mut BTreeMap<Vec<u32>, Vec<u32>>) -> Result<(), ExecutableErrorV1> {
+pub(super) fn rebind_lowered_expression(value: &mut ExecutableExpressionV1, edit: &CanonicalSourceEditV1, member_sets: &mut BTreeMap<Vec<u32>, Vec<u32>>) -> Result<(), ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
     let formation = |old| edit.formation(FormationLocalId::new(old)).map(|new| new.get())
         .map_err(|_| ExecutableErrorV1::MalformedProgram);
@@ -1416,8 +1416,10 @@ impl ExecutableProcessRuntimeV1 {
                 .occurrences
                 .push((*old, *new, first_snapshot, first, occurrence));
         }
+        let scalar_plans = previous.scalar_plans.continue_for_program(&self.program, Some(&checked.edit))?;
         self.configuration = next;
         self.source_continuity = Some(continuity);
+        self.scalar_plans = Arc::new(scalar_plans);
         Ok(())
     }
 }

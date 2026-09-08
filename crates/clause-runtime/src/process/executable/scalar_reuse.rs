@@ -10,6 +10,7 @@ pub(super) struct ScalarPlan {
     numeric_query: std::sync::OnceLock<Option<Arc<compiled_numeric::NumericQuery>>>,
 }
 
+#[derive(Clone)]
 enum Node {
     Value(Box<ExecutableExpressionV1>),
     Sum { expression: Box<ExecutableExpressionV1>, inputs: Vec<usize>, shape: Arc<[u8]> },
@@ -19,6 +20,7 @@ enum Node {
     Not(usize), SquareRoot(usize), Conditional(usize, usize, usize), Clamp(usize, usize, usize),
 }
 
+#[derive(Clone)]
 enum Instruction {
     Cached { node: usize, end: usize },
     Evaluate(usize),
@@ -165,6 +167,41 @@ fn emit_scalar_instructions(index: usize, nodes: &[(Node, bool, bool)], code: &m
 }
 
 impl ScalarPlan {
+    pub(super) fn rebind(self: &Arc<Self>, edit: &CanonicalSourceEditV1,
+        member_sets: &mut BTreeMap<Vec<u32>, Vec<u32>>) -> Result<Arc<Self>, ExecutableErrorV1> {
+        let mut expression = self.expression.clone();
+        live_source::rebind_lowered_expression(&mut expression, edit, member_sets)?;
+        if expression == self.expression { return Ok(self.clone()); }
+        let mut nodes = self.nodes.clone();
+        for (node, _, _) in &mut nodes {
+            match node {
+                Node::Value(expression) => live_source::rebind_lowered_expression(expression, edit, member_sets)?,
+                Node::Sum { expression, shape, .. } => {
+                    live_source::rebind_lowered_expression(expression, edit, member_sets)?;
+                    let ExecutableExpressionV1::Sum { predicates, value, .. } = expression.as_ref() else { unreachable!() };
+                    let mut bytes = Vec::new();
+                    encode_expression(&mut bytes, &ExecutableExpressionV1::Sum {
+                        inputs: Vec::new(), predicates: predicates.clone(), value: value.clone(),
+                    })?;
+                    *shape = bytes.into();
+                }
+                _ => {}
+            }
+        }
+        // Checked identity rebinding preserves node structure and physical
+        // slots. Code embedding changed semantic constants must be rebuilt.
+        Ok(Arc::new(Self { expression, nodes, root: self.root, instructions: self.instructions.clone(),
+            numeric_query: std::sync::OnceLock::new() }))
+    }
+
+    pub(super) fn sum_values(&self) -> impl Iterator<Item = &ExecutableExpressionV1> {
+        self.nodes.iter().filter_map(|(node, _, _)| {
+            let Node::Sum { expression, .. } = node else { return None };
+            let ExecutableExpressionV1::Sum { value, .. } = expression.as_ref() else { unreachable!() };
+            Some(value.as_ref())
+        })
+    }
+
     pub fn new(expression: &ExecutableExpressionV1) -> Result<Self, ExecutableErrorV1> {
         let mut nodes = Vec::new();
         let mut interned = BTreeMap::<Vec<u8>, usize>::new();
