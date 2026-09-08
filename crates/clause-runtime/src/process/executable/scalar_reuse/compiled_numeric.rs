@@ -38,7 +38,18 @@ pub(super) struct NumericQuery {
     inputs: Vec<Input>,
     fixed_bytes: usize,
     row_bytes: usize,
+    packed_rows: Mutex<Option<PackedRows>>,
     engine: engine::Retained,
+}
+
+// Weak identities cannot keep retired bindings or their values alive. Their
+// allocation remains distinct until replacement, so pointer reuse is impossible.
+// The fixed payload length preserves encoded offsets and lazy error statuses.
+struct PackedRows {
+    bindings: Vec<std::sync::Weak<relational::Bindings>>,
+    fixed_payload_bytes: usize,
+    data: Vec<u8>,
+    payload: Vec<u8>,
 }
 
 fn known(index: usize, nodes: &[(Node, bool, bool)]) -> Option<Kind> {
@@ -538,9 +549,38 @@ impl NumericQuery {
             inputs: emitter.inputs,
             fixed_bytes: fixed_bytes as usize,
             row_bytes: row_bytes as usize,
+            packed_rows: Mutex::new(None),
             engine: engine::Retained::default(),
         }))
     }
+}
+
+fn pack_input(data: &mut [u8], input: &Input, value: Result<&ExecutableValueV1, u32>, payload: &mut Vec<u8>, length: usize) {
+    let (status, bits) = match (value, input.kind) {
+        (Ok(ExecutableValueV1::Number(bits)), Kind::Number) => (0, *bits),
+        (Ok(ExecutableValueV1::Boolean(value)), Kind::Boolean) => (0, u64::from(*value)),
+        (Ok(value), Kind::EncodedValue) => {
+            let begin = payload.len();
+            match encode_value(payload, value) {
+                Ok(()) => {
+                    let size = payload.len() - begin;
+                    let end = length.checked_add(payload.len());
+                    if end.is_none_or(|end| end > i32::MAX as usize) {
+                        (7, 0)
+                    } else {
+                        (0, ((size as u64) << 32) | (length + begin) as u64)
+                    }
+                }
+                Err(ExecutableErrorV1::ResourceLimit) => (7, 0),
+                Err(_) => (6, 0),
+            }
+        }
+        (Ok(_), _) => (2, 0),
+        (Err(code), _) => (code, 0),
+    };
+    let offset = input.offset as usize;
+    data[offset..offset + 4].copy_from_slice(&status.to_le_bytes());
+    data[offset + 8..offset + 16].copy_from_slice(&bits.to_le_bytes());
 }
 
 impl NumericQuery {
@@ -559,33 +599,6 @@ impl NumericQuery {
         let rows_i32 = i32::try_from(rows).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
         let mut data = vec![0; length];
         let mut payload = Vec::new();
-        let mut write = |data: &mut [u8], input: &Input, value: Result<&ExecutableValueV1, u32>| {
-            let (status, bits) = match (value, input.kind) {
-                (Ok(ExecutableValueV1::Number(bits)), Kind::Number) => (0, *bits),
-                (Ok(ExecutableValueV1::Boolean(value)), Kind::Boolean) => (0, u64::from(*value)),
-                (Ok(value), Kind::EncodedValue) => {
-                    let begin = payload.len();
-                    match encode_value(&mut payload, value) {
-                        Ok(()) => {
-                            let size = payload.len() - begin;
-                            let end = length.checked_add(payload.len());
-                            if end.is_none_or(|end| end > i32::MAX as usize) {
-                                (7, 0)
-                            } else {
-                                (0, ((size as u64) << 32) | (length + begin) as u64)
-                            }
-                        }
-                        Err(ExecutableErrorV1::ResourceLimit) => (7, 0),
-                        Err(_) => (6, 0),
-                    }
-                }
-                (Ok(_), _) => (2, 0),
-                (Err(code), _) => (code, 0),
-            };
-            let offset = input.offset as usize;
-            data[offset..offset + 4].copy_from_slice(&status.to_le_bytes());
-            data[offset + 8..offset + 16].copy_from_slice(&bits.to_le_bytes());
-        };
         for input in &self.inputs {
             let value = match input.leaf {
                 Leaf::Slot(index) => configuration
@@ -595,7 +608,19 @@ impl NumericQuery {
                 Leaf::Argument(index) => arguments.get(usize::from(index)).ok_or(5),
                 Leaf::Binding(_) => continue,
             };
-            write(&mut data, input, value);
+            pack_input(&mut data, input, value, &mut payload, length);
+        }
+        let fixed_payload_bytes = payload.len();
+        let mut retained = self.packed_rows.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+        if let Some(previous) = retained.as_ref().filter(|previous|
+            previous.fixed_payload_bytes == fixed_payload_bytes
+                && previous.bindings.len() == rows
+                && previous.bindings.iter().zip(matches.iter().filter(|(_, accepted)| *accepted))
+                    .all(|(previous, (matched, _))| std::ptr::eq(previous.as_ptr(), Arc::as_ptr(&matched.bindings)))) {
+            data[self.fixed_bytes..].copy_from_slice(&previous.data);
+            data.extend_from_slice(&payload);
+            data.extend_from_slice(&previous.payload);
+            return Ok((data, rows_i32));
         }
         let mut offset = self.fixed_bytes;
         for (matched, accepted) in matches {
@@ -604,15 +629,21 @@ impl NumericQuery {
             }
             for input in &self.inputs {
                 if let Leaf::Binding(index) = input.leaf {
-                    write(
-                        &mut data[offset..],
-                        input,
-                        matched.bindings.get(&index).ok_or(6),
+                    pack_input(
+                        &mut data[offset..], input, matched.bindings.get(&index).ok_or(6),
+                        &mut payload, length,
                     );
                 }
             }
             offset += self.row_bytes;
         }
+        *retained = Some(PackedRows {
+            bindings: matches.iter().filter(|(_, accepted)| *accepted)
+                .map(|(matched, _)| Arc::downgrade(&matched.bindings)).collect(),
+            fixed_payload_bytes,
+            data: data[self.fixed_bytes..].to_vec(),
+            payload: payload[fixed_payload_bytes..].to_vec(),
+        });
         data.extend_from_slice(&payload);
         Ok((data, rows_i32))
     }
@@ -926,6 +957,38 @@ mod tests {
             &[],
             &missing,
         );
+    }
+
+    #[test]
+    fn retained_packed_rows_preserve_changed_inputs_rows_and_lazy_errors() {
+        let expression = E::Conditional(
+            Box::new(E::Equal(Box::new(E::Binding(0)), Box::new(E::Argument(0)))),
+            Box::new(number(7.0)),
+            Box::new(E::Binding(1)),
+        );
+        let plan = ScalarPlan::new(&expression).unwrap();
+        let text = |value: &str| ExecutableValueV1::text(value).unwrap();
+        let mut rows = vec![(relational::Matched {
+            bindings: Arc::new(relational::Bindings::from([
+                (0, text("alpha")), (1, ExecutableValueV1::number(3.0).unwrap()),
+            ])), predicates: Vec::new(),
+        }, true)];
+        let arguments = [text("alpha"), text("omega"), text("longer encoded argument"), text("alpha")];
+        for argument in &arguments {
+            let args = std::slice::from_ref(argument);
+            assert_eq!(plan.compiled_sum(&[], args, &rows).unwrap().map(canonical_number_bits),
+                interpreted(&plan, args, &rows));
+            assert_eq!(Arc::strong_count(&rows[0].0.bindings), 1);
+        }
+        // A copy-on-write mutation cannot match the retained immutable bindings.
+        Arc::make_mut(&mut rows[0].0.bindings).insert(1, ExecutableValueV1::Boolean(false));
+        for argument in &arguments {
+            let args = std::slice::from_ref(argument);
+            assert_eq!(plan.compiled_sum(&[], args, &rows).unwrap().map(canonical_number_bits),
+                interpreted(&plan, args, &rows));
+        }
+        rows[0].1 = false;
+        assert_eq!(plan.compiled_sum(&[], &[], &rows).unwrap(), Ok(0.0));
     }
 
     #[test]
