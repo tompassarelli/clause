@@ -18,7 +18,7 @@ fn finite_collections_execute_padding_and_title_distance_in_native_and_bun() {
         initial_configuration: vec![number(0.0)],
         rules: vec![ExecutableRuleV1 { entry: 0, predicates: vec![], required_present: vec![], required_absent: vec![], removals: vec![],
             assignments: vec![(0, E::SequenceAt(Box::new(E::SequenceRange(Box::new(E::Constant(number(4.0))))), Box::new(E::Constant(number(2.0)))))],
-        }],
+        }].into(),
         projection: None,
     };
     assert_eq!(decode_executable_physical_plan_v1(&encode_executable_physical_plan_v1(&plan).unwrap()).unwrap(), plan);

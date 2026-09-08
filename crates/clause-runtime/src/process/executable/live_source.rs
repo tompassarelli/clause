@@ -453,7 +453,7 @@ pub fn replay_canonical_executable_entry_layout_v1(
         {
             return Err(rejected());
         }
-        for (expected, recorded) in lowered.program.rules[cursor..end]
+        for (expected, recorded) in Arc::make_mut(&mut lowered.program.rules)[cursor..end]
             .iter_mut()
             .zip(recorded_rules)
         {
@@ -735,7 +735,7 @@ pub fn check_executable_source_preparation_v1(
             || !checkpoint.required_absent.is_empty() || !checkpoint.assignments.is_empty() || !checkpoint.removals.is_empty() {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
-        expected.program.rules.push(checkpoint.clone());
+        Arc::make_mut(&mut expected.program.rules).push(checkpoint.clone());
     }
     expected.project_referent_input_domains(scope)?;
     let metadata = expected.bind_source_snapshot_retaining(scope, package, analysis.source().artifact(), root, &lowered.states, None)?;
@@ -909,7 +909,7 @@ fn derive_prepared_source_edit(
         entries.insert(checkpoint.entry, new_entry);
         let mut replacement = checkpoint.clone();
         replacement.entry = new_entry;
-        expected_new.program.rules.push(replacement);
+        Arc::make_mut(&mut expected_new.program.rules).push(replacement);
     }
     if let Some(input) = &mut expected_new.input {
         for binding in &mut input.events {

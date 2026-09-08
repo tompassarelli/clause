@@ -461,7 +461,7 @@ mod tests {
             reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         let mut cases = Vec::new();
         let mut seen = BTreeSet::new();
-        for rule in &lowered.program.rules {
+        for rule in lowered.program.rules.iter() {
             let joins = rule.predicates.iter().filter(|p| matches!(p, E::RelationMatch(..))).cloned().collect::<Vec<_>>();
             let Ok(matches) = relational::match_rule(&joins, configuration, &arguments, context, &mut 0, false) else { continue; };
             for (_, expression) in &rule.assignments {

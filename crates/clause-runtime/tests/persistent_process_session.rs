@@ -138,7 +138,7 @@ fn executable_program() -> ExecutableProgramV1 {
                 )],
                 removals: vec![],
             },
-        ],
+        ].into(),
         projection: None,
     }
 }
@@ -515,7 +515,7 @@ fn ongoing_effect_physical_plan(
         input: None,
         program: ExecutableProgramV1 {
             initial_configuration: vec![number(0.0)],
-            rules: vec![],
+            rules: vec![].into(),
             projection: None,
         },
     }

@@ -958,7 +958,8 @@ pub struct ExecutableRuleV1 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExecutableProgramV1 {
     pub initial_configuration: Vec<ExecutableValueV1>,
-    pub rules: Vec<ExecutableRuleV1>,
+    // Plans can change projection metadata while retaining the exact checked rules.
+    pub rules: Arc<Vec<ExecutableRuleV1>>,
     pub projection: Option<ExecutableProjectionV1>,
 }
 
@@ -1207,7 +1208,7 @@ fn lower_canonical_executable_program_with_layout(
     let projection = Some(canonical_source_projection(scope, &ordered_states, &state_bindings)?);
     let program = ExecutableProgramV1 {
         initial_configuration,
-        rules,
+        rules: rules.into(),
         projection,
     };
     Ok(ExecutableCanonicalProgramV1 {
@@ -1778,7 +1779,7 @@ pub fn lower_canonical_input_handler_v1(
         .iter()
         .position(|existing| existing.entry > rule.entry)
         .unwrap_or(program.rules.len());
-    program.rules.insert(insertion, rule);
+    Arc::make_mut(&mut program.rules).insert(insertion, rule);
     Ok(())
 }
 
@@ -1888,7 +1889,7 @@ pub fn lower_canonical_scalar_handler_v1(
         .iter()
         .position(|existing| existing.entry > rule.entry)
         .unwrap_or(program.rules.len());
-    program.rules.insert(insertion, rule);
+    Arc::make_mut(&mut program.rules).insert(insertion, rule);
     Ok(())
 }
 
@@ -2439,7 +2440,7 @@ fn encode_program_body(
 ) -> Result<(), ExecutableErrorV1> {
     encode_values(bytes, &program.initial_configuration)?;
     encode_count(bytes, program.rules.len())?;
-    for rule in &program.rules {
+    for rule in program.rules.iter() {
         bytes.extend_from_slice(&rule.entry.to_le_bytes());
         encode_count(bytes, rule.predicates.len())?;
         for predicate in &rule.predicates {
@@ -2500,7 +2501,7 @@ fn decode_program_body(
     }
     Ok(ExecutableProgramV1 {
         initial_configuration,
-        rules,
+        rules: rules.into(),
         projection: decode_projection(decoder)?,
     })
 }
@@ -5908,7 +5909,7 @@ fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableError
     if initial_configuration.len() > MAX_PROGRAM_ITEMS || program.rules.len() > MAX_PROGRAM_ITEMS {
         return Err(ExecutableErrorV1::ResourceLimit);
     }
-    for rule in &program.rules {
+    for rule in program.rules.iter() {
         relational::validate_bindings(rule)?;
         for predicate in &rule.predicates {
             if let ExecutableExpressionV1::RelationMatch(slot, subject, value) = predicate {

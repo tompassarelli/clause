@@ -220,7 +220,7 @@ fn physical_plan(
                     ),
                 )],
                 removals: vec![],
-            }],
+            }].into(),
             projection: None,
         },
     })

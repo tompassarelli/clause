@@ -99,7 +99,7 @@ mod expression_reference_tests {
                 assignments: vec![(0, assignment.clone()), (1, E::RelationEffects(vec![
                     ExecutableRelationEffectV1::Put(E::Argument(0), row_value.clone()),
                 ]))],
-            }],
+            }].into(),
         });
         let weak = std::sync::Arc::downgrade(&program);
         let references = [
@@ -243,7 +243,7 @@ mod retained_event_tests {
                 predicates: vec![E::Argument(0)],
                 required_present: vec![0], required_absent: vec![], removals: vec![],
                 assignments: vec![(0, E::Argument(0))],
-            }],
+            }].into(),
         });
         let occurrence = ExecutableOccurrenceV1 {
             entry: 0, arguments: vec![ExecutableValueV1::Boolean(true)],
@@ -266,8 +266,11 @@ mod retained_event_tests {
             configuration_ordinal: 2, program: Arc::clone(&program),
             allocation_root: [7; IDENTITY_BYTES], resolved: std::sync::OnceLock::new(),
         };
+        let weak_rules = Arc::downgrade(&program.rules);
         // A later source/world replacement cannot change the retained evaluation.
-        Arc::make_mut(&mut program).rules.clear();
+        let replacement = Arc::make_mut(&mut program);
+        assert!(Arc::ptr_eq(&replacement.rules, &retained.program.rules));
+        Arc::make_mut(&mut replacement.rules).clear();
         Arc::make_mut(&mut program).initial_configuration.clear();
         drop(program);
         assert!(retained.resolved.get().is_none());
@@ -277,6 +280,9 @@ mod retained_event_tests {
         assert_eq!(recorded.after, after);
         assert_eq!(recorded.step, step);
         assert!(std::ptr::eq(recorded, retained.resolve()));
+        drop(eager);
+        drop(retained);
+        assert!(weak_rules.upgrade().is_none());
     }
 }
 

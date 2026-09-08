@@ -262,7 +262,7 @@ fn scalar_program(
     };
     let mut program = ExecutableProgramV1 {
         initial_configuration: vec![number(0.0)],
-        rules: vec![],
+        rules: vec![].into(),
         projection: Some(ExecutableProjectionV1 {
             bindings: vec![ExecutableProjectionBindingV1 {
                 role,

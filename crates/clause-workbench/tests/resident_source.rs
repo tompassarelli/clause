@@ -555,11 +555,11 @@ fn additive_effects_require_numeric_present_targets_and_cannot_be_nested() {
         })
         .unwrap();
     let mut nested = plan.clone();
-    let (_, expression) = &mut nested.program.rules[rule_index].assignments[assignment_index];
+    let (_, expression) = &mut std::sync::Arc::make_mut(&mut nested.program.rules)[rule_index].assignments[assignment_index];
     *expression = E::Accumulate(Box::new(expression.clone()));
     assert!(encode_executable_physical_plan_v1(&nested).is_err());
     let mut predicate = plan.clone();
-    predicate.program.rules[rule_index]
+    std::sync::Arc::make_mut(&mut predicate.program.rules)[rule_index]
         .predicates
         .push(E::Accumulate(Box::new(E::Constant(
             ExecutableValueV1::number(1.0).unwrap(),
@@ -567,7 +567,7 @@ fn additive_effects_require_numeric_present_targets_and_cannot_be_nested() {
     assert!(encode_executable_physical_plan_v1(&predicate).is_err());
     let mut absent = plan.clone();
     let target = absent.program.rules[rule_index].assignments[assignment_index].0;
-    absent.program.rules[rule_index]
+    std::sync::Arc::make_mut(&mut absent.program.rules)[rule_index]
         .required_present
         .retain(|slot| *slot != target);
     assert!(encode_executable_physical_plan_v1(&absent).is_err());

@@ -878,7 +878,7 @@ impl ResidentSourceWorkbenchV1 {
         let mut default_occurrences = Vec::new();
         if declarative_only {
             physical_plan.input = None;
-            physical_plan.program.rules.push(ExecutableRuleV1 {
+            std::sync::Arc::make_mut(&mut physical_plan.program.rules).push(ExecutableRuleV1 {
                 entry: 0, predicates: vec![], required_present: vec![], required_absent: vec![],
                 assignments: vec![], removals: vec![],
             });
@@ -967,7 +967,7 @@ impl ResidentSourceWorkbenchV1 {
                     .ok_or_else(|| {
                         ResidentSourceWorkbenchErrorV1("checkpoint entry capacity".into())
                     })?;
-                physical_plan.program.rules.push(ExecutableRuleV1 {
+                std::sync::Arc::make_mut(&mut physical_plan.program.rules).push(ExecutableRuleV1 {
                     entry,
                     predicates: vec![],
                     required_present: vec![],

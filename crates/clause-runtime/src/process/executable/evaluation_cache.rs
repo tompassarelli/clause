@@ -157,7 +157,7 @@ mod tests {
             let mut matched = rule(2, vec![(1, E::RelationEffects(vec![ExecutableRelationEffectV1::Insert(
                 E::Binding(0), E::Add(Box::new(E::Binding(1)), Box::new(E::Constant(number(increment)))))]))]);
             matched.predicates = vec![E::RelationMatch(0, Box::new(E::Binding(0)), Box::new(E::Binding(1)))];
-            let program = Arc::new(ExecutableProgramV1 { initial_configuration: vec![], projection: None, rules: vec![matched] });
+            let program = Arc::new(ExecutableProgramV1 { initial_configuration: vec![], projection: None, rules: vec![matched].into() });
             for input in [1.0, 5.0] {
                 let configuration = [table(&[(1, input)]).into(), table(&[]).into()];
                 let actual = StepEvaluator { scalar_plans: Some(&plans), ..evaluator(&program, None) }
@@ -183,7 +183,7 @@ mod tests {
         matched.required_present = vec![2];
         matched.required_absent = vec![4];
         let program = Arc::new(ExecutableProgramV1 { initial_configuration: vec![], projection: None,
-            rules: vec![matched, rule(2, vec![(5, E::Accumulate(Box::new(E::Argument(1))))])] });
+            rules: vec![matched, rule(2, vec![(5, E::Accumulate(Box::new(E::Argument(1))))])].into() });
         let cache = Mutex::new(EvaluationCache::default());
         let mut configuration: Vec<ExecutableSlotV1> = vec![table(&[(1, 3.0), (2, 3.0)]),
             table(&[]), number(4.0), number(10.0), V::Boolean(false), number(0.0)].into_iter().map(Into::into).collect();
@@ -219,7 +219,7 @@ mod tests {
     fn fresh_results_and_traces_are_evaluated_at_their_exact_occurrence() {
         let cache = Mutex::new(EvaluationCache::default());
         let program = Arc::new(ExecutableProgramV1 { initial_configuration: vec![], projection: None,
-            rules: vec![rule(2, vec![(0, E::FreshReferent { domain: 7, binder: 1 })])] });
+            rules: vec![rule(2, vec![(0, E::FreshReferent { domain: 7, binder: 1 })])].into() });
         let configuration = [V::Referent(ExecutableReferentV1::declared(7, 1)).into()];
         let first = run(&program, Some(&cache), &configuration, vec![], 1).unwrap();
         let second = run(&program, Some(&cache), &configuration, vec![], 2).unwrap();
@@ -227,7 +227,7 @@ mod tests {
         assert_eq!(second, run(&program, None, &configuration, vec![], 2).unwrap());
         assert!(cache.lock().unwrap().entries[&2].saved.is_none());
         let program = Arc::new(ExecutableProgramV1 { initial_configuration: vec![], projection: None,
-            rules: vec![rule(2, vec![(0, E::Argument(0))])] });
+            rules: vec![rule(2, vec![(0, E::Argument(0))])].into() });
         let arguments = vec![number(3.0)];
         let configuration = [number(0.0).into()];
         run(&program, Some(&cache), &configuration, arguments.clone(), 1).unwrap();
@@ -240,7 +240,7 @@ mod tests {
             &configuration, Some(&mut expected)).unwrap());
         assert_eq!(observed, expected);
         assert!(!observed.rules.is_empty());
-        let changed_program = Arc::new(ExecutableProgramV1 { rules: vec![rule(2, vec![(0, E::Constant(number(9.0)))])],
+        let changed_program = Arc::new(ExecutableProgramV1 { rules: vec![rule(2, vec![(0, E::Constant(number(9.0)))])].into(),
             ..program.as_ref().clone() });
         let result = run(&changed_program, Some(&cache), &configuration, vec![number(3.0)], 3).unwrap();
         assert_eq!(result.0[0], number(9.0));
@@ -256,7 +256,7 @@ mod tests {
             predicates: vec![E::RelationMatch(1, Box::new(E::Binding(0)), Box::new(E::Binding(1)))],
             value: Box::new(E::Add(Box::new(E::Binding(1)), Box::new(E::Argument(0)))) };
         let program = Arc::new(ExecutableProgramV1 { initial_configuration: vec![], projection: None,
-            rules: vec![derived, rule(2, vec![(2, query)])] });
+            rules: vec![derived, rule(2, vec![(2, query)])].into() });
         let cache = Mutex::new(EvaluationCache::default());
         let mut configuration: Vec<ExecutableSlotV1> = vec![table(&[(1, 3.0)]), table(&[]), number(0.0), number(4.0)]
             .into_iter().map(Into::into).collect();
