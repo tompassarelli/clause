@@ -397,8 +397,11 @@ pub fn replay_canonical_executable_entry_layout_v1(
     }
     if lowered.states.iter().any(|binding| slots[&binding.state] != binding.slot) {
         let roles = lowered.states.iter().map(|binding| binding.projection_role).collect::<Vec<_>>();
-        *lowered = lower_canonical_executable_program_with_layout(scope, &package.state_cells,
+        let retained = lower_canonical_executable_program_with_layout(scope, &package.state_cells,
             &package.executable_handlers, &roles, Some(&slots), None, None)?;
+        validate_program(&retained.program)
+            .map_err(|error| ExecutableErrorV1::CanonicalLoweringValidation(Box::new(error)))?;
+        *lowered = retained;
     }
     if recorded.source_metadata.as_ref()
         != Some(&source_metadata(
@@ -913,7 +916,7 @@ fn derive_prepared_source_edit(
         });
         input.tick.entries.dedup();
     }
-    expected_new.project_referent_input_domains(scope)?;
+    expected_new.add_referent_input_projection(scope)?;
     expected_new.bind_source_snapshot_with_states(scope, &new, edit.source().artifact(), new_root, &new_lowered.states)?;
     let _compare = source_profile_scope_v1(SourceProfilePhaseV1::CompareAndMap);
     let exact_cpp1 = encode_executable_physical_plan_v1(&expected_new)?;

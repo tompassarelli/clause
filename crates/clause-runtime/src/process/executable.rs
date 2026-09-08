@@ -964,7 +964,10 @@ pub fn lower_canonical_executable_program_v1(
     handlers: &[CanonicalExecutableHandlerV1],
     projection_roles: &[LocalRoleRefV2],
 ) -> Result<ExecutableCanonicalProgramV1, ExecutableErrorV1> {
-    lower_canonical_executable_program_with_layout(scope, state_cells, handlers, projection_roles, None, None, None)
+    let lowered = lower_canonical_executable_program_with_layout(scope, state_cells, handlers, projection_roles, None, None, None)?;
+    validate_program(&lowered.program)
+        .map_err(|error| ExecutableErrorV1::CanonicalLoweringValidation(Box::new(error)))?;
+    Ok(lowered)
 }
 
 fn lower_canonical_executable_program_with_layout(
@@ -1039,7 +1042,7 @@ fn lower_canonical_executable_program_with_layout(
         });
     }
 
-    let mut ordered_handlers = handlers.to_vec();
+    let mut ordered_handlers = handlers.iter().collect::<Vec<_>>();
     ordered_handlers.sort_by_key(|handler| handler.id);
     if ordered_handlers
         .windows(2)
@@ -1172,8 +1175,6 @@ fn lower_canonical_executable_program_with_layout(
         rules,
         projection,
     };
-    validate_program(&program)
-        .map_err(|error| ExecutableErrorV1::CanonicalLoweringValidation(Box::new(error)))?;
     Ok(ExecutableCanonicalProgramV1 {
         program,
         states: state_bindings,
@@ -1978,8 +1979,13 @@ impl ExecutablePhysicalPlanV1 {
         &mut self,
         scope: TermScope,
     ) -> Result<(), ExecutableErrorV1> {
+        if self.add_referent_input_projection(scope)? { validate_program(&self.program)?; }
+        Ok(())
+    }
+
+    fn add_referent_input_projection(&mut self, scope: TermScope) -> Result<bool, ExecutableErrorV1> {
         let Some(input) = &self.input else {
-            return Ok(());
+            return Ok(false);
         };
         let domains = input
             .events
@@ -1995,7 +2001,7 @@ impl ExecutablePhysicalPlanV1 {
             })
             .collect::<Result<BTreeMap<_, _>, _>>()?;
         if domains.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
         let projection = self
             .program
@@ -2034,7 +2040,7 @@ impl ExecutablePhysicalPlanV1 {
             projection.template.clone(),
         ])
         .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
-        validate_program(&self.program)
+        Ok(true)
     }
 }
 
@@ -2954,7 +2960,13 @@ impl ExecutableProcessRuntimeV1 {
         facts: ExecutableAuthorityFactsV1,
     ) -> Result<Self, ExecutableErrorV1> {
         let plan = &checked.preparation.plan;
-        validate_executable_physical_plan_bindings_v1(package.constitution(), application, plan)?;
+        // This immutable private preparation owns the final typed plan and the
+        // exact encoding that validated its program and input shape. Bind it to
+        // this independently checked receiving constitution without revalidating
+        // the same physical data.
+        validate_executable_physical_plan_authority_v1(package.constitution(), application, plan)?;
+        validate_projection_roles(package.constitution(), &plan.program)?;
+        validate_input_roles(package.constitution(), plan.input.as_ref())?;
         // The private transition retains the exact encoding produced alongside
         // this typed plan; no host identity supplies its checked standing.
         let physical_plan = CheckedExecutablePhysicalPlanV1 {
@@ -3102,6 +3114,19 @@ fn validate_executable_physical_plan_bindings_v1(
     application: ApplicationId,
     plan: &ExecutablePhysicalPlanV1,
 ) -> Result<(), ExecutableErrorV1> {
+    validate_executable_physical_plan_authority_v1(constitution, application, plan)?;
+    validate_program(&plan.program)?;
+    validate_projection_roles(constitution, &plan.program)?;
+    validate_input_roles(constitution, plan.input.as_ref())?;
+    validate_input_plan_shape(plan.input.as_ref(), &plan.program)?;
+    Ok(())
+}
+
+fn validate_executable_physical_plan_authority_v1(
+    constitution: &ResolvedProgramConstitutionV2,
+    application: ApplicationId,
+    plan: &ExecutablePhysicalPlanV1,
+) -> Result<(), ExecutableErrorV1> {
     let shape = constitution
         .application_shape(application.local)
         .filter(|_| application.snapshot == constitution.snapshot())
@@ -3115,10 +3140,6 @@ fn validate_executable_physical_plan_bindings_v1(
     {
         return Err(ExecutableErrorV1::PhysicalModeMismatch);
     }
-    validate_program(&plan.program)?;
-    validate_projection_roles(constitution, &plan.program)?;
-    validate_input_roles(constitution, plan.input.as_ref())?;
-    validate_input_plan_shape(plan.input.as_ref(), &plan.program)?;
     Ok(())
 }
 
@@ -5736,6 +5757,7 @@ fn activation_pins_v1(
 }
 
 fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableErrorV1> {
+    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ProgramValidation);
     let initial_configuration = materialize_base_configuration(program)?;
     if initial_configuration.len() > MAX_PROGRAM_ITEMS || program.rules.len() > MAX_PROGRAM_ITEMS {
         return Err(ExecutableErrorV1::ResourceLimit);
