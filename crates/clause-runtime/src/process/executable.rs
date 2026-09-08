@@ -870,6 +870,7 @@ pub enum ExecutableExpressionV1 {
     /// Evaluate the value once, then evaluate the body in its lexical binding scope.
     Let { binding: u16, value: Box<Self>, body: Box<Self> },
     Sequence(Vec<Self>),
+    Dictionary(Box<Self>, Box<Self>),
     SequenceDrop(Box<Self>, Box<Self>),
     SequenceCount(Box<Self>),
     SequenceJoin(Box<Self>, Box<Self>),
@@ -1256,6 +1257,7 @@ fn value_has_type(value: &ExecutableValueV1, kind: &clause_package::CanonicalVal
         (value, T::Alternatives(types)) => types.iter().any(|kind| value_has_type(value, kind)),
         (ExecutableValueV1::Number(bits), T::Scalar(clause_package::CanonicalScalarValueKindV1::Number)) => f64::from_bits(*bits).is_finite(),
         (ExecutableValueV1::Sequence(values), T::Sequence(element)) => values.iter().all(|v| value_has_type(v, element)),
+        (ExecutableValueV1::Record(values), T::Dictionary(element)) => values.iter().all(|(key, value)| std::str::from_utf8(key).is_ok() && value_has_type(value, element)),
         (ExecutableValueV1::Record(values), T::Record(fields)) => values.len() == fields.len() && fields.iter().all(|(k,t)| values.get(k).is_some_and(|v| value_has_type(v,t))),
         (_, T::Scalar(kind)) => !matches!(kind, clause_package::CanonicalScalarValueKindV1::Sequence | clause_package::CanonicalScalarValueKindV1::Record) && value.kind() == lower_scalar_value_kind(*kind),
         _ => false,
@@ -1299,6 +1301,7 @@ fn lower_canonical_expression(
             body: Box::new(lower_canonical_expression(body, slots, depth + 1)?),
         },
         CanonicalExecutableExpressionV1::Sequence(values) => ExecutableExpressionV1::Sequence(values.iter().map(|v| lower_canonical_expression(v, slots, depth + 1)).collect::<Result<_, _>>()?),
+        CanonicalExecutableExpressionV1::Dictionary(key, value) => ExecutableExpressionV1::Dictionary(Box::new(lower_canonical_expression(key, slots, depth + 1)?), Box::new(lower_canonical_expression(value, slots, depth + 1)?)),
         CanonicalExecutableExpressionV1::Record(fields) => ExecutableExpressionV1::Record(fields.iter().map(|(k, v)| Ok((k.clone(), lower_canonical_expression(v, slots, depth + 1)?))).collect::<Result<_, ExecutableErrorV1>>()?),
         CanonicalExecutableExpressionV1::SequenceMap { binding, source, body } => ExecutableExpressionV1::SequenceMap {
             binding: *binding,
@@ -1905,6 +1908,7 @@ fn lower_scalar_expression(
         CanonicalScalarExpressionV1::Match { .. } | CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceMap { .. } | CanonicalScalarExpressionV1::SequenceFold { .. } | CanonicalScalarExpressionV1::SequenceAppend(..) | CanonicalScalarExpressionV1::SequenceSort(_) | CanonicalScalarExpressionV1::SequenceCount(_) | CanonicalScalarExpressionV1::ScalarText(_) | CanonicalScalarExpressionV1::SequenceJoin(..) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Call { .. }
         | CanonicalScalarExpressionV1::StaticFieldPath(_)
+        | CanonicalScalarExpressionV1::Dictionary(..)
         | CanonicalScalarExpressionV1::RecordAt(..)
         | CanonicalScalarExpressionV1::FieldAt(..) => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
@@ -6018,7 +6022,7 @@ fn validate_value_expression(
         E::Sequence(values) => values.iter().collect(),
         E::Record(fields) => fields.values().collect(),
         E::Field(value,_) => vec![value],
-        E::SequenceJoin(a,b) | E::SequenceAppend(a,b) | E::SequenceDrop(a,b) => vec![a,b],
+        E::Dictionary(a,b) | E::SequenceJoin(a,b) | E::SequenceAppend(a,b) | E::SequenceDrop(a,b) => vec![a,b],
         E::Match { value, cases } => {
             for (kind, _, _) in cases { kind.check().map_err(|_| ExecutableErrorV1::MalformedProgram)?; }
             std::iter::once(value.as_ref()).chain(cases.iter().map(|(_, _, body)| body)).collect()
@@ -6546,6 +6550,11 @@ fn evaluate_uncached(
             evaluate(body, slots, arguments, EvaluationContextV1 { bindings: Some(&bindings), ..context })
         },
         E::Sequence(values) => Ok(ExecutableValueV1::Sequence(values.iter().map(|v| evaluate(v, slots, arguments, context)).collect::<Result<_, _>>()?)),
+        E::Dictionary(key, value) => {
+            let ExecutableValueV1::Text(key) = evaluate(key, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
+            let value = evaluate(value, slots, arguments, context)?;
+            Ok(ExecutableValueV1::Record(BTreeMap::from([(key.as_str().as_bytes().to_vec(), value)])))
+        }
         E::Record(fields) => Ok(ExecutableValueV1::Record(fields.iter().map(|(k, v)| Ok((k.clone(), evaluate(v, slots, arguments, context)?))).collect::<Result<_, ExecutableErrorV1>>()?)),
         E::SequenceFold { accumulator, item, source, initial, body } => {
             let ExecutableValueV1::Sequence(values) = evaluate(source, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
@@ -7240,6 +7249,7 @@ fn encode_expression(
     match expression {
         E::Sequence(values) => { bytes.push(37); encode_count(bytes,values.len())?; for value in values { encode_expression(bytes,value)?; } }
         E::Record(fields) => { bytes.push(38); encode_count(bytes,fields.len())?; for (name,value) in fields { encode_count(bytes,name.len())?; bytes.extend_from_slice(name); encode_expression(bytes,value)?; } }
+        E::Dictionary(a,b) => encode_binary(bytes,49,a,b)?,
         E::SequenceAppend(a,b) => encode_binary(bytes,47,a,b)?,
         E::SequenceSort(value) => { bytes.push(48); encode_expression(bytes,value)?; }
         E::SequenceFold { accumulator, item, source, initial, body } => {
@@ -7605,6 +7615,7 @@ impl<'a> Decoder<'a> {
             44 => E::ScalarText(Box::new(self.expression(next)?)),
             46 => E::SequenceFold { accumulator: self.u16()?, item: self.u16()?, source: Box::new(self.expression(next)?), initial: Box::new(self.expression(next)?), body: Box::new(self.expression(next)?) },
             47 => E::SequenceAppend(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
+            49 => E::Dictionary(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
             48 => E::SequenceSort(Box::new(self.expression(next)?)),
             45 => E::SequenceMap { binding: self.u16()?, source: Box::new(self.expression(next)?), body: Box::new(self.expression(next)?) },
             39 => E::SequenceDrop(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),

@@ -14,6 +14,7 @@ enum NixExpr {
     Constant(V),
     Sequence(Vec<Self>),
     Record(BTreeMap<Vec<u8>, Self>),
+    Dictionary(Box<Self>, Box<Self>),
     Reference { root: String, path: Vec<String> },
     Apply(Box<Self>, Vec<Self>),
 }
@@ -46,6 +47,7 @@ fn construct(e: &E, bindings: &BTreeMap<u16, NixExpr>, roots: &mut BTreeSet<Stri
         E::Binding(binding) => bindings.get(binding).ok_or("unresolved construction binding")?.clone(),
         E::Constant(value @ (V::Text(_) | V::Number(_) | V::Boolean(_))) => NixExpr::Constant(value.clone()),
         E::Sequence(values) => NixExpr::Sequence(values.iter().map(|v| construct(v, bindings, roots, depth + 1)).collect::<Result<_,_>>()?),
+        E::Dictionary(key, value) => NixExpr::Dictionary(Box::new(construct(key, bindings, roots, depth + 1)?), Box::new(construct(value, bindings, roots, depth + 1)?)),
         E::Record(fields) => NixExpr::Record(fields.iter().map(|(k,v)| Ok((k.clone(),construct(v,bindings,roots,depth+1)?))).collect::<Result<_,String>>()?),
         E::Field(value, field) => {
             let NixExpr::Record(fields) = construct(value, bindings, roots, depth + 1)? else { return Err("field requires a constructed record".into()); };
@@ -119,6 +121,7 @@ fn render(e: &NixExpr) -> Result<String, String> {
         NixExpr::Constant(V::Number(bits)) if f64::from_bits(*bits).is_finite() => f64::from_bits(*bits).to_string(),
         NixExpr::Constant(_) => return Err("unsupported Nix constant".into()),
         NixExpr::Sequence(values) => format!("[ {} ]", values.iter().map(|v| render(v).map(|v| format!("({v})"))).collect::<Result<Vec<_>,_>>()?.join(" ")),
+        NixExpr::Dictionary(key, value) => format!("{{ ${{{}}} = {}; }}", render(key)?, render(value)?),
         NixExpr::Record(fields) => format!("{{ {} }}", fields.iter().map(|(k,v)| Ok(format!("{} = {};", quote(std::str::from_utf8(k).map_err(|_| "non-UTF8 field")?), render(v)?))).collect::<Result<Vec<_>,String>>()?.join(" ")),
         NixExpr::Reference { root, path } => format!("{root}.{}", path.iter().map(|p| quote(p)).collect::<Vec<_>>().join(".")),
         NixExpr::Apply(function, arguments) => format!("({} {})", render(function)?, arguments.iter().map(|v| render(v).map(|v| format!("({v})"))).collect::<Result<Vec<_>,_>>()?.join(" ")),

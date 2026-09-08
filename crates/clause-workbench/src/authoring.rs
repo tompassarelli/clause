@@ -325,6 +325,9 @@ Live source tooling offers an explicit checked scalar-effect replacement, not ar
     ] {
         writeln!(card, "`{path}`\n\n```clause\n{source}```\n").expect("writing to a String cannot fail");
     }
+    card.push_str("\n## Text-key dictionaries\n\n`Dictionary<Value>` keeps one exact value contract for runtime Text keys. `dictionary(key, value)` constructs one entry; keys remain data and never establish a static record field. Delayed Text keys retain their target and incorporate same-target nested values into the delayed dictionary. See clause:test-vectors/authoring/dynamic-user-modules/ for whole zoxide and VIA modules.\n\n```clause\n");
+    card.push_str(include_str!("../../../test-vectors/authoring/dictionary.clause"));
+    card.push_str("```\n");
     card.push_str("\n## Static field paths\n\n`path(details.title)` names fixed field segments. A `?path: FieldPath` parameter is specialized at each call; it never accepts runtime Text or becomes a runtime value. `record-at(?path, value)` constructs the exact nested record and `field-at(record, ?path)` checks every selected field. Delayed foreign declarations may use `get: ?path` for a declared static path while keeping their target, external root, result and failure contracts explicit. These complete module sources state the option path once and select the package independently; the shared module meaning remains Clause source.\n\n");
     for (path, source) in [
         ("clause:test-vectors/authoring/static-modules/nixpkgs.clause", include_str!("../../../test-vectors/authoring/static-modules/nixpkgs.clause")),

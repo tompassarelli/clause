@@ -1,0 +1,9 @@
+Settings:
+  enabled: Bool
+  labels: Sequence<Text>
+
+export settings(?name: Text): Dictionary<Settings>
+  dictionary(?name, {enabled: true, labels: ["kept"]})
+
+export preserve(?settings: Dictionary<Settings>): Dictionary<Settings>
+  ?settings

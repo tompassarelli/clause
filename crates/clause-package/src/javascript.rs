@@ -31,6 +31,7 @@ fn unsupported<T>(message: impl Into<String>) -> Result<T> {
 enum ValueType {
     Alternatives(Vec<Self>),
     Sequence(Box<Self>),
+    Dictionary(Box<Self>),
     Record(BTreeMap<Vec<u8>, Self>),
     Number,
     Boolean,
@@ -41,6 +42,7 @@ impl ValueType {
     fn descriptor(&self) -> String {
         match self {
             Self::Alternatives(types) => format!("[\"alternatives\",[{}]]", types.iter().map(Self::descriptor).collect::<Vec<_>>().join(",")),
+            Self::Dictionary(element) => format!("[\"dictionary\",{}]", element.descriptor()),
             Self::Sequence(element) => format!("[\"sequence\",{}]", element.descriptor()),
             Self::Record(fields) => format!("[\"record\",[{}]]", fields.iter().map(|(key, value)| format!("[{},{}]", quote(std::str::from_utf8(key).expect("checked field")), value.descriptor())).collect::<Vec<_>>().join(",")),
             Self::Number => "[\"number\"]".into(),
@@ -52,6 +54,7 @@ impl ValueType {
     fn declaration(&self) -> String {
         match self {
             Self::Alternatives(types) => format!("({})", types.iter().map(Self::declaration).collect::<Vec<_>>().join(" | ")),
+            Self::Dictionary(element) => format!("{{ readonly [key: string]: {} }}", element.declaration()),
             Self::Sequence(element) => format!("ReadonlyArray<{}>", element.declaration()),
             Self::Record(fields) => format!("{{ {} }}", fields.iter().map(|(key,value)| format!("readonly {}: {}", quote(std::str::from_utf8(key).expect("checked field")), value.declaration())).collect::<Vec<_>>().join("; ")),
             Self::Number => "number".into(),
@@ -85,6 +88,7 @@ fn callable_type(kind: &CanonicalValueTypeV1) -> Result<ValueType> {
         CanonicalValueTypeV1::Alternatives(types) => Ok(ValueType::Alternatives(types.iter().map(callable_type).collect::<Result<_>>()?)),
         CanonicalValueTypeV1::Delayed { .. } | CanonicalValueTypeV1::OpaqueForeign { .. } => unsupported("JavaScript does not execute delayed target construction"),
         CanonicalValueTypeV1::Scalar(kind) => scalar_type(*kind),
+        CanonicalValueTypeV1::Dictionary(element) => Ok(ValueType::Dictionary(Box::new(callable_type(element)?))),
         CanonicalValueTypeV1::Sequence(element) => Ok(ValueType::Sequence(Box::new(callable_type(element)?))),
         CanonicalValueTypeV1::Record(fields) => Ok(ValueType::Record(fields.iter().map(|(k,v)| Ok((k.clone(), callable_type(v)?))).collect::<Result<_>>()?)),
     }
@@ -105,7 +109,7 @@ fn foreign_modules(expression: &CanonicalExecutableExpressionV1, modules: &mut B
         E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => { foreign_modules(value, modules); foreign_modules(body, modules); }
         E::Sequence(values) => { for value in values { foreign_modules(value, modules); } }
         E::Record(fields) => { for value in fields.values() { foreign_modules(value, modules); } }
-        E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
+        E::Dictionary(a,b) | E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
         E::Require(a,b,c) | E::Conditional(a,b,c) => { foreign_modules(a,modules); foreign_modules(b,modules); foreign_modules(c,modules); }
         E::SequenceSort(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
         _ => {}
@@ -212,6 +216,12 @@ impl Lowerer<'_> {
                     kind = Some(found); emitted.push(value);
                 }
                 (format!("Object.freeze([{}])", emitted.join(",")), ValueType::Sequence(Box::new(kind.ok_or_else(|| JavaScriptLoweringErrorV1("untyped empty sequence".into()))?)))
+            }
+            E::Dictionary(key, value) => {
+                let (key, _) = self.expression(key, Some(ValueType::Text))?;
+                let wanted = match &expected { Some(ValueType::Dictionary(element)) => Some(element.as_ref().clone()), _ => None };
+                let (value, kind) = self.expression(value, wanted)?;
+                (format!("Object.freeze(Object.fromEntries([[{key},{value}]]))"), ValueType::Dictionary(Box::new(kind)))
             }
             E::Record(fields) => {
                 let mut kinds = BTreeMap::new();
@@ -886,6 +896,7 @@ function validate(value,kind){
  case 'boolean':if(typeof value!=='boolean')fail('TypeMismatch');break;
  case 'referent':if(value===null||typeof value!=='object'||value.domain!==kind[1]||!Number.isInteger(value.identity)||value.identity<=0||value.identity>4294967295)fail('TypeMismatch');break;
  case 'sequence':if(!Array.isArray(value))fail('TypeMismatch');for(let i=0;i<value.length;i++){if(!Object.hasOwn(value,i))fail('TypeMismatch');validate(value[i],kind[1]);}break;
+ case 'dictionary':if(value===null||typeof value!=='object'||Array.isArray(value))fail('TypeMismatch');for(const key of Object.keys(value)){text(key);validate(value[key],kind[1]);}break;
  case 'record':if(value===null||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==kind[1].length)fail('TypeMismatch');for(const [key,type] of kind[1]){if(!Object.hasOwn(value,key))fail('TypeMismatch');validate(value[key],type);}break;
  default:fail('TypeMismatch');
  }
@@ -894,6 +905,7 @@ function crossing(value,kind){
  validate(value,kind);
  if(kind[0]==='alternatives')return crossing(value,kind[1].find(type=>accepts(value,type)));
  if(kind[0]==='sequence')return Object.freeze(value.map(v=>crossing(v,kind[1])));
+ if(kind[0]==='dictionary')return Object.freeze(Object.fromEntries(Object.keys(value).map(key=>[key,crossing(value[key],kind[1])])));
  if(kind[0]==='record')return Object.freeze(Object.fromEntries(kind[1].map(([key,type])=>[key,crossing(value[key],type)])));
  return value;
 }

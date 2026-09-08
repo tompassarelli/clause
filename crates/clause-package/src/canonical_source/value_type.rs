@@ -8,6 +8,7 @@ pub enum CanonicalValueTypeV1 {
     Delayed { target: String, value: Box<Self> },
     OpaqueForeign { module: String, name: String },
     Sequence(Box<Self>),
+    Dictionary(Box<Self>),
     Record(BTreeMap<Vec<u8>, Self>),
     Alternatives(BTreeSet<Self>),
 }
@@ -44,7 +45,7 @@ impl CanonicalValueTypeV1 {
                 }
                 Ok(())
             }
-            CanonicalValueTypeV1::Sequence(element) => element.check_at(depth + 1, delayed),
+            CanonicalValueTypeV1::Sequence(element) | CanonicalValueTypeV1::Dictionary(element) => element.check_at(depth + 1, delayed),
             CanonicalValueTypeV1::Alternatives(types) => {
                 if types.len() < 2 { return Err("alternatives require at least two distinct contracts"); }
                 for (index, kind) in types.iter().enumerate() {
@@ -72,7 +73,8 @@ impl CanonicalValueTypeV1 {
     fn overlaps(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Scalar(a), Self::Scalar(b)) => a == b,
-            (Self::Sequence(_), Self::Sequence(_)) => true,
+            (Self::Sequence(_), Self::Sequence(_)) | (Self::Dictionary(_), Self::Dictionary(_)) => true,
+            (Self::Dictionary(element), Self::Record(fields)) | (Self::Record(fields), Self::Dictionary(element)) => fields.values().all(|value| element.overlaps(value)),
             (Self::Record(a), Self::Record(b)) => a.keys().eq(b.keys()) && a.iter().all(|(key, value)| value.overlaps(&b[key])),
             (Self::Alternatives(types), other) | (other, Self::Alternatives(types)) => types.iter().any(|kind| kind.overlaps(other)),
             _ => false,
@@ -81,7 +83,7 @@ impl CanonicalValueTypeV1 {
     pub fn contains_delayed(&self) -> bool {
         match self {
             Self::Delayed { .. } | Self::OpaqueForeign { .. } => true,
-            Self::Sequence(value) => value.contains_delayed(),
+            Self::Sequence(value) | Self::Dictionary(value) => value.contains_delayed(),
             Self::Record(fields) => fields.values().any(Self::contains_delayed),
             Self::Alternatives(types) => types.iter().any(Self::contains_delayed),
             Self::Scalar(_) => false,
@@ -90,11 +92,23 @@ impl CanonicalValueTypeV1 {
     pub fn in_target(&self, target: &str) -> bool {
         match self {
             Self::Delayed { target: actual, value } => actual == target && value.in_target(target),
-            Self::Sequence(value) => value.in_target(target),
+            Self::Sequence(value) | Self::Dictionary(value) => value.in_target(target),
             Self::Record(fields) => fields.values().all(|value| value.in_target(target)),
             Self::Alternatives(types) => types.iter().all(|kind| kind.in_target(target)),
             _ => true,
         }
+    }
+    pub(super) fn constructed_value(&self, target: &str) -> Result<Self, &'static str> {
+        Ok(match self {
+            Self::Delayed { target: actual, value } => {
+                if actual != target { return Err("dictionary construction target mismatch"); }
+                value.constructed_value(target)?
+            }
+            Self::Sequence(value) => Self::Sequence(Box::new(value.constructed_value(target)?)),
+            Self::Dictionary(value) => Self::Dictionary(Box::new(value.constructed_value(target)?)),
+            Self::Record(fields) => Self::Record(fields.iter().map(|(key, value)| Ok((key.clone(), value.constructed_value(target)?))).collect::<Result<_, &'static str>>()?),
+            _ => self.clone(),
+        })
     }
     pub fn accepts(&self, value: &CanonicalScalarValueV1) -> bool {
         use CanonicalScalarValueKindV1 as K;
@@ -110,6 +124,7 @@ impl CanonicalValueTypeV1 {
             (Self::Sequence(element), V::Sequence(values)) => {
                 values.iter().all(|v| element.accepts(v))
             }
+            (Self::Dictionary(element), V::Record(values)) => values.iter().all(|(key, value)| std::str::from_utf8(key).is_ok() && element.accepts(value)),
             (Self::Record(fields), V::Record(values)) => {
                 fields.len() == values.len()
                     && fields
@@ -128,6 +143,7 @@ pub(super) enum Pattern {
     Exact(CanonicalValueTypeV1),
     RecordParameter(Vec<u8>),
     Sequence(Box<Self>),
+    Dictionary(Box<Self>),
     Delayed { target: String, value: Box<Self> },
 }
 
@@ -140,6 +156,9 @@ impl Pattern {
         fn read(name: &[u8], items: &[CstItem], parameters: &BTreeSet<Vec<u8>>, depth: usize) -> Result<Pattern, &'static str> {
             if depth >= 64 { return Err("value type depth limit"); }
             if parameters.contains(name) { return Ok(Pattern::RecordParameter(name.to_vec())); }
+            if let Some(inner) = name.strip_prefix(b"Dictionary<").and_then(|s| s.strip_suffix(b">")) {
+                return Ok(Pattern::Dictionary(Box::new(read(inner, items, parameters, depth + 1)?)));
+            }
             if let Some(inner) = name.strip_prefix(b"Sequence<").and_then(|s| s.strip_suffix(b">")) {
                 return Ok(Pattern::Sequence(Box::new(read(inner, items, parameters, depth + 1)?)));
             }
@@ -159,7 +178,7 @@ impl Pattern {
     pub(super) fn contains(&self, parameter: &[u8]) -> bool {
         match self {
             Self::RecordParameter(name) => name == parameter,
-            Self::Sequence(value) | Self::Delayed { value, .. } => value.contains(parameter),
+            Self::Sequence(value) | Self::Dictionary(value) | Self::Delayed { value, .. } => value.contains(parameter),
             Self::Exact(_) => false,
         }
     }
@@ -170,7 +189,7 @@ impl Pattern {
             match pattern {
                 Pattern::Exact(kind) => kind.check_at(depth, delayed),
                 Pattern::RecordParameter(_) => Ok(()),
-                Pattern::Sequence(value) => check(value, depth + 1, delayed),
+                Pattern::Sequence(value) | Pattern::Dictionary(value) => check(value, depth + 1, delayed),
                 Pattern::Delayed { target, value } => {
                     if delayed || target.is_empty() || target.contains('\0') || !value.in_target(target) {
                         return Err("invalid delayed target contract");
@@ -186,7 +205,7 @@ impl Pattern {
         match self {
             Self::Exact(kind) => kind.contains_delayed(),
             Self::Delayed { .. } => true,
-            Self::Sequence(value) => value.contains_delayed(),
+            Self::Sequence(value) | Self::Dictionary(value) => value.contains_delayed(),
             Self::RecordParameter(_) => false,
         }
     }
@@ -195,7 +214,7 @@ impl Pattern {
         match self {
             Self::Exact(kind) => kind.in_target(target),
             Self::Delayed { target: actual, value } => actual == target && value.in_target(target),
-            Self::Sequence(value) => value.in_target(target),
+            Self::Sequence(value) | Self::Dictionary(value) => value.in_target(target),
             Self::RecordParameter(_) => true,
         }
     }
@@ -207,6 +226,7 @@ impl Pattern {
         Ok(match self {
             Self::Exact(kind) => kind.clone(),
             Self::RecordParameter(name) => substitutions.get(name).ok_or("unresolved record type parameter")?.clone(),
+            Self::Dictionary(value) => CanonicalValueTypeV1::Dictionary(Box::new(value.instantiate(substitutions)?)),
             Self::Sequence(value) => CanonicalValueTypeV1::Sequence(Box::new(value.instantiate(substitutions)?)),
             Self::Delayed { target, value } => CanonicalValueTypeV1::Delayed {
                 target: target.clone(), value: Box::new(value.instantiate(substitutions)?),
@@ -229,6 +249,7 @@ impl Pattern {
                 }
                 Ok(())
             }
+            (Self::Dictionary(pattern), CanonicalValueTypeV1::Dictionary(value)) => pattern.unify(value, substitutions),
             (Self::Sequence(pattern), CanonicalValueTypeV1::Sequence(value)) => pattern.unify(value, substitutions),
             (Self::Delayed { target, value: pattern }, CanonicalValueTypeV1::Delayed { target: actual, value })
                 if target == actual => pattern.unify(value, substitutions),
@@ -276,6 +297,9 @@ pub(super) fn resolve<Item: std::borrow::Borrow<CstItem>>(
             Some(CanonicalValueTypeV1::OpaqueForeign { module: module.clone(), name: foreign_name.clone() }),
         _ => None,
     }) { return Ok(kind); }
+    if let Some(element) = name.strip_prefix(b"Dictionary<").and_then(|s| s.strip_suffix(b">")) {
+        return resolve(element, items, active).map(|t| CanonicalValueTypeV1::Dictionary(Box::new(t)));
+    }
     if let Some(element) = name
         .strip_prefix(b"Sequence<")
         .and_then(|s| s.strip_suffix(b">"))
@@ -314,6 +338,8 @@ pub(super) fn designation(source: &str, origin: CanonicalSourceOriginV1) -> Resu
     let parts = alternatives(source);
     if parts.len() > 1 {
         for part in parts { designation(part.trim(), origin)?; }
+    } else if let Some(inner) = source.strip_prefix("Dictionary<").and_then(|s| s.strip_suffix('>')) {
+        designation(inner, origin)?;
     } else if let Some(inner) = source.strip_prefix("Sequence<").and_then(|s| s.strip_suffix('>')) {
         designation(inner, origin)?;
     } else if let Some(inner) = source.strip_prefix("Delayed<").and_then(|s| s.strip_suffix('>')) {
