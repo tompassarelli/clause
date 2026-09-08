@@ -470,12 +470,13 @@ are source definitions; emitted callables and canonical foreign accesses
 contain fully resolved types. Generic foreign declarations remain private.
 Foreign declarations always require explicit result contracts.
 
-`import "nixpkgs.clause"` brings the named source's foreign types and functions
-into the consumer's checked scope. `check-source` and `compile-nix` resolve
+`import "nixpkgs.clause"` brings the named source's value contracts, foreign
+declarations and exported callables into the consumer's checked scope.
+`check-source`, `compile-js` and `compile-nix` resolve
 the path relative to the consumer file; the source API accepts an explicit
 finite map from import spellings to exact bytes. There is no ambient search.
-This slice admits direct imports of foreign declarations and exported callable
-definitions, without nested imports, renaming, or shadowing. Duplicate names
+This slice admits direct imports of value contracts, foreign declarations and
+exported callable definitions, without nested imports, renaming, or shadowing. Duplicate names
 reject. Each imported definition retains its own source origin and uses the
 same exact type and foreign binding checks as a local declaration. The complete
 two-consumer example is in `clause:test-vectors/authoring/shared-foreign/`.

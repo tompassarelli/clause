@@ -2,6 +2,38 @@ use std::path::PathBuf;
 use std::process::Command;
 
 #[test]
+fn compiled_imports_resolve_relative_to_the_source_and_execute_in_bun() {
+    let output_dir =
+        std::env::temp_dir().join(format!("clause-js-imports-{}", std::process::id()));
+    std::fs::create_dir(&output_dir).unwrap();
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../test-vectors/authoring/javascript-imports/consumer.clause");
+    let module = output_dir.join("consumer.js");
+    let compiled = Command::new(env!("CARGO_BIN_EXE_clause-workbench"))
+        .args(["compile-js".as_ref(), source.as_os_str(), module.as_os_str()])
+        .current_dir(&output_dir)
+        .output()
+        .unwrap();
+    assert!(compiled.status.success(), "{compiled:?}");
+    assert!(module.with_extension("d.ts").is_file());
+    let runner = output_dir.join("run.mjs");
+    std::fs::write(
+        &runner,
+        "import assert from 'node:assert/strict';\nimport { result } from './consumer.js';\nassert.equal(result(), 'kept');\n",
+    )
+    .unwrap();
+    let result = Command::new(std::env::var_os("BUN").unwrap_or_else(|| "bun".into()))
+        .arg(&runner)
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{result:?}");
+    for path in [&module, &module.with_extension("d.ts"), &runner] {
+        std::fs::remove_file(path).unwrap();
+    }
+    std::fs::remove_dir(output_dir).unwrap();
+}
+
+#[test]
 fn compiled_callable_runs_in_bun_with_its_declared_public_name() {
     let output_dir = std::env::temp_dir().join(format!("clause-js-command-{}", std::process::id()));
     std::fs::create_dir(&output_dir).unwrap();

@@ -1,0 +1,4 @@
+import "value.clause"
+
+export result(): Text
+  shared().value

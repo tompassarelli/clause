@@ -1,0 +1,5 @@
+Shared:
+  value: Text
+
+export shared(): Shared
+  {value: "kept"}

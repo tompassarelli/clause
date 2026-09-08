@@ -1580,7 +1580,7 @@ pub fn read_canonical_source_with_imports_and_frontend_v1(
     let frontend = frontend.with_transition_readings(artifact, &lines)?;
     let frontend = &frontend;
     let mut scalar_laws = ScalarLawEnvironment::read(artifact, &lines, frontend)?;
-    scalar_laws.declarations.extend(imported.items.iter().filter(|item| matches!(item.kind, CstKind::ForeignType { .. })).map(|item| item.as_ref().clone()));
+    scalar_laws.declarations.extend(imported.items.iter().filter(|item| matches!(item.kind, CstKind::ForeignType { .. } | CstKind::Shape { .. })).map(|item| item.as_ref().clone()));
     let mut items = imported.items;
     let mut callables = imported.callables;
     let mut vocabularies = Vec::new();

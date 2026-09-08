@@ -23,8 +23,7 @@ fn compile(arguments: &[OsString]) -> Result<(), String> {
     if output.extension().is_none_or(|extension| extension != "js") {
         return Err("the output filename must end in .js".into());
     }
-    let exact_source = std::fs::read(source).map_err(|error| format!("source read: {error}"))?;
-    let workbench = ResidentSourceWorkbenchV1::open(&exact_source)
+    let workbench = ResidentSourceWorkbenchV1::open_file(Path::new(source))
         .map_err(|error| format!("source open: {error}"))?;
     let checked = workbench.checked_source_package().map_err(|error| error.to_string())?;
     let artifacts = lower_javascript_v1(&checked).map_err(|error| error.to_string())?;
