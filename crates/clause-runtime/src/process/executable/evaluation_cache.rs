@@ -5,6 +5,7 @@ use super::*;
 pub(super) struct EvaluationCache {
     program: Option<Arc<ExecutableProgramV1>>,
     entries: BTreeMap<u16, Entry>,
+    closed: Option<Vec<ExecutableSlotV1>>,
 }
 
 struct Entry {
@@ -22,6 +23,24 @@ struct SavedEffects {
 }
 
 impl EvaluationCache {
+    fn bind_program(&mut self, program: &Arc<ExecutableProgramV1>) {
+        if self.program.as_ref().is_none_or(|prior| !Arc::ptr_eq(prior, program)) {
+            self.entries.clear();
+            self.closed = None;
+            self.program = Some(program.clone());
+        }
+    }
+
+    pub(super) fn is_closed(&mut self, program: &Arc<ExecutableProgramV1>, configuration: &[ExecutableSlotV1]) -> bool {
+        self.bind_program(program);
+        self.closed.as_deref() == Some(configuration)
+    }
+
+    pub(super) fn retain_closed(&mut self, program: &Arc<ExecutableProgramV1>, configuration: &[ExecutableSlotV1]) {
+        self.bind_program(program);
+        self.closed = Some(configuration.to_vec());
+    }
+
     pub(super) fn evaluate(
         &mut self,
         program: &Arc<ExecutableProgramV1>,
@@ -30,10 +49,7 @@ impl EvaluationCache {
         arguments: &[ExecutableValueV1],
         compute: impl FnOnce() -> Result<(Vec<ExecutableSlotV1>, bool), ExecutableErrorV1>,
     ) -> Result<(Vec<ExecutableSlotV1>, bool), ExecutableErrorV1> {
-        if self.program.as_ref().is_none_or(|prior| !Arc::ptr_eq(prior, program)) {
-            self.entries.clear();
-            self.program = Some(program.clone());
-        }
+        self.bind_program(program);
         let entry = self.entries.entry(entry).or_insert_with(|| Entry::new(program, entry));
         if !entry.reusable { return compute(); }
         if let Some(saved) = &entry.saved
@@ -266,7 +282,19 @@ mod tests {
             let cached = run(&program, Some(&cache), &configuration, vec![], ordinal).unwrap();
             assert_eq!(cached, run(&program, None, &configuration, vec![], ordinal).unwrap());
             configuration = cached.0;
+            assert!(cache.lock().unwrap().is_closed(&program, &configuration));
         }
         assert_eq!(configuration[2], number(34.0));
+        let mut altered = configuration.clone();
+        altered[0] = table(&[(1, 7.0)]).into();
+        assert!(!cache.lock().unwrap().is_closed(&program, &altered));
+        let mut trace = ExecutableEvaluationTraceV1::default();
+        let traced = evaluator(&program, Some(&cache)).prepare_step_traced(
+            ExecutableOccurrenceV1 { entry: 2, arguments: vec![] }, 5, 5,
+            &configuration, Some(&mut trace)).unwrap();
+        assert_eq!(traced, run(&program, None, &configuration, vec![], 5).unwrap());
+        assert!(trace.rules.iter().any(|rule| rule.rule == 0 && !rule.effects.is_empty()));
+        let replacement = Arc::new(program.as_ref().clone());
+        assert!(!cache.lock().unwrap().is_closed(&replacement, &configuration));
     }
 }

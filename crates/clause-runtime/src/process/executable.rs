@@ -7914,8 +7914,14 @@ impl StepEvaluator<'_> {
         let closed;
         let configuration = if self.program.rules.iter().any(closure::is_derivation) {
             let _profile = source_profile_scope_v1(SourceProfilePhaseV1::DerivationClosure);
-            closed = closure::close(self.program, configuration, evaluation, None)?;
-            closed.as_slice()
+            let already_closed = if trace.is_none() && let Some(cache) = self.cache {
+                cache.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?
+                    .is_closed(self.program, configuration)
+            } else { false };
+            if already_closed { configuration } else {
+                closed = closure::close(self.program, configuration, evaluation, None)?;
+                closed.as_slice()
+            }
         } else { configuration };
         relational::validate_contracts(configuration)?;
         let traced = trace.is_some();
@@ -7927,6 +7933,12 @@ impl StepEvaluator<'_> {
         if self.program.rules.iter().any(closure::is_derivation) {
             let _profile = source_profile_scope_v1(SourceProfilePhaseV1::DerivationClosure);
             next = closure::close(self.program, &next, evaluation, trace.map(|trace| (self.program, trace)))?;
+            if !traced && let Some(cache) = self.cache {
+                // Only an actually completed closure certifies this exact
+                // immutable configuration; changed rows or programs miss it.
+                cache.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?
+                    .retain_closed(self.program, &next);
+            }
         }
         relational::validate_contracts(&next)?;
         let before = self.configuration_id;
