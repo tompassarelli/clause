@@ -69,6 +69,13 @@ impl CanonicalValueTypeV1 {
             }
         }
     }
+    pub(super) fn includes_alternatives(&self, actual: &Self) -> bool {
+        let Self::Alternatives(expected) = self else { return false; };
+        match actual {
+            Self::Alternatives(actual) => actual.is_subset(expected),
+            actual => expected.contains(actual),
+        }
+    }
     fn overlaps(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Scalar(a), Self::Scalar(b)) => a == b,

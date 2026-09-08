@@ -361,7 +361,8 @@ Sequence alternatives overlap at the empty sequence and therefore reject.
 Delayed and opaque foreign contracts are not alternatives in this slice.
 
 When a result or argument requires an alternative contract, the checker includes
-a value of one declared alternative in that contract. A conditional checks both
+a value of one declared alternative, or a smaller alternative contract whose
+members all belong to the declared contract. A conditional checks both
 branches against the same contract; it does not infer a union from conflicting
 branches. The runtime value retains its ordinary representation.
 

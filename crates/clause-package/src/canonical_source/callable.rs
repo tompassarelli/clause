@@ -1147,12 +1147,12 @@ fn lower(
             Box::new(lower(c, arguments, locals, static_paths, origin, expansion, depth + 1, mode, expected)?)),
         S::Current | S::Symbol(_) => return Err(error()),
     };
-    if let Some(kind @ CanonicalValueTypeV1::Alternatives(types)) = expected {
+    if let Some(kind @ CanonicalValueTypeV1::Alternatives(_)) = expected {
         let argument_types = arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>();
         let binding_types = locals.values().cloned().collect();
         let actual = expression_kind(&lowered, &argument_types, &binding_types, 0, mode)
             .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
-        if types.contains(&actual) { return Ok(E::Widen { value: Box::new(lowered), kind: kind.clone() }); }
+        if &actual != kind && kind.includes_alternatives(&actual) { return Ok(E::Widen { value: Box::new(lowered), kind: kind.clone() }); }
     }
     Ok(lowered)
 }
@@ -1229,8 +1229,8 @@ fn expression_kind(
     Ok(match expression {
         E::Widen { value, kind } => {
             kind.check()?;
-            let T::Alternatives(types) = kind else { return Err("inclusion requires an alternative contract"); };
-            if !types.contains(&recur(value)?) { return Err("value is not a declared alternative"); }
+            let T::Alternatives(_) = kind else { return Err("inclusion requires an alternative contract"); };
+            if !kind.includes_alternatives(&recur(value)?) { return Err("value is not a declared alternative"); }
             kind.clone()
         }
         E::Match { value, cases } => {
