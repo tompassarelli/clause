@@ -278,24 +278,29 @@ pub(super) fn sum_with_shape(
     let query_reads = std::cell::RefCell::new(Vec::new());
     let query_context = EvaluationContextV1 { reads: context.reads.map(|_| &query_reads), ..context };
     let plan = scalar_plan(value, query_context)?;
-    let memo = plan.as_ref().map(|plan| plan.memo());
     let mut visits = 0;
     let mut total = 0.0;
-    for (matched, accepted) in match_sum(predicates, configuration, &inputs,
-        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits)? {
-        if let Some(reads) = query_context.reads {
-            for predicate in &matched.predicates {
-                reads.borrow_mut().extend(predicate.reads.iter().cloned());
-            }
-        }
-        if accepted {
-            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
-            let contribution = evaluate(plan.as_ref().map_or(value, |plan| plan.expression.as_ref()), configuration, &inputs,
-                EvaluationContextV1 { bindings: Some(&matched.bindings), scalar_memo: memo.as_ref(), ..query_context })?;
-            total += contribution.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
-            if !total.is_finite() {
-                return Err(ExecutableErrorV1::NumericDomain);
-            }
+    let matches = match_sum(predicates, configuration, &inputs,
+        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits)?;
+    if let Some(result) = plan.as_ref().and_then(|plan| plan.compiled_sum(configuration, &inputs, &matches)) {
+        total = result?;
+    } else {
+        let memo = plan.as_ref().map(|plan| plan.memo());
+        for (matched, accepted) in matches {
+              if let Some(reads) = query_context.reads {
+                  for predicate in &matched.predicates {
+                      reads.borrow_mut().extend(predicate.reads.iter().cloned());
+                  }
+              }
+              if accepted {
+                  let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
+                  let contribution = evaluate(plan.as_ref().map_or(value, |plan| plan.expression.as_ref()), configuration, &inputs,
+                      EvaluationContextV1 { bindings: Some(&matched.bindings), scalar_memo: memo.as_ref(), ..query_context })?;
+                  total += contribution.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
+                  if !total.is_finite() {
+                      return Err(ExecutableErrorV1::NumericDomain);
+                  }
+              }
         }
     }
     let result = ExecutableValueV1::number(total)?;
