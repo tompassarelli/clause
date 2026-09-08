@@ -65,6 +65,44 @@ missing-leaf(?node: Text, ?edge: Text, ?leaf: Text, ?summary: Text): Text
   "firn: '{?node} {?edge}' requires a leaf node\nUsage: firn {?node} {?edge} {?leaf}\n  {?summary}\n"
 ```
 
+## Checked alternative outcomes
+
+An explicit alternative contract such as Execution | Diagnostic accepts either exact value shape. match checks each case binding against its declared alternative, requires every alternative exactly once, and evaluates only the selected body. Missing cases, overlapping alternatives, and invalid payload fields reject. Values retain their ordinary record representation in native invocation and JavaScript; no tag or empty filler fields are needed.
+
+Catalog ID: `callable-outcomes`
+
+```clause
+Command:
+  node: Text
+  edge: Text
+  summary: Text
+  executable: Text
+
+Execution:
+  executable: Text
+  arguments: Sequence<Text>
+
+Diagnostic:
+  message: Text
+  status: F64
+
+command(): Command
+  {node: "module", edge: "list", summary: "list modules", executable: "firn-inventory"}
+
+dispatch-command(?command: Command, ?args: Sequence<Text>): Execution | Diagnostic
+  if(?args = [?command.node, ?command.edge],
+    {executable: ?command.executable, arguments: [?command.node, ?command.edge, "all"]},
+    {message: "Unknown command\n", status: 1})
+
+export dispatch(?args: Sequence<Text>)
+  dispatch-command(command(), ?args)
+
+export describe(?args: Sequence<Text>): Text
+  match(dispatch(?args),
+    ?request: Execution => "{?request.executable} {join(?request.arguments, " ")}",
+    ?error: Diagnostic => "{?error.status}: {?error.message}")
+```
+
 ## Inferred records and exact foreign construction
 
 A callable may omit its result annotation when its checked body determines one exact type. Nested records infer every field, including delayed foreign values. A private foreign declaration may bind a Record type parameter; each use retains the complete actual record contract, and repeated uses of a parameter must agree. Foreign results, target, member and failure remain explicit. This complete example includes all foreign declarations; it does not assume a shared library or import mechanism.

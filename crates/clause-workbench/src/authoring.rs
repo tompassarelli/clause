@@ -34,6 +34,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/pure-composition.clause"),
     },
     AuthoringExampleV1 {
+        slug: "callable-outcomes",
+        title: "Checked alternative outcomes",
+        summary: "An explicit alternative contract such as Execution | Diagnostic accepts either exact value shape. match checks each case binding against its declared alternative, requires every alternative exactly once, and evaluates only the selected body. Missing cases, overlapping alternatives, and invalid payload fields reject. Values retain their ordinary record representation in native invocation and JavaScript; no tag or empty filler fields are needed.",
+        source: include_str!("../../../test-vectors/authoring/callable-outcomes.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "inferred-construction",
         title: "Inferred records and exact foreign construction",
         summary: "A callable may omit its result annotation when its checked body determines one exact type. Nested records infer every field, including delayed foreign values. A private foreign declaration may bind a Record type parameter; each use retains the complete actual record contract, and repeated uses of a parameter must agree. Foreign results, target, member and failure remain explicit. This complete example includes all foreign declarations; it does not assume a shared library or import mechanism.",

@@ -1427,6 +1427,12 @@ impl Wire for CanonicalValueTypeV1 {
                 T::Delayed { target, value } => { encoder.u8(8); encoder.blob("delayed target",target.as_bytes())?; encode(value,encoder)?; }
                 T::OpaqueForeign { module, name } => { encoder.u8(9); encoder.blob("foreign type module",module.as_bytes())?; encoder.blob("foreign type name",name.as_bytes())?; }
                 T::Sequence(element) => { encoder.u8(6); encode(element,encoder)?; }
+                T::Alternatives(types) => {
+                    encoder.u8(10);
+                    if types.len() > MAX_LIST_ITEMS as usize { return Err(CanonicalEncodeError::ListTooLong { count: types.len(), maximum: MAX_LIST_ITEMS }); }
+                    encoder.u32(types.len() as u32);
+                    for kind in types { encode(kind, encoder)?; }
+                }
                 T::Record(fields) => {
                     encoder.u8(7);
                     if fields.len() > MAX_LIST_ITEMS as usize { return Err(CanonicalEncodeError::ListTooLong { count: fields.len(), maximum: MAX_LIST_ITEMS }); }
@@ -1457,6 +1463,19 @@ impl Wire for CanonicalValueTypeV1 {
                     module: String::from_utf8(cursor.blob()?).map_err(|_| CanonicalDecodeError::InvalidForeignContract { offset, reason: "invalid module" })?,
                     name: String::from_utf8(cursor.blob()?).map_err(|_| CanonicalDecodeError::InvalidForeignContract { offset, reason: "invalid type name" })?,
                 },
+                10 => {
+                    let count=cursor.u32()?;
+                    if count > MAX_LIST_ITEMS { return Err(CanonicalDecodeError::ListTooLong { offset,count }); }
+                    let mut types=std::collections::BTreeSet::new();
+                    for _ in 0..count {
+                        let kind=decode(cursor,depth+1)?;
+                        if types.last().is_some_and(|previous| previous >= &kind) { return Err(CanonicalDecodeError::NonCanonical(CanonicalEncodeError::NonCanonicalOrder("alternative contracts"))); }
+                        types.insert(kind);
+                    }
+                    let kind=T::Alternatives(types);
+                    kind.check().map_err(|reason| CanonicalDecodeError::InvalidForeignContract { offset,reason })?;
+                    kind
+                }
                 7 => {
                     let count=cursor.u32()?;
                     if count > MAX_LIST_ITEMS { return Err(CanonicalDecodeError::ListTooLong { offset,count }); }

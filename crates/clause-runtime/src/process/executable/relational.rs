@@ -49,6 +49,15 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
             return Err(ExecutableErrorV1::ResourceLimit);
         }
         match value {
+            E::Match { value, cases } => {
+                if pattern { return Err(ExecutableErrorV1::MalformedProgram); }
+                check(value,bound,false,depth+1,query_inputs)?;
+                for (_, binding, body) in cases {
+                    let mut nested = bound.clone();
+                    if !nested.insert(*binding) { return Err(ExecutableErrorV1::MalformedProgram); }
+                    check(body,&mut nested,false,depth+1,query_inputs)?;
+                }
+            }
             E::Sequence(values) => { for value in values { check(value,bound,false,depth+1,query_inputs)?; } }
             E::Record(fields) => { for value in fields.values() { check(value,bound,false,depth+1,query_inputs)?; } }
             E::SequenceSort(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) => check(value,bound,false,depth+1,query_inputs)?,

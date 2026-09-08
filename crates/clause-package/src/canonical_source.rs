@@ -335,6 +335,10 @@ pub struct CanonicalStateCellV1 {
 /// declared argument ordinals local to the handler, never physical slots.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalExecutableExpressionV1 {
+    /// Checked inclusion in one explicitly declared disjoint alternative contract.
+    Widen { value: Box<Self>, kind: CanonicalValueTypeV1 },
+    /// Exhaustive elimination; each payload binding has its exact case contract.
+    Match { value: Box<Self>, cases: Vec<(CanonicalValueTypeV1, u16, Self)> },
     /// Evaluate the value once, then evaluate the body in its lexical binding scope.
     Let { binding: u16, value: Box<Self>, body: Box<Self> },
     Sequence(Vec<Self>),
@@ -544,6 +548,7 @@ pub enum CanonicalTextTransformV1 {
 /// Physical state coordinates are deliberately supplied only by refinement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalScalarExpressionV1 {
+    Match { value: Box<Self>, cases: Vec<(Vec<u8>, Vec<u8>, Self)> },
     /// Parsed pure definition application; eliminated by checked callable expansion.
     Call { designation: Vec<u8>, arguments: Vec<Self> },
     /// Static field segments; consumed by checking, never a runtime Text value.
@@ -1716,7 +1721,7 @@ fn finish_canonical_source(
             _ => None,
         })
         .collect();
-    let callables = callable::check_definitions(&parsed.callables)?;
+    let callables = callable::check_definitions(&parsed.callables, &items)?;
     callable::complete_inferred_results(&mut items, &callables)?;
     let mut cst = CanonicalSourceCstV1 {
         artifact,
@@ -4641,6 +4646,7 @@ fn canonical_scalar_executable_expression(
         | CanonicalScalarExpressionV1::SequenceJoin(_, _)
         | CanonicalScalarExpressionV1::ScalarText(_)
         | CanonicalScalarExpressionV1::SequenceMap { .. }
+        | CanonicalScalarExpressionV1::Match { .. }
         | CanonicalScalarExpressionV1::SequenceFold { .. }
         | CanonicalScalarExpressionV1::SequenceAppend(..)
         | CanonicalScalarExpressionV1::SequenceSort(_)
@@ -5042,6 +5048,7 @@ fn relational_scalar_expression(
         | CanonicalScalarExpressionV1::SequenceJoin(_, _)
         | CanonicalScalarExpressionV1::ScalarText(_)
         | CanonicalScalarExpressionV1::SequenceMap { .. }
+        | CanonicalScalarExpressionV1::Match { .. }
         | CanonicalScalarExpressionV1::SequenceFold { .. }
         | CanonicalScalarExpressionV1::SequenceAppend(..)
         | CanonicalScalarExpressionV1::SequenceSort(_)
@@ -9177,6 +9184,31 @@ impl ScalarExpressionParser<'_> {
     fn primary_value(&mut self) -> Option<CanonicalScalarExpressionV1> {
         use CanonicalScalarExpressionV1 as E;
         self.skip_spaces();
+        if self.interpolate && self.take_exact(b"match(") {
+            let value = Box::new(self.disjunction()?);
+            let mut cases = Vec::new();
+            loop {
+                self.skip_spaces(); self.take_exact(b",").then_some(())?;
+                self.skip_spaces();
+                let start = self.cursor;
+                self.take_exact(b"?").then_some(())?;
+                while self.source.get(self.cursor).is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_')) { self.cursor += 1; }
+                (self.cursor > start + 1).then_some(())?;
+                let binding = self.source[start..self.cursor].to_vec();
+                self.skip_spaces(); self.take_exact(b":").then_some(())?;
+                let start = self.cursor;
+                while self.source.get(self.cursor..self.cursor + 2) != Some(b"=>") {
+                    self.source.get(self.cursor)?; self.cursor += 1;
+                }
+                let kind = std::str::from_utf8(&self.source[start..self.cursor]).ok()?.trim().as_bytes().to_vec();
+                self.cursor += 2;
+                let body = self.disjunction()?;
+                cases.push((kind, binding, body));
+                self.skip_spaces();
+                if self.take_exact(b")") { break; }
+            }
+            return Some(E::Match { value, cases });
+        }
         if self.interpolate && self.take_exact(b"path(") {
             let mut fields = Vec::new();
             loop {
@@ -9487,6 +9519,14 @@ fn collect_scalar_expression_parameters(
     parameters: &mut BTreeSet<Vec<u8>>,
 ) {
     match expression {
+        CanonicalScalarExpressionV1::Match { value, cases } => {
+            collect_scalar_expression_parameters(value, parameters);
+            for (_, binding, body) in cases {
+                let mut nested = BTreeSet::new();
+                collect_scalar_expression_parameters(body, &mut nested);
+                nested.remove(binding); parameters.extend(nested);
+            }
+        }
         CanonicalScalarExpressionV1::Call { arguments, .. } => { for value in arguments { collect_scalar_expression_parameters(value, parameters); } },
         CanonicalScalarExpressionV1::Sequence(values) => {
             for value in values { collect_scalar_expression_parameters(value, parameters); }
@@ -11030,6 +11070,7 @@ fn scalar_expression_matches_kind(
         | CanonicalScalarExpressionV1::SequenceJoin(_, _)
         | CanonicalScalarExpressionV1::ScalarText(_)
         | CanonicalScalarExpressionV1::SequenceMap { .. }
+        | CanonicalScalarExpressionV1::Match { .. }
         | CanonicalScalarExpressionV1::SequenceFold { .. }
         | CanonicalScalarExpressionV1::SequenceAppend(..)
         | CanonicalScalarExpressionV1::SequenceSort(_)

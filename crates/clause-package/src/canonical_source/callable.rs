@@ -55,6 +55,11 @@ pub(super) fn foreign_accesses(
     use CanonicalExecutableExpressionV1 as E;
     fn collect(expression: &E, contracts: &mut BTreeSet<CanonicalForeignBindingV1>) {
         match expression {
+            E::Widen { value, .. } => collect(value, contracts),
+            E::Match { value, cases } => {
+                collect(value, contracts);
+                for (_, _, body) in cases { collect(body, contracts); }
+            }
             E::Foreign { binding, arguments } => {
                 contracts.insert(binding.as_ref().clone());
                 for argument in arguments {
@@ -200,6 +205,7 @@ pub(super) fn read(
         b"join",
         b"require",
         b"if".as_slice(),
+        b"match",
         b"sqrt",
         b"trim",
         b"lowercase",
@@ -537,6 +543,7 @@ const MAX_CALL_DEPTH: usize = 64;
 
 pub(super) fn check_definitions(
     definitions: &[CallableCst],
+    declarations: &[std::sync::Arc<CstItem>],
 ) -> Result<Vec<CanonicalCallableV1>, CanonicalSourceErrorV1> {
     let mut indices = BTreeMap::new();
     for (index, definition) in definitions.iter().enumerate() {
@@ -551,6 +558,7 @@ pub(super) fn check_definitions(
     }
     let mut expansion = Expansion {
         definitions,
+        declarations,
         indices,
         checked: BTreeMap::new(),
         active: BTreeSet::new(),
@@ -575,6 +583,7 @@ pub(super) fn check_definitions(
 
 struct Expansion<'a> {
     definitions: &'a [CallableCst],
+    declarations: &'a [std::sync::Arc<CstItem>],
     indices: BTreeMap<Vec<u8>, usize>,
     checked: BTreeMap<usize, CanonicalCallableV1>,
     active: BTreeSet<usize>,
@@ -725,6 +734,17 @@ fn bind_body(
                 .map(|(k, v)| Ok((k.clone(), *recur(v)?)))
                 .collect::<Result<_, CanonicalSourceErrorV1>>()?,
         ),
+        E::Widen { value, kind } => E::Widen { value: recur(value)?, kind: kind.clone() },
+        E::Match { value, cases } => {
+            let value = recur(value)?;
+            let mut bound_cases = Vec::new();
+            for (kind, binding, body) in cases {
+                let fresh = expansion.binding(origin)?;
+                let mut nested = locals.clone(); nested.insert(*binding, fresh);
+                bound_cases.push((kind.clone(), fresh, bind_body(body, actual, &nested, expansion, origin, depth + 1)?));
+            }
+            E::Match { value, cases: bound_cases }
+        }
         E::EmptySequence(kind) => E::EmptySequence(kind.clone()),
         E::SequenceSort(a) => E::SequenceSort(recur(a)?),
         E::SequenceAppend(a,b) => E::SequenceAppend(recur(a)?, recur(b)?),
@@ -872,7 +892,26 @@ fn lower(
     expansion.consume(origin, depth)?;
     let mut recur =
         |e| lower(e, arguments, locals, static_paths, origin, expansion, depth + 1, mode, None).map(Box::new);
-    Ok(match expression {
+    let expected_record = if let (S::Record(fields), Some(CanonicalValueTypeV1::Alternatives(types))) = (expression, expected) {
+        let mut candidates = types.iter().filter(|kind| matches!(kind, CanonicalValueTypeV1::Record(wanted) if wanted.keys().eq(fields.keys())));
+        let first = candidates.next();
+        if candidates.next().is_none() { first } else { None }
+    } else { None };
+    let record_expected = expected_record.or(expected);
+    let lowered = match expression {
+        S::Match { value, cases } => {
+            let value = recur(value)?;
+            let mut lowered_cases = Vec::new();
+            for (name, binding, body) in cases {
+                let kind = value_type::resolve(name, expansion.declarations, &mut BTreeSet::new())
+                    .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
+                let fresh = expansion.binding(origin)?;
+                let mut nested = locals.clone(); nested.insert(binding.clone(), (fresh, kind.clone()));
+                let body = lower(body, arguments, &nested, static_paths, origin, expansion, depth + 1, mode, expected)?;
+                lowered_cases.push((kind, fresh, body));
+            }
+            E::Match { value, cases: lowered_cases }
+        }
         S::StaticFieldPath(_) => return Err(CanonicalSourceErrorV1::InvalidCallable {
             origin, reason: "FieldPath cannot become a runtime value",
         }),
@@ -905,7 +944,7 @@ fn lower(
             fields
                 .iter()
                 .map(|(k, v)| {
-                    let wanted = match expected { Some(CanonicalValueTypeV1::Record(fields)) => fields.get(k), _ => None };
+                    let wanted = match record_expected { Some(CanonicalValueTypeV1::Record(fields)) => fields.get(k), _ => None };
                     Ok((k.clone(), lower(v, arguments, locals, static_paths, origin, expansion, depth + 1, mode, wanted)?))
                 })
                 .collect::<Result<_, CanonicalSourceErrorV1>>()?,
@@ -1107,7 +1146,15 @@ fn lower(
             Box::new(lower(b, arguments, locals, static_paths, origin, expansion, depth + 1, mode, expected)?),
             Box::new(lower(c, arguments, locals, static_paths, origin, expansion, depth + 1, mode, expected)?)),
         S::Current | S::Symbol(_) => return Err(error()),
-    })
+    };
+    if let Some(kind @ CanonicalValueTypeV1::Alternatives(types)) = expected {
+        let argument_types = arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>();
+        let binding_types = locals.values().cloned().collect();
+        let actual = expression_kind(&lowered, &argument_types, &binding_types, 0, mode)
+            .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
+        if types.contains(&actual) { return Ok(E::Widen { value: Box::new(lowered), kind: kind.clone() }); }
+    }
+    Ok(lowered)
 }
 
 /// Checks the declared recursive contracts and the selected Mode's effect allowance.
@@ -1125,6 +1172,7 @@ pub fn check_canonical_callable_v1(
             CanonicalValueTypeV1::Delayed { .. } => kind.check().is_ok(),
             CanonicalValueTypeV1::Sequence(element) => supported(element),
             CanonicalValueTypeV1::Record(fields) => fields.values().all(supported),
+            CanonicalValueTypeV1::Alternatives(types) => kind.check().is_ok() && types.iter().all(supported),
             _ => false,
         }
     }
@@ -1179,6 +1227,28 @@ fn expression_kind(
         }
     };
     Ok(match expression {
+        E::Widen { value, kind } => {
+            kind.check()?;
+            let T::Alternatives(types) = kind else { return Err("inclusion requires an alternative contract"); };
+            if !types.contains(&recur(value)?) { return Err("value is not a declared alternative"); }
+            kind.clone()
+        }
+        E::Match { value, cases } => {
+            let T::Alternatives(types) = recur(value)? else { return Err("match requires alternatives"); };
+            types.iter().try_for_each(T::check)?;
+            let mut remaining = types;
+            let mut result = None;
+            for (kind, binding, body) in cases {
+                if !remaining.remove(kind) { return Err("unreachable or duplicate alternative"); }
+                let mut nested = bindings.clone();
+                if nested.insert(*binding, kind.clone()).is_some() { return Err("duplicate lexical binding"); }
+                let actual = expression_kind(body, arguments, &nested, depth + 1, mode)?;
+                if result.as_ref().is_some_and(|expected| expected != &actual) { return Err("match result type mismatch"); }
+                result = Some(actual);
+            }
+            if !remaining.is_empty() { return Err("missing alternative"); }
+            result.ok_or("empty match")?
+        }
         E::Let {
             binding,
             value,

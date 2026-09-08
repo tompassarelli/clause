@@ -866,6 +866,7 @@ pub fn decode_executable_occurrence_v1(
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExecutableExpressionV1 {
+    Match { value: Box<Self>, cases: Vec<(clause_package::CanonicalValueTypeV1, u16, Self)> },
     /// Evaluate the value once, then evaluate the body in its lexical binding scope.
     Let { binding: u16, value: Box<Self>, body: Box<Self> },
     Sequence(Vec<Self>),
@@ -1252,6 +1253,7 @@ impl ExecutableCallableV1 {
 fn value_has_type(value: &ExecutableValueV1, kind: &clause_package::CanonicalValueTypeV1) -> bool {
     use clause_package::CanonicalValueTypeV1 as T;
     match (value, kind) {
+        (value, T::Alternatives(types)) => types.iter().any(|kind| value_has_type(value, kind)),
         (ExecutableValueV1::Number(bits), T::Scalar(clause_package::CanonicalScalarValueKindV1::Number)) => f64::from_bits(*bits).is_finite(),
         (ExecutableValueV1::Sequence(values), T::Sequence(element)) => values.iter().all(|v| value_has_type(v, element)),
         (ExecutableValueV1::Record(values), T::Record(fields)) => values.len() == fields.len() && fields.iter().all(|(k,t)| values.get(k).is_some_and(|v| value_has_type(v,t))),
@@ -1277,6 +1279,11 @@ fn lower_canonical_expression(
         ))
     };
     Ok(match expression {
+        CanonicalExecutableExpressionV1::Widen { value, .. } => lower_canonical_expression(value, slots, depth + 1)?,
+        CanonicalExecutableExpressionV1::Match { value, cases } => ExecutableExpressionV1::Match {
+            value: Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+            cases: cases.iter().map(|(kind, binding, body)| Ok((kind.clone(), *binding, lower_canonical_expression(body, slots, depth + 1)?))).collect::<Result<_, ExecutableErrorV1>>()?,
+        },
         CanonicalExecutableExpressionV1::Let { binding, value, body } => ExecutableExpressionV1::Let {
             binding: *binding,
             value: Box::new(lower_canonical_expression(value, slots, depth + 1)?),
@@ -1895,7 +1902,7 @@ fn lower_scalar_expression(
         ))
     };
     Ok(match expression {
-        CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceMap { .. } | CanonicalScalarExpressionV1::SequenceFold { .. } | CanonicalScalarExpressionV1::SequenceAppend(..) | CanonicalScalarExpressionV1::SequenceSort(_) | CanonicalScalarExpressionV1::SequenceCount(_) | CanonicalScalarExpressionV1::ScalarText(_) | CanonicalScalarExpressionV1::SequenceJoin(..) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
+        CanonicalScalarExpressionV1::Match { .. } | CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceMap { .. } | CanonicalScalarExpressionV1::SequenceFold { .. } | CanonicalScalarExpressionV1::SequenceAppend(..) | CanonicalScalarExpressionV1::SequenceSort(_) | CanonicalScalarExpressionV1::SequenceCount(_) | CanonicalScalarExpressionV1::ScalarText(_) | CanonicalScalarExpressionV1::SequenceJoin(..) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Call { .. }
         | CanonicalScalarExpressionV1::StaticFieldPath(_)
         | CanonicalScalarExpressionV1::RecordAt(..)
@@ -6012,6 +6019,10 @@ fn validate_value_expression(
         E::Record(fields) => fields.values().collect(),
         E::Field(value,_) => vec![value],
         E::SequenceJoin(a,b) | E::SequenceAppend(a,b) | E::SequenceDrop(a,b) => vec![a,b],
+        E::Match { value, cases } => {
+            for (kind, _, _) in cases { kind.check().map_err(|_| ExecutableErrorV1::MalformedProgram)?; }
+            std::iter::once(value.as_ref()).chain(cases.iter().map(|(_, _, body)| body)).collect()
+        }
         E::SequenceFold { source, initial, body, .. } => vec![source, initial, body],
         E::SequenceSort(value) => vec![value],
         E::SequenceCount(value) | E::ScalarText(value) => vec![value],
@@ -6521,6 +6532,13 @@ fn evaluate_uncached(
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
     match expression {
+        E::Match { value, cases } => {
+            let value = evaluate(value, slots, arguments, context)?;
+            let (_, binding, body) = cases.iter().find(|(kind, _, _)| value_has_type(&value, kind)).ok_or(ExecutableErrorV1::TypeMismatch)?;
+            let mut bindings = context.bindings.cloned().unwrap_or_default();
+            bindings.insert(*binding, value);
+            evaluate(body, slots, arguments, EvaluationContextV1 { bindings: Some(&bindings), ..context })
+        }
         E::Let { binding, value, body } => {
             let value = evaluate(value, slots, arguments, context)?;
             let mut bindings = context.bindings.cloned().unwrap_or_default();
@@ -7238,7 +7256,7 @@ fn encode_expression(
         }
         E::Field(value,name) => { bytes.push(40); encode_expression(bytes,value)?; encode_count(bytes,name.len())?; bytes.extend_from_slice(name); }
         E::Require(a,b,c) => encode_ternary(bytes,41,a,b,c)?,
-        E::Foreign { .. } => return Err(ExecutableErrorV1::UnsupportedPhysicalTarget),
+        E::Match { .. } | E::Foreign { .. } => return Err(ExecutableErrorV1::UnsupportedPhysicalTarget),
         E::Let { binding, value, body } => {
             bytes.push(36);
             bytes.extend_from_slice(&binding.to_le_bytes());

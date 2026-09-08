@@ -9,6 +9,7 @@ pub enum CanonicalValueTypeV1 {
     OpaqueForeign { module: String, name: String },
     Sequence(Box<Self>),
     Record(BTreeMap<Vec<u8>, Self>),
+    Alternatives(BTreeSet<Self>),
 }
 
 impl From<CanonicalScalarValueKindV1> for CanonicalValueTypeV1 {
@@ -44,6 +45,19 @@ impl CanonicalValueTypeV1 {
                 Ok(())
             }
             CanonicalValueTypeV1::Sequence(element) => element.check_at(depth + 1, delayed),
+            CanonicalValueTypeV1::Alternatives(types) => {
+                if types.len() < 2 { return Err("alternatives require at least two distinct contracts"); }
+                for (index, kind) in types.iter().enumerate() {
+                    kind.check_at(depth + 1, delayed)?;
+                    if matches!(kind, Self::Alternatives(_)) || kind.contains_delayed() {
+                        return Err("alternatives require concrete immediate contracts");
+                    }
+                    if types.iter().skip(index + 1).any(|other| kind.overlaps(other)) {
+                        return Err("alternative contracts overlap");
+                    }
+                }
+                Ok(())
+            }
             CanonicalValueTypeV1::Record(fields) => {
                 for (name, field) in fields {
                     if name.is_empty() || std::str::from_utf8(name).is_err() {
@@ -55,11 +69,21 @@ impl CanonicalValueTypeV1 {
             }
         }
     }
+    fn overlaps(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Scalar(a), Self::Scalar(b)) => a == b,
+            (Self::Sequence(_), Self::Sequence(_)) => true,
+            (Self::Record(a), Self::Record(b)) => a.keys().eq(b.keys()) && a.iter().all(|(key, value)| value.overlaps(&b[key])),
+            (Self::Alternatives(types), other) | (other, Self::Alternatives(types)) => types.iter().any(|kind| kind.overlaps(other)),
+            _ => false,
+        }
+    }
     pub fn contains_delayed(&self) -> bool {
         match self {
             Self::Delayed { .. } | Self::OpaqueForeign { .. } => true,
             Self::Sequence(value) => value.contains_delayed(),
             Self::Record(fields) => fields.values().any(Self::contains_delayed),
+            Self::Alternatives(types) => types.iter().any(Self::contains_delayed),
             Self::Scalar(_) => false,
         }
     }
@@ -68,6 +92,7 @@ impl CanonicalValueTypeV1 {
             Self::Delayed { target: actual, value } => actual == target && value.in_target(target),
             Self::Sequence(value) => value.in_target(target),
             Self::Record(fields) => fields.values().all(|value| value.in_target(target)),
+            Self::Alternatives(types) => types.iter().all(|kind| kind.in_target(target)),
             _ => true,
         }
     }
@@ -75,6 +100,7 @@ impl CanonicalValueTypeV1 {
         use CanonicalScalarValueKindV1 as K;
         use CanonicalScalarValueV1 as V;
         match (self, value) {
+            (Self::Alternatives(types), value) => types.iter().any(|kind| kind.accepts(value)),
             (Self::Scalar(K::Number), V::Number(bits)) => f64::from_bits(*bits).is_finite(),
             (Self::Scalar(K::Boolean), V::Boolean(_))
             | (Self::Scalar(K::Text), V::Text(_))
@@ -211,12 +237,25 @@ impl Pattern {
     }
 }
 
-pub(super) fn resolve(
+pub(super) fn resolve<Item: std::borrow::Borrow<CstItem>>(
     name: &[u8],
-    items: &[CstItem],
+    items: &[Item],
     active: &mut BTreeSet<Vec<u8>>,
 ) -> Result<CanonicalValueTypeV1, &'static str> {
     use CanonicalScalarValueKindV1 as K;
+    let source = std::str::from_utf8(name).map_err(|_| "invalid value contract")?.trim();
+    let parts = alternatives(source);
+    if parts.len() > 1 {
+        let mut types = BTreeSet::new();
+        for part in parts {
+            let kind = resolve(part.trim().as_bytes(), items, active)?;
+            if !types.insert(kind) { return Err("duplicate alternative contract"); }
+        }
+        let kind = CanonicalValueTypeV1::Alternatives(types);
+        kind.check()?;
+        return Ok(kind);
+    }
+    let name = source.as_bytes();
     let scalar = match name {
         b"Text" => Some(K::Text),
         b"F64" => Some(K::Number),
@@ -232,7 +271,7 @@ pub(super) fn resolve(
         let value = std::str::from_utf8(&body[comma+1..]).map_err(|_| "invalid delayed value")?.trim();
         return Ok(CanonicalValueTypeV1::Delayed { target, value: Box::new(resolve(value.as_bytes(), items, active)?) });
     }
-    if let Some(kind) = items.iter().find_map(|item| match &item.kind {
+    if let Some(kind) = items.iter().find_map(|item| match &item.borrow().kind {
         CstKind::ForeignType { designation, module, name: foreign_name } if designation == name =>
             Some(CanonicalValueTypeV1::OpaqueForeign { module: module.clone(), name: foreign_name.clone() }),
         _ => None,
@@ -249,7 +288,7 @@ pub(super) fn resolve(
     }
     let fields = items
         .iter()
-        .find_map(|item| match &item.kind {
+        .find_map(|item| match &item.borrow().kind {
             CstKind::Shape {
                 designation,
                 fields,
@@ -272,7 +311,10 @@ pub(super) fn resolve(
 
 /// The declaration grammar uses the same recursive value contracts as callables.
 pub(super) fn designation(source: &str, origin: CanonicalSourceOriginV1) -> Result<Vec<u8>, CanonicalSourceErrorV1> {
-    if let Some(inner) = source.strip_prefix("Sequence<").and_then(|s| s.strip_suffix('>')) {
+    let parts = alternatives(source);
+    if parts.len() > 1 {
+        for part in parts { designation(part.trim(), origin)?; }
+    } else if let Some(inner) = source.strip_prefix("Sequence<").and_then(|s| s.strip_suffix('>')) {
         designation(inner, origin)?;
     } else if let Some(inner) = source.strip_prefix("Delayed<").and_then(|s| s.strip_suffix('>')) {
         let (target, value) = inner.split_once(',').ok_or(CanonicalSourceErrorV1::InvalidApplication { origin })?;
@@ -282,4 +324,20 @@ pub(super) fn designation(source: &str, origin: CanonicalSourceOriginV1) -> Resu
         application_designation_bytes(source, origin)?;
     }
     Ok(source.as_bytes().to_vec())
+}
+
+fn alternatives(source: &str) -> Vec<&str> {
+    let mut depth = 0;
+    let mut start = 0;
+    let mut parts = Vec::new();
+    for (index, byte) in source.bytes().enumerate() {
+        match byte {
+            b'<' => depth += 1,
+            b'>' => depth -= 1,
+            b'|' if depth == 0 => { parts.push(&source[start..index]); start = index + 1; }
+            _ => {}
+        }
+    }
+    parts.push(&source[start..]);
+    parts
 }

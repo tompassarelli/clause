@@ -1077,6 +1077,10 @@ fn rebind_lowered_expression(value: &mut ExecutableExpressionV1, edit: &Canonica
     let formation = |old| edit.formation(FormationLocalId::new(old)).map(|new| new.get())
         .map_err(|_| ExecutableErrorV1::MalformedProgram);
     match value {
+        E::Match { value, cases } => {
+            rebind_lowered_expression(value, edit)?;
+            for (_, _, body) in cases { rebind_lowered_expression(body, edit)?; }
+        }
         E::Constant(value) => *value = migrate_value(value, edit)?,
         E::Slot(_) | E::Argument(_) | E::Binding(_) => {},
         E::Sequence(values) | E::Foreign { arguments: values, .. } => for value in values {

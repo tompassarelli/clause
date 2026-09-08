@@ -1,0 +1,29 @@
+Command:
+  node: Text
+  edge: Text
+  summary: Text
+  executable: Text
+
+Execution:
+  executable: Text
+  arguments: Sequence<Text>
+
+Diagnostic:
+  message: Text
+  status: F64
+
+command(): Command
+  {node: "module", edge: "list", summary: "list modules", executable: "firn-inventory"}
+
+dispatch-command(?command: Command, ?args: Sequence<Text>): Execution | Diagnostic
+  if(?args = [?command.node, ?command.edge],
+    {executable: ?command.executable, arguments: [?command.node, ?command.edge, "all"]},
+    {message: "Unknown command\n", status: 1})
+
+export dispatch(?args: Sequence<Text>)
+  dispatch-command(command(), ?args)
+
+export describe(?args: Sequence<Text>): Text
+  match(dispatch(?args),
+    ?request: Execution => "{?request.executable} {join(?request.arguments, " ")}",
+    ?error: Diagnostic => "{?error.status}: {?error.message}")
