@@ -621,6 +621,12 @@ impl MatchState {
     }
 }
 
+fn normalize_matches(matches: &mut Vec<Matched>) {
+    // Stable order keeps the first derivation's evidence for equal substitutions.
+    matches.sort_by(|a, b| a.bindings.cmp(&b.bindings));
+    matches.dedup_by(|a, b| a.bindings == b.bindings);
+}
+
 fn match_rule_from(
     predicates: &[ExecutableExpressionV1],
     configuration: &[ExecutableSlotV1],
@@ -642,7 +648,7 @@ fn match_rule_from(
             else {
                 return Err(ExecutableErrorV1::TypeMismatch);
             };
-            let mut next = BTreeMap::new();
+            let mut next = Vec::new();
             let mut by_value = None::<CheckedValueIndex<'_>>;
             for incoming in active {
                 let start_visits = *visits;
@@ -770,9 +776,12 @@ fn match_rule_from(
                                 value.clone(),
                             )],
                         }); }
-                        next.entry(matched.bindings.clone()).or_insert(matched);
+                        next.push(matched);
                         if next.len() > MAX_MATCHES {
-                            return Err(ExecutableErrorV1::ResourceLimit);
+                            normalize_matches(&mut next);
+                            if next.len() > MAX_MATCHES {
+                                return Err(ExecutableErrorV1::ResourceLimit);
+                            }
                         }
                 }
                 if !found {
@@ -795,7 +804,8 @@ fn match_rule_from(
                     }
                 }
             }
-            active = next.into_values().collect();
+            normalize_matches(&mut next);
+            active = next;
         } else {
             let plan = if capture { None } else { scalar_plan(predicate, context)? };
             let memo = plan.as_ref().map(|plan| plan.memo());
