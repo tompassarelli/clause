@@ -58,6 +58,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/foreign-construction-inferred.clause"),
     },
     AuthoringExampleV1 {
+        slug: "delayed-predicates",
+        title: "Target equality and lazy conditionals",
+        summary: "Equality with a delayed operand checks the exact eventual type and target, then constructs delayed Bool. An if with delayed Bool constructs a target conditional with one exact eventual result type; target evaluation forces only its selected branch. Ordinary values may participate without changing their value, and mixed targets or branch types reject.",
+        source: include_str!("../../../test-vectors/authoring/delayed-predicates/predicates.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "foreign-root",
         title: "Typed external root values",
         summary: "A delayed foreign declaration uses bare `get: root` to reference its external root directly, with no arguments or member selection. The declared result remains the eventual value contract. Quoted `get: \"root\"` selects an ordinary member named root. Nix retains the actual external value and its target interpolation semantics; native and JavaScript execution reject delayed construction.",

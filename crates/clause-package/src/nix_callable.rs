@@ -21,6 +21,20 @@ enum NixExpr {
     Bound(u16),
     Field(Box<Self>, String),
     Concatenate(Box<Self>, Box<Self>),
+    Equal(Box<Self>, Box<Self>),
+    Conditional(Box<Self>, Box<Self>, Box<Self>),
+}
+
+impl NixExpr {
+    fn immediate(&self) -> bool {
+        match self {
+            Self::Constant(_) => true,
+            Self::Record(fields) => fields.values().all(Self::immediate),
+            Self::Sequence(values) => values.iter().all(Self::immediate),
+            Self::Dictionary(key, value) => key.immediate() && value.immediate(),
+            _ => false,
+        }
+    }
 }
 
 /// Constructs the target expression without performing its foreign accesses.
@@ -86,8 +100,12 @@ fn construct(e: &E, bindings: &BTreeMap<u16, NixExpr>, roots: &mut BTreeSet<Stri
             }
         }
         E::Conditional(condition, yes, no) => {
-            let condition = boolean(construct(condition, bindings, roots, depth + 1)?)?;
-            construct(if condition { yes } else { no }, bindings, roots, depth + 1)?
+            match construct(condition, bindings, roots, depth + 1)? {
+                NixExpr::Constant(V::Boolean(condition)) => construct(if condition { yes } else { no }, bindings, roots, depth + 1)?,
+                condition => NixExpr::Conditional(Box::new(condition),
+                    Box::new(construct(yes, bindings, roots, depth + 1)?),
+                    Box::new(construct(no, bindings, roots, depth + 1)?)),
+            }
         }
         E::Require(condition, value, message) => {
             if !boolean(construct(condition, bindings, roots, depth + 1)?)? {
@@ -96,7 +114,12 @@ fn construct(e: &E, bindings: &BTreeMap<u16, NixExpr>, roots: &mut BTreeSet<Stri
             }
             construct(value, bindings, roots, depth + 1)?
         }
-        E::Equal(a,b) => NixExpr::Constant(V::Boolean(construct(a,bindings,roots,depth+1)? == construct(b,bindings,roots,depth+1)?)),
+        E::Equal(a,b) => {
+            let a = construct(a,bindings,roots,depth+1)?;
+            let b = construct(b,bindings,roots,depth+1)?;
+            if a.immediate() && b.immediate() { NixExpr::Constant(V::Boolean(a == b)) }
+            else { NixExpr::Equal(Box::new(a), Box::new(b)) }
+        }
         E::Concatenate(a,b) => {
             match (construct(a,bindings,roots,depth+1)?,construct(b,bindings,roots,depth+1)?) {
                 (NixExpr::Constant(V::Text(a)), NixExpr::Constant(V::Text(b))) => NixExpr::Constant(V::Text(a + &b)),
@@ -150,6 +173,8 @@ fn render(e: &NixExpr, roots: &BTreeSet<String>) -> Result<String, String> {
         NixExpr::Bound(binding) => bound(binding),
         NixExpr::Field(value, field) => format!("({}).{}", render(value)?, quote(field)),
         NixExpr::Concatenate(a, b) => format!("({} + {})", render(a)?, render(b)?),
+        NixExpr::Equal(a, b) => format!("({} == {})", render(a)?, render(b)?),
+        NixExpr::Conditional(condition, yes, no) => format!("(if {} then {} else {})", render(condition)?, render(yes)?, render(no)?),
         NixExpr::Constant(V::Text(value)) => quote(value),
         NixExpr::Constant(V::Boolean(value)) => value.to_string(),
         NixExpr::Constant(V::Number(bits)) if f64::from_bits(*bits).is_finite() => f64::from_bits(*bits).to_string(),

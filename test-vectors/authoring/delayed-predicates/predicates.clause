@@ -1,0 +1,26 @@
+foreign polarity(): Text
+  construction: "nix"
+  get: "polarity"
+  from: "config"
+  failure: throw
+
+foreign selected(): Text
+  construction: "nix"
+  get: "selected"
+  from: "config"
+  failure: throw
+
+foreign unselected(): Text
+  construction: "nix"
+  get: "unselected"
+  from: "config"
+  failure: throw
+
+export dark()
+  polarity() = "dark"
+
+export mode()
+  if(polarity() = "dark", "1", "0")
+
+export lazy()
+  if(polarity() = "dark", selected(), unselected())

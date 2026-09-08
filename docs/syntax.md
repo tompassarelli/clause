@@ -516,11 +516,20 @@ See the complete executing modules in
 A foreign declaration with `construction: "nix"` instead constructs a delayed
 expression for that target. It performs no foreign attempt. Its written result
 is the eventual value contract; the construction declaration derives the checked
-`Delayed<nix,T>` result. Delayed values cannot be used as ordinary values or
-compared during construction, and different targets cannot cross a construction
+`Delayed<nix,T>` result. Delayed values cannot be used as ordinary values,
+and different targets cannot cross a construction
 boundary. Call, record, sequence, and strict lexical binding syntax are unchanged.
 A strict binding constructs its value once; it does not force the eventual Nix
 value. The `throw` contract now describes failure at target evaluation.
+
+Equality with a delayed operand constructs a delayed Boolean when both operands
+have the same eventual type and target; an ordinary value of that type may be
+the other operand. `if` with a delayed Boolean constructs a target conditional.
+Both branches must have one exact eventual type in that target; only the selected
+branch is evaluated at target execution. Immediate equality and conditionals
+retain their existing meaning. See
+`clause:test-vectors/authoring/delayed-predicates/gtk.clause` for a complete module
+whose outer theme polarity selects settings using inner Home Manager fonts.
 
 Bare `get: root` refers to the external root itself, without selecting a member.
 It requires delayed construction and takes no arguments; quoted `get: "root"`

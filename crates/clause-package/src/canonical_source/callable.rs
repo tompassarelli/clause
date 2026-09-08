@@ -1528,16 +1528,38 @@ fn expression_kind(
             K::Number.into()
         }
         E::Equal(a, b) => {
-            let kind = recur(a)?;
-            if kind.contains_delayed() { return Err("delayed values cannot be compared during construction"); }
-            require(b, &kind)?;
-            K::Boolean.into()
+            let a = recur(a)?;
+            let b = recur(b)?;
+            match (&a, &b) {
+                (T::Delayed { target, .. }, _) | (_, T::Delayed { target, .. }) => {
+                    if !a.in_target(target) || !b.in_target(target) { return Err("equality construction target mismatch"); }
+                    if a.constructed_value(target)? != b.constructed_value(target)? { return Err("equality value type mismatch"); }
+                    T::Delayed { target: target.clone(), value: Box::new(K::Boolean.into()) }
+                }
+                _ => {
+                    if a.contains_delayed() || b.contains_delayed() { return Err("delayed values cannot be compared during construction"); }
+                    if a != b { return Err("equality value type mismatch"); }
+                    K::Boolean.into()
+                }
+            }
         }
         E::Conditional(a, b, c) => {
-            require(a, &K::Boolean.into())?;
-            let kind = recur(b)?;
-            require(c, &kind)?;
-            kind
+            match recur(a)? {
+                T::Delayed { target, value } if *value == T::Scalar(K::Boolean) => {
+                    let b = recur(b)?;
+                    let c = recur(c)?;
+                    if !b.in_target(&target) || !c.in_target(&target) { return Err("conditional construction target mismatch"); }
+                    let value = b.constructed_value(&target)?;
+                    if c.constructed_value(&target)? != value { return Err("conditional branch type mismatch"); }
+                    T::Delayed { target, value: Box::new(value) }
+                }
+                T::Scalar(K::Boolean) => {
+                    let kind = recur(b)?;
+                    require(c, &kind)?;
+                    kind
+                }
+                _ => return Err("conditional requires Bool"),
+            }
         }
         _ => return Err("unsupported callable expression or state access"),
     })
