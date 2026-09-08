@@ -65,6 +65,25 @@ missing-leaf(?node: Text, ?edge: Text, ?leaf: Text, ?summary: Text): Text
   "firn: '{?node} {?edge}' requires a leaf node\nUsage: firn {?node} {?edge} {?leaf}\n  {?summary}\n"
 ```
 
+## Literal multiline Text in callables
+
+A triple-quoted callable value uses the same indentation margin, escape decoding, and final-newline semantics as other multiline Text. Quotes, comment markers, braces, and dollar syntax remain literal content; no callable interpolation occurs inside triple quotes. Write a doubled backslash for a literal backslash.
+
+Catalog ID: `multiline-callable`
+
+```clause
+export script(): Text
+  """
+  echo "ready" # retained
+    printf '%s\\n' "${HOME:-}" "{?literal}" "$@"
+
+  case "$1" in *) echo '\\path' ;; esac
+  """
+
+export wrapped()
+  {script: script()}
+```
+
 ## Checked alternative outcomes
 
 An explicit alternative contract such as Execution | Diagnostic accepts either exact value shape. match checks each case binding against its declared alternative, requires every alternative exactly once, and evaluates only the selected body. Missing cases, overlapping alternatives, and invalid payload fields reject. Values retain their ordinary record representation in native invocation and JavaScript; no tag or empty filler fields are needed.
@@ -2628,4 +2647,157 @@ import "nixpkgs.clause"
 
 export jq-module()
   module(path(myConfig.modules.jq.enable), "jq command-line JSON processor", package(path(jq)))
+```
+
+
+## Delayed typed function values
+
+`Function<Argument, Result>` inside a delayed contract describes a checked function value. `(?home: Delayed<nix,HomeModuleArguments>) => body` binds the target argument only inside its body. Field selection and application retain exact contracts and target identity; mixed targets reject. Delayed Text interpolation remains target construction. These whole modules preserve outer NixOS username and package references while selecting the symlink function and home directory from the inner Home Manager configuration. Native and JavaScript execution do not admit delayed functions.
+
+`clause:test-vectors/authoring/nested-functions/nixpkgs.clause`
+
+```clause
+Package:
+  foreign: "nixpkgs"
+  type: "Package"
+
+Option:
+  foreign: "nixpkgs/lib"
+  type: "Option"
+
+Definition:
+  foreign: "nixpkgs/lib"
+  type: "Definition"
+
+foreign enable-option(?description: Text): Option
+  construction: "nix"
+  call: "mkEnableOption"
+  from: "lib"
+  failure: throw
+
+foreign when-enabled<Body: Record>(?condition: Delayed<nix,Bool>, ?body: Body): Definition
+  construction: "nix"
+  call: "mkIf"
+  from: "lib"
+  failure: throw
+
+foreign configured(?path: FieldPath): Bool
+  construction: "nix"
+  get: ?path
+  from: "config"
+  failure: throw
+
+foreign package(?path: FieldPath): Package
+  construction: "nix"
+  get: ?path
+  from: "pkgs"
+  failure: throw
+
+export module(?enable: FieldPath, ?description: Text, ?package: Delayed<nix,Package>)
+  configuration-module(?enable, ?description, {environment: {systemPackages: [?package]}})
+
+export configuration-module<Body: Record>(?enable: FieldPath, ?description: Text, ?body: Body)
+  {options: record-at(?enable, enable-option(?description)),
+   config: when-enabled(configured(?enable), ?body)}
+
+OptionType:
+  foreign: "nixpkgs/lib"
+  type: "OptionType"
+
+foreign string-type(): OptionType
+  construction: "nix"
+  get: "types.str"
+  from: "lib"
+  failure: throw
+
+foreign option<Specification: Record>(?specification: Specification): Option
+  construction: "nix"
+  call: "mkOption"
+  from: "lib"
+  failure: throw
+
+foreign configured-text(?path: FieldPath): Text
+  construction: "nix"
+  get: ?path
+  from: "config"
+  failure: throw
+
+export text-setting<Specification: Record>(?setting: FieldPath, ?specification: Specification, ?target: FieldPath)
+  {options: record-at(?setting, option(?specification)),
+   config: record-at(?target, configured-text(?setting))}
+
+export enabled-module<Module: Record>(?enable: FieldPath, ?description: Text, ?module: Module)
+  {options: record-at(?enable, enable-option(?description)),
+   imports: [{options: ?module.options}],
+   config: when-enabled(configured(?enable), ?module.config)}
+```
+
+`clause:test-vectors/authoring/nested-functions/fastfetch.clause`
+
+```clause
+import "nixpkgs.clause"
+
+Symlink:
+  foreign: "home-manager"
+  type: "Path"
+
+HomeDirectory:
+  homeDirectory: Text
+
+HomeFiles:
+  mkOutOfStoreSymlink: Function<Text, Symlink>
+
+HomeLibrary:
+  file: HomeFiles
+
+HomeConfiguration:
+  home: HomeDirectory
+  lib: HomeLibrary
+
+HomeModuleArguments:
+  config: HomeConfiguration
+
+export fastfetch-module()
+  configuration-module(path(myConfig.modules.fastfetch.enable), "Enable fastfetch system info display",
+    {environment: {systemPackages: [package(path(fastfetch))]},
+     home-manager: {users: dictionary(configured-text(path(myConfig.modules.users.username)),
+       (?home: Delayed<nix,HomeModuleArguments>) =>
+         {xdg: {configFile: dictionary("fastfetch/config.jsonc",
+           {source: ?home.config.lib.file.mkOutOfStoreSymlink(
+             "{?home.config.home.homeDirectory}/code/nixos-config/dotfiles/fastfetch/config.jsonc")})}})}})
+```
+
+`clause:test-vectors/authoring/nested-functions/tealdeer.clause`
+
+```clause
+import "nixpkgs.clause"
+
+Symlink:
+  foreign: "home-manager"
+  type: "Path"
+
+HomeDirectory:
+  homeDirectory: Text
+
+HomeFiles:
+  mkOutOfStoreSymlink: Function<Text, Symlink>
+
+HomeLibrary:
+  file: HomeFiles
+
+HomeConfiguration:
+  home: HomeDirectory
+  lib: HomeLibrary
+
+HomeModuleArguments:
+  config: HomeConfiguration
+
+export tealdeer-module()
+  configuration-module(path(myConfig.modules.tealdeer.enable), "Enable tealdeer (tldr client)",
+    {environment: {systemPackages: [package(path(tealdeer))]},
+     home-manager: {users: dictionary(configured-text(path(myConfig.modules.users.username)),
+       (?home: Delayed<nix,HomeModuleArguments>) =>
+         {xdg: {configFile: dictionary("tealdeer/config.toml",
+           {source: ?home.config.lib.file.mkOutOfStoreSymlink(
+             "{?home.config.home.homeDirectory}/code/nixos-config/dotfiles/tealdeer/config.toml")})}})}})
 ```
