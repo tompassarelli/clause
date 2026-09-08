@@ -769,7 +769,11 @@ impl ResidentSourceWorkbenchV1 {
         analysis: Option<std::sync::Arc<clause_package::CheckedCanonicalSourceAnalysisV1>>,
         prepared: Option<clause_runtime::PreparedWasmScalarEditV1>,
     ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
+        let measured = std::env::var_os("CLAUSE_INSTALL_PROFILE").is_some();
+        let mut mark = std::time::Instant::now();
+        let mut phase = |name: &str| { if measured { eprintln!("install {name}: {}ms", mark.elapsed().as_secs_f64() * 1000.0); mark = std::time::Instant::now(); } };
         while self.reclaim_retired() {}
+        phase("retire");
         let next_change = self.next_change.checked_add(1).ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("source change sequence exhausted".into())
         })?;
@@ -803,6 +807,7 @@ impl ResidentSourceWorkbenchV1 {
                 .map_err(|e| boxed_error("pure callable lowering", e))?;
             if definition.exported { callables.insert(definition.designation.clone(), lowered); }
         }
+        phase("analysis-callables");
         let mut template = self.coherent_template.clone();
         template.authority.budget_units = SOURCE_AUTHORITY_BUDGET_UNITS;
         let (template, projection_roles, physical_plan) = projection_template_for_state_count(
@@ -823,6 +828,7 @@ impl ResidentSourceWorkbenchV1 {
             }
         }
         let template_input = physical_plan.input.clone();
+        phase("template-handlers");
         let mut lowered = match &prepared {
             Some(prepared) => prepared.lowered().clone(),
             None => lower_canonical_executable_program_v1(scope, &compiled.state_cells, &compiled.executable_handlers, projection_roles)
@@ -838,6 +844,7 @@ impl ResidentSourceWorkbenchV1 {
                 scope, &compiled, cst.artifact(), &mut lowered, &recorded_plan,
             ).map_err(|error| boxed_error("recorded source dispatch layout", error))?;
         }
+        phase("lowered-clone");
         let semantic_handlers = compiled
             .executable_handlers
             .iter()
@@ -999,6 +1006,7 @@ impl ResidentSourceWorkbenchV1 {
                 .map_err(|error| boxed_error("default external occurrence encode", error))?,
             );
         }
+        phase("input-layout");
         let cpp1 = if let Some(prepared) = &prepared {
             prepared.exact_cpp1().to_vec()
         } else {
@@ -1039,6 +1047,7 @@ impl ResidentSourceWorkbenchV1 {
         }).transpose()? };
         let preparation = clause_runtime::encode_executable_source_preparation_v1(exact_source, allocation_plan.root(), self.declared_frontend.exact_source(), &self.imports)
             .map_err(|error| boxed_error("source preparation encode", error))?;
+        phase("encode");
         let opened = if let Some(prepared) = prepared {
             self.boundary.commit_scalar_edit(prepared)?
         } else if let Some(checkpoint) = checkpoint {
@@ -1059,6 +1068,7 @@ impl ResidentSourceWorkbenchV1 {
         cwr1.allocation = allocation;
         let exact_cwr1 = encode_wasm_process_request_v1(&cwr1)
             .expect("a valid fixed-width allocation preserves the prechecked CWR1 shape");
+        phase("commit-encode");
         self.handlers = handlers;
         self.callables = callables;
         self.states = lowered.states;
@@ -1079,6 +1089,7 @@ impl ResidentSourceWorkbenchV1 {
         self.pending = None;
         self.last_projection = None;
         self.last_source_edit = source_edit;
+        phase("publish");
         Ok(())
     }
 
