@@ -2316,3 +2316,148 @@ on rectify ?meter
   include
     ?meter reading ?next
 ```
+
+## Shared foreign declarations and callable definitions
+
+An explicit `import "nixpkgs.clause"` brings checked foreign types, foreign functions, and exported callable definitions into the consumer's scope. File commands resolve the path relative to that consumer. Imports are direct, and duplicate names reject. The resident API accepts the same finite import context as exact source bytes. Ordinary generic helpers specialize and check their bodies with each exact argument record type, retaining strict argument evaluation.
+
+`clause:test-vectors/authoring/shared-foreign/nixpkgs.clause`
+
+```clause
+Package:
+  foreign: "nixpkgs"
+  type: "Package"
+
+Option:
+  foreign: "nixpkgs/lib"
+  type: "Option"
+
+Definition:
+  foreign: "nixpkgs/lib"
+  type: "Definition"
+
+foreign enable-option(?description: Text): Option
+  construction: "nix"
+  call: "mkEnableOption"
+  from: "lib"
+  failure: throw
+
+foreign when-enabled<Body: Record>(?condition: Delayed<nix,Bool>, ?body: Body): Definition
+  construction: "nix"
+  call: "mkIf"
+  from: "lib"
+  failure: throw
+
+export module<Options: Record>(?options: Options, ?enabled: Delayed<nix,Bool>, ?package: Delayed<nix,Package>)
+  {options: ?options,
+   config: when-enabled(?enabled, {environment: {systemPackages: [?package]}})}
+```
+
+`clause:test-vectors/authoring/shared-foreign/btop.clause`
+
+```clause
+import "nixpkgs.clause"
+
+foreign btop(): Package
+  construction: "nix"
+  get: "btop"
+  from: "pkgs"
+  failure: throw
+
+foreign enabled(): Bool
+  construction: "nix"
+  get: "myConfig.modules.btop.enable"
+  from: "config"
+  failure: throw
+
+export btop-module()
+  module({myConfig: {modules: {btop: {enable: enable-option("Enable btop system monitor")}}}}, enabled(), btop())
+```
+
+`clause:test-vectors/authoring/shared-foreign/jq.clause`
+
+```clause
+import "nixpkgs.clause"
+
+foreign jq(): Package
+  construction: "nix"
+  get: "jq"
+  from: "pkgs"
+  failure: throw
+
+foreign enabled(): Bool
+  construction: "nix"
+  get: "myConfig.modules.jq.enable"
+  from: "config"
+  failure: throw
+
+export jq-module()
+  module({myConfig: {modules: {jq: {enable: enable-option("jq command-line JSON processor")}}}}, enabled(), jq())
+```
+
+
+## Static field paths
+
+`path(details.title)` names fixed field segments. A `?path: FieldPath` parameter is specialized at each call; it never accepts runtime Text or becomes a runtime value. `record-at(?path, value)` constructs the exact nested record and `field-at(record, ?path)` checks every selected field. Delayed foreign declarations may use `get: ?path` for a declared static path while keeping their target, external root, result and failure contracts explicit. These complete module sources state the option path once and select the package independently; the shared module meaning remains Clause source.
+
+`clause:test-vectors/authoring/static-modules/nixpkgs.clause`
+
+```clause
+Package:
+  foreign: "nixpkgs"
+  type: "Package"
+
+Option:
+  foreign: "nixpkgs/lib"
+  type: "Option"
+
+Definition:
+  foreign: "nixpkgs/lib"
+  type: "Definition"
+
+foreign enable-option(?description: Text): Option
+  construction: "nix"
+  call: "mkEnableOption"
+  from: "lib"
+  failure: throw
+
+foreign when-enabled<Body: Record>(?condition: Delayed<nix,Bool>, ?body: Body): Definition
+  construction: "nix"
+  call: "mkIf"
+  from: "lib"
+  failure: throw
+
+foreign configured(?path: FieldPath): Bool
+  construction: "nix"
+  get: ?path
+  from: "config"
+  failure: throw
+
+foreign package(?path: FieldPath): Package
+  construction: "nix"
+  get: ?path
+  from: "pkgs"
+  failure: throw
+
+export module(?enable: FieldPath, ?description: Text, ?package: Delayed<nix,Package>)
+  {options: record-at(?enable, enable-option(?description)),
+   config: when-enabled(configured(?enable), {environment: {systemPackages: [?package]}})}
+```
+
+`clause:test-vectors/authoring/static-modules/btop.clause`
+
+```clause
+import "nixpkgs.clause"
+
+export btop-module()
+  module(path(myConfig.modules.btop.enable), "Enable btop system monitor", package(path(btop)))
+```
+
+`clause:test-vectors/authoring/static-modules/jq.clause`
+
+```clause
+import "nixpkgs.clause"
+
+export jq-module()
+  module(path(myConfig.modules.jq.enable), "jq command-line JSON processor", package(path(jq)))
+```

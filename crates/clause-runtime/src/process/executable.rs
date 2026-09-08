@@ -1896,7 +1896,10 @@ fn lower_scalar_expression(
     };
     Ok(match expression {
         CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceMap { .. } | CanonicalScalarExpressionV1::SequenceFold { .. } | CanonicalScalarExpressionV1::SequenceAppend(..) | CanonicalScalarExpressionV1::SequenceSort(_) | CanonicalScalarExpressionV1::SequenceCount(_) | CanonicalScalarExpressionV1::ScalarText(_) | CanonicalScalarExpressionV1::SequenceJoin(..) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
-        CanonicalScalarExpressionV1::Call { .. } => return Err(ExecutableErrorV1::MalformedProgram),
+        CanonicalScalarExpressionV1::Call { .. }
+        | CanonicalScalarExpressionV1::StaticFieldPath(_)
+        | CanonicalScalarExpressionV1::RecordAt(..)
+        | CanonicalScalarExpressionV1::FieldAt(..) => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             let (yes, no) = pair(yes, no)?;
             ExecutableExpressionV1::Conditional(Box::new(

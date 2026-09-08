@@ -1093,6 +1093,25 @@ fn rebind_lowered_expression(value: &mut ExecutableExpressionV1, edit: &Canonica
     match value {
         E::Constant(value) => *value = migrate_value(value, edit)?,
         E::Slot(_) | E::Argument(_) | E::Binding(_) => {},
+        E::Sequence(values) | E::Foreign { arguments: values, .. } => for value in values {
+            rebind_lowered_expression(value, edit)?;
+        },
+        E::Record(fields) => for value in fields.values_mut() { rebind_lowered_expression(value, edit)?; },
+        E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => {
+            rebind_lowered_expression(value, edit)?; rebind_lowered_expression(body, edit)?;
+        },
+        E::SequenceFold { source, initial, body, .. } => {
+            rebind_lowered_expression(source, edit)?;
+            rebind_lowered_expression(initial, edit)?;
+            rebind_lowered_expression(body, edit)?;
+        },
+        E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => rebind_lowered_expression(value, edit)?,
+        E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::SequenceAppend(a, b) => {
+            rebind_lowered_expression(a, edit)?; rebind_lowered_expression(b, edit)?;
+        },
+        E::Require(a, b, c) => {
+            rebind_lowered_expression(a, edit)?; rebind_lowered_expression(b, edit)?; rebind_lowered_expression(c, edit)?;
+        },
         E::FreshReferent { domain, .. } => *domain = formation(*domain)?,
         E::ReferentFacet { value, domain, members } => {
             rebind_lowered_expression(value, edit)?;
@@ -1147,6 +1166,11 @@ fn migrate_value(
     };
     Ok(match value {
         ExecutableValueV1::Referent(value) => ExecutableValueV1::Referent(referent(value)?),
+        ExecutableValueV1::Sequence(values) => ExecutableValueV1::Sequence(values.iter()
+            .map(|value| migrate_value(value, edit)).collect::<Result<_, _>>()?),
+        ExecutableValueV1::Record(fields) => ExecutableValueV1::Record(fields.iter()
+            .map(|(name, value)| Ok((name.clone(), migrate_value(value, edit)?)))
+            .collect::<Result<_, ExecutableErrorV1>>()?),
         ExecutableValueV1::Set(set) => ExecutableValueV1::Set(ExecutableSetV1 {
             element_kind: set.element_kind,
             values: set

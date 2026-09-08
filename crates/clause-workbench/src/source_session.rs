@@ -12,7 +12,7 @@ use clause_package::{
     DECLARED_FOCUSED_FRONTEND_SOURCE_V1, LocalRoleRefV2, ProcessPackageId,
     ProgramChangeOccurrenceId, RoleLocalId, StateRevisionId, TermScope, check_process_package,
     decode_process_package, derive_program_snapshot_id, encode_process_package,
-    plan_independent_canonical_source_allocations_v1,
+    elaborate_canonical_source_package_v1, plan_independent_canonical_source_allocations_v1,
     read_canonical_source_with_imports_and_frontend_v1,
 };
 use clause_runtime::{

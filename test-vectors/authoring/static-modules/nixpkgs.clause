@@ -1,0 +1,39 @@
+Package:
+  foreign: "nixpkgs"
+  type: "Package"
+
+Option:
+  foreign: "nixpkgs/lib"
+  type: "Option"
+
+Definition:
+  foreign: "nixpkgs/lib"
+  type: "Definition"
+
+foreign enable-option(?description: Text): Option
+  construction: "nix"
+  call: "mkEnableOption"
+  from: "lib"
+  failure: throw
+
+foreign when-enabled<Body: Record>(?condition: Delayed<nix,Bool>, ?body: Body): Definition
+  construction: "nix"
+  call: "mkIf"
+  from: "lib"
+  failure: throw
+
+foreign configured(?path: FieldPath): Bool
+  construction: "nix"
+  get: ?path
+  from: "config"
+  failure: throw
+
+foreign package(?path: FieldPath): Package
+  construction: "nix"
+  get: ?path
+  from: "pkgs"
+  failure: throw
+
+export module(?enable: FieldPath, ?description: Text, ?package: Delayed<nix,Package>)
+  {options: record-at(?enable, enable-option(?description)),
+   config: when-enabled(configured(?enable), {environment: {systemPackages: [?package]}})}

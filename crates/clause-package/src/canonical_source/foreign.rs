@@ -66,6 +66,12 @@ impl CanonicalForeignBindingV1 {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(super) enum MemberCst {
+    Exact(String),
+    StaticFieldPath(Vec<u8>),
+}
+
 pub(super) fn read_abi(
     lines: &[SourceLine<'_>],
 ) -> Option<(
@@ -73,7 +79,7 @@ pub(super) fn read_abi(
     CanonicalForeignOperationV1,
     CanonicalForeignFailureV1,
     String,
-    String,
+    MemberCst,
 )> {
     let mut construction = None;
     let mut member = None;
@@ -90,7 +96,14 @@ pub(super) fn read_abi(
                     } else {
                         CanonicalForeignOperationV1::Call
                     },
-                    parse_text_literal(value)?,
+                    if let Some(parameter) = value.strip_prefix('?') {
+                        if parameter.is_empty() || !parameter.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')) {
+                            return None;
+                        }
+                        MemberCst::StaticFieldPath(parameter.as_bytes().to_vec())
+                    } else {
+                        MemberCst::Exact(parse_text_literal(value)?)
+                    },
                 ))
             }
             "from" if module.is_none() => module = Some(parse_text_literal(value)?),

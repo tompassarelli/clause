@@ -1,0 +1,5 @@
+at-path(?path: FieldPath, ?value: Text)
+  record-at(?path, ?value)
+
+export specimen()
+  at-path(path(details.title), "Clause")

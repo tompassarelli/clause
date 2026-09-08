@@ -163,20 +163,20 @@ fn remap_expression(edit: &CanonicalSourceEditV1, expression: &mut CanonicalExec
         E::Constant(value) => remap_value(edit, value)?,
         E::State(state) => edit.rebind_state(state)?,
         E::Argument(_) | E::Binding(_) | E::EmptySequence(_) => {}
-        E::Sequence(values) | E::Foreign { arguments: values, .. } => for value in values { remap_expression(edit, value)?; },
-        E::Record(fields) => for value in fields.values_mut() { remap_expression(edit, value)?; },
+        E::Sequence(values) | E::Foreign { arguments: values, .. } => for value in values { remap_expression(edit, value, member_sets)?; },
+        E::Record(fields) => for value in fields.values_mut() { remap_expression(edit, value, member_sets)?; },
         E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => {
-            remap_expression(edit, value)?; remap_expression(edit, body)?;
+            remap_expression(edit, value, member_sets)?; remap_expression(edit, body, member_sets)?;
         },
         E::SequenceFold { source, initial, body, .. } => {
-            remap_expression(edit, source)?; remap_expression(edit, initial)?; remap_expression(edit, body)?;
+            remap_expression(edit, source, member_sets)?; remap_expression(edit, initial, member_sets)?; remap_expression(edit, body, member_sets)?;
         },
-        E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => remap_expression(edit, value)?,
+        E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => remap_expression(edit, value, member_sets)?,
         E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::SequenceAppend(a, b) => {
-            remap_expression(edit, a)?; remap_expression(edit, b)?;
+            remap_expression(edit, a, member_sets)?; remap_expression(edit, b, member_sets)?;
         },
         E::Require(a, b, c) => {
-            remap_expression(edit, a)?; remap_expression(edit, b)?; remap_expression(edit, c)?;
+            remap_expression(edit, a, member_sets)?; remap_expression(edit, b, member_sets)?; remap_expression(edit, c, member_sets)?;
         },
         E::FreshReferent { domain, .. } => *domain = edit.formation(*domain)?,
         E::ReferentFacet { value, domain, members } => {
