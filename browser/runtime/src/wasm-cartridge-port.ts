@@ -2975,14 +2975,14 @@ function diagnosticModule(module: unknown): DiagnosticWasmModule {
 export function projectSession(module: unknown, incomingSession: unknown): ProjectedValue {
   const session = require_live_session(incomingSession);
   const bytes = diagnosticModule(module).clause_session_v1_project_bulk(session.handle.slot, session.handle.generation);
-  return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), 1024 * 1024);
+  return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), bytes.length);
 }
 
 export function explainSession(module: unknown, incomingSession: unknown, entry: number): ProjectedValue {
   const session = require_live_session(incomingSession);
   if (!Number.isInteger(entry) || entry < 0 || entry > 65535) throw new Error("explanation entry is invalid");
   const bytes = diagnosticModule(module).clause_session_v1_explain_bulk(session.handle.slot, session.handle.generation, entry);
-  return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), 1024 * 1024);
+  return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), bytes.length);
 }
 
 export function sourceContinuity(module: unknown, incomingSession: unknown): ProjectedValue {
@@ -3043,7 +3043,7 @@ export function interveneSession(module: unknown, incomingSession: unknown, quer
   const session = require_live_session(incomingSession);
   if (!exact_byte_array_p(query, 64 * 1024)) throw new Error("intervention query exceeds bound");
   const bytes = diagnosticModule(module).clause_session_v1_intervene_bulk(session.handle.slot, session.handle.generation, new Uint8Array(query));
-  return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), 1024 * 1024);
+  return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), bytes.length);
 }
 
 export { checked_referent as checkedProjectedReferent };

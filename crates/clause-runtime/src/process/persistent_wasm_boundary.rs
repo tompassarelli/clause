@@ -843,13 +843,8 @@ impl WasmPersistentSessionBoundaryV1 {
 }
 
 fn diagnostic_bytes(term: Term) -> Result<Vec<u8>, WasmProcessStatusV1> {
-    diagnostic_bytes_with_limit(term, WASM_PROCESS_RESPONSE_LIMIT_V1)
-}
-
-fn diagnostic_bytes_with_limit(term: Term, limit: usize) -> Result<Vec<u8>, WasmProcessStatusV1> {
-    let bytes = canonical_term_bytes(&term).map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
-    if bytes.len() > limit { return Err(WasmProcessStatusV1::ResponseOutOfBounds); }
-    Ok(bytes)
+    // Bulk diagnostics return owned bytes without using the bounded event buffer.
+    canonical_term_bytes(&term).map_err(|_| WasmProcessStatusV1::ProcessRejected)
 }
 
 /// Open a fresh native persistent session from one exact checked CWR1
@@ -2162,6 +2157,23 @@ fn get_effect_scope(decoder: &mut Decoder<'_>) -> Result<EffectScopeV1, WasmProc
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bulk_diagnostics_preserve_terms_larger_than_buffered_events() {
+        let term = Term::atom(
+            TermScope {
+                universe: UniverseId::from_bytes([1; 32]),
+                semantics: ClauseSemanticsId::from_bytes([2; 32]),
+            },
+            b"explanation".to_vec(),
+            vec![b'x'; WASM_PROCESS_RESPONSE_LIMIT_V1 + 1],
+            EqualityContract::ExactOctetsV1,
+        )
+        .unwrap();
+        let bytes = diagnostic_bytes(term.clone()).unwrap();
+        assert!(bytes.len() > WASM_PROCESS_RESPONSE_LIMIT_V1);
+        assert_eq!(decode_canonical_term_bytes(&bytes).unwrap(), term);
+    }
 
     #[test]
     fn command_window_renewal_event_roundtrips() {
