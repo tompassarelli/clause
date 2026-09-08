@@ -56,7 +56,7 @@ impl ExecutableProcessRuntimeV1 {
         Ok(bytes)
     }
 
-    pub(crate) fn checkpoint_admitted_segments(&self) -> Result<Vec<AtomPayloadSegment>, ExecutableCarrierErrorV1> {
+    fn record_idle_admitted_frontier(&self) -> Result<RecordedAdmittedFrontierV1, ExecutableCarrierErrorV1> {
         let execution = self
             .carrier_execution
             .as_ref()
@@ -70,11 +70,64 @@ impl ExecutableProcessRuntimeV1 {
         {
             return Err(ExecutableCarrierErrorV1::HistoryCompactionUnavailable);
         }
-        let frontier = self
-            .carrier
+        self.carrier
             .carrier()
             .record_admitted_frontier(execution.facts.initial_state)
-            .map_err(|_| ExecutableCarrierErrorV1::HistoryCompactionUnavailable)?;
+            .map_err(|_| ExecutableCarrierErrorV1::HistoryCompactionUnavailable)
+    }
+
+    /// Transfer an admitted frontier between checked runtimes without
+    /// transferring allocation custody or executing the parent's history.
+    pub(crate) fn initialize_admitted_fork(
+        &mut self,
+        parent: &Self,
+    ) -> Result<(), ExecutableCarrierErrorV1> {
+        let frontier = parent.record_idle_admitted_frontier()?;
+        let receiver_frontier = self.record_idle_admitted_frontier()?;
+        if !matches!(receiver_frontier.state().cause, StateRevisionCause::SessionStart(_)) {
+            return Err(ExecutableCarrierErrorV1::HistoryCompactionUnavailable);
+        }
+        let parent_execution = parent
+            .carrier_execution
+            .as_ref()
+            .ok_or(ExecutableCarrierErrorV1::NotStarted)?;
+        let receiver = self
+            .carrier_execution
+            .as_ref()
+            .ok_or(ExecutableCarrierErrorV1::NotStarted)?;
+        let mut receiver_facts = receiver.facts;
+        // State and remaining budget advance through Admission; every other
+        // authority fact must already belong to this exact receiving runtime.
+        receiver_facts.initial_state = parent_execution.facts.initial_state;
+        receiver_facts.budget_units = parent_execution.facts.budget_units;
+        if self.package != parent.package
+            || self.application != parent.application
+            || self.physical_plan != parent.physical_plan
+            || self.allocation.root == parent.allocation.root
+            || receiver_facts != parent_execution.facts
+            || receiver.remaining_budget < parent_execution.remaining_budget
+        {
+            return Err(ExecutableErrorV1::AllocationBindingMismatch.into());
+        }
+        self.carrier
+            .restore_admitted_frontier(frontier)
+            .map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+        self.configuration = parent.configuration.clone();
+        self.source_continuity = parent.source_continuity.clone();
+        let execution = self
+            .carrier_execution
+            .as_mut()
+            .expect("fork receiver is started");
+        execution.facts = parent_execution.facts;
+        execution.remaining_budget = parent_execution.remaining_budget;
+        execution.epoch_origin = parent_execution.epoch_origin;
+        execution.state_base_support = parent_execution.state_base_support;
+        Ok(())
+    }
+
+    pub(crate) fn checkpoint_admitted_segments(&self) -> Result<Vec<AtomPayloadSegment>, ExecutableCarrierErrorV1> {
+        let frontier = self.record_idle_admitted_frontier()?;
+        let execution = self.carrier_execution.as_ref().ok_or(ExecutableCarrierErrorV1::NotStarted)?;
         let encoded = encode_recorded_admitted_frontier_segments_v1(&frontier)
             .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
         let mut bytes = SegmentedBytes::default();

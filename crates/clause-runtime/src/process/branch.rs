@@ -201,6 +201,22 @@ pub struct ForkedProcessBranchV1 {
 }
 
 impl ForkedProcessBranchV1 {
+    /// Fork the current idle admitted world into a fresh session of the same
+    /// checked program and authority binding, retaining its distinct allocation.
+    /// The disconnect occurrence executes only in the non-authoritative branch.
+    ///
+    /// Rejects pending local work in either session, a receiving session that
+    /// has already admitted work, or mismatched authority and physical bindings.
+    pub fn fork_admitted(
+        authoritative: &PersistentProcessSessionV1,
+        mut fresh_branch: PersistentProcessSessionV1,
+        disconnect_tick: u64,
+        disconnect_occurrence: &[u8],
+    ) -> Result<Self, ProcessBranchErrorV1> {
+        fresh_branch.initialize_admitted_fork(authoritative)?;
+        Self::fork(authoritative, fresh_branch, disconnect_tick, disconnect_occurrence)
+    }
+
     pub fn fork(
         authoritative: &PersistentProcessSessionV1,
         mut branch: PersistentProcessSessionV1,

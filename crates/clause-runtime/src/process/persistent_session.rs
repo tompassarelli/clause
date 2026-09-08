@@ -50,6 +50,17 @@ impl RetiredPersistentProcessRuntimeV1 {
 }
 
 impl PersistentProcessSessionV1 {
+    pub(crate) fn initialize_admitted_fork(
+        &mut self,
+        parent: &Self,
+    ) -> Result<(), PersistentProcessSessionErrorV1> {
+        self.runtime_mut()?.initialize_admitted_fork(parent.runtime()?)?;
+        self.world_base = parent.world_base;
+        self.last_admitted = parent.last_admitted.clone();
+        self.accepted_projection = parent.accepted_projection.clone();
+        Ok(())
+    }
+
     pub(crate) fn source_continuity(&self) -> Result<&super::ExecutableSourceContinuityV1, PersistentProcessSessionErrorV1> {
         Ok(self.runtime()?.source_continuity()?)
     }

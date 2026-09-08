@@ -1422,6 +1422,51 @@ fn governed_effect_boundary_replays_one_attempt_without_reissuing() {
 }
 
 #[test]
+fn forked_process_branch_uses_current_admitted_frontier_without_replay() {
+    let mut authoritative = open_fresh_session();
+    let initial = authoritative.world_base();
+    authoritative.apply_opaque_input_and_emit_candidate(&opaque(0, 10.0)).unwrap();
+    let authorization = authoritative.issue_candidate_admission_authorization().unwrap();
+    let admitted = authoritative.admit_issued_candidate_with_projection(authorization).unwrap().0;
+    assert_ne!(admitted.id, initial);
+    assert_eq!(admitted.configuration, vec![ExecutableSlotV1::Present(number(10.0))]);
+
+    assert!(matches!(
+        ForkedProcessBranchV1::fork(&authoritative, open_fresh_session(), 41, &opaque(1, 2.0)),
+        Err(ProcessBranchErrorV1::PinMismatch(ProcessBranchPinV1::ParentState))
+    ), "fresh initial state is not the admitted parent");
+
+    let before = authoritative.checkpoint_admitted().unwrap();
+    let fresh = open_fresh_session();
+    let fresh_run = fresh.run().unwrap();
+    let fresh_activation = fresh.activation().unwrap();
+    assert_ne!(fresh.allocation().root(), authoritative.allocation().root());
+    let mut branch = ForkedProcessBranchV1::fork_admitted(
+        &authoritative, fresh, 41, &opaque(1, 2.0),
+    ).expect("fork from the current admitted world");
+    assert_eq!(branch.pins().parent_state, admitted.id);
+    assert_eq!(branch.pins().budget_units, authoritative.authority_facts().unwrap().budget_units);
+    assert_eq!(branch.ancestry().run, fresh_run);
+    assert_eq!(branch.ancestry().activation, fresh_activation);
+    assert_ne!(branch.ancestry().run, authoritative.run().unwrap());
+    let evidence = branch.resume_and_propose(&[opaque(1, 3.0)]).unwrap();
+    let candidate = branch.retained_candidate().unwrap();
+    assert_eq!(candidate.base, admitted.id);
+    assert_eq!(candidate.configuration, vec![ExecutableSlotV1::Present(number(15.0))]);
+    assert_eq!(evidence.ancestry.parent_state, admitted.id);
+    assert_eq!(authoritative.checkpoint_admitted().unwrap(), before,
+        "disconnect and branch work cannot change the authoritative frontier");
+
+    authoritative.apply_opaque_input_and_emit_candidate(&opaque(1, 1.0)).unwrap();
+    assert!(matches!(
+        ForkedProcessBranchV1::fork_admitted(&authoritative, open_fresh_session(), 42, &opaque(1, 0.0)),
+        Err(ProcessBranchErrorV1::Session(PersistentProcessSessionErrorV1::Carrier(
+            ExecutableCarrierErrorV1::HistoryCompactionUnavailable
+        )))
+    ), "a pending candidate is not an eligible admitted frontier");
+}
+
+#[test]
 fn forked_process_branch_reconnects_through_separate_admission_and_retains_exact_explanation() {
     let mut authoritative = open_fresh_session();
     let branch_session = open_fresh_session();
