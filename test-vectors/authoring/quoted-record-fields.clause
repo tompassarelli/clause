@@ -1,0 +1,7 @@
+export specimen()
+  {"vm.swappiness": 180,
+   " spaced  name ": 2,
+   "quote\"and\\slash": 3,
+   "caf\u{e9}": 4,
+   "${literal}": 5,
+   ordinary: 6}

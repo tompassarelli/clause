@@ -4,6 +4,40 @@ use clause_workbench::ResidentSourceWorkbenchV1;
 const SOURCE: &[u8] = include_bytes!("../../../test-vectors/authoring/foreign-construction.clause");
 
 #[test]
+fn quoted_record_fields_preserve_exact_static_names_and_nix_escaping() {
+    use clause_runtime::ExecutableValueV1 as V;
+    let source = include_str!("../../../test-vectors/authoring/quoted-record-fields.clause");
+    let opened = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let expected = [
+        ("vm.swappiness", 180.0_f64),
+        (" spaced  name ", 2.0),
+        ("quote\"and\\slash", 3.0),
+        ("café", 4.0),
+        ("${literal}", 5.0),
+        ("ordinary", 6.0),
+    ];
+    assert_eq!(opened.invoke_callable(b"specimen", &[]).unwrap(), V::Record(
+        expected.into_iter().map(|(name, value)| (name.as_bytes().to_vec(), V::Number(value.to_bits()))).collect()
+    ));
+    let checked = opened.checked_source_package().unwrap();
+    assert_eq!(checked.callables[0].result_kind, CanonicalValueTypeV1::Record(
+        expected.into_iter().map(|(name, _)| (name.as_bytes().to_vec(), CanonicalScalarValueKindV1::Number.into())).collect()
+    ));
+
+    let constructed = format!("{source}\n{SHARED}\nforeign enabled(): Bool\n  construction: \"nix\"\n  get: \"enabled\"\n  from: \"config\"\n  failure: throw\n\nexport exact-module()\n  when-enabled(enabled(), specimen())\n");
+    let opened = ResidentSourceWorkbenchV1::open(constructed.as_bytes()).unwrap();
+    let checked = opened.checked_source_package().unwrap();
+    let callable = checked.callables.iter().find(|c| c.designation == b"exact-module").unwrap();
+    assert_eq!(render_nix_callable_v1(callable).unwrap(),
+        "{ config, lib, ... }:\n(lib.\"mkIf\" (config.\"enabled\") ({ \" spaced  name \" = 2; \"\\${literal}\" = 5; \"café\" = 4; \"ordinary\" = 6; \"quote\\\"and\\\\slash\" = 3; \"vm.swappiness\" = 180; }))\n");
+
+    for fields in [r#"{ordinary: 1, "ordinary": 2}"#, r#"{"": 1}"#, r#"{"bad\q": 1}"#] {
+        let source = format!("export specimen()\n  {fields}\n");
+        assert!(ResidentSourceWorkbenchV1::open(source.as_bytes()).is_err(), "accepted invalid fields: {fields}");
+    }
+}
+
+#[test]
 fn static_field_paths_construct_and_select_exact_native_records() {
     let source = include_str!("../../../test-vectors/authoring/static-field-paths.clause");
     let opened = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();

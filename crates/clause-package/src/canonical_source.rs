@@ -9224,10 +9224,14 @@ impl ScalarExpressionParser<'_> {
             if !self.take_exact(b"}") {
                 loop {
                     self.skip_spaces();
-                    let start = self.cursor;
-                    while self.source.get(self.cursor).is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_')) { self.cursor += 1; }
-                    if self.cursor == start { return None; }
-                    let name = self.source[start..self.cursor].to_vec();
+                    let name = if self.source.get(self.cursor) == Some(&b'"') {
+                        self.text_literal()?.into_bytes()
+                    } else {
+                        let start = self.cursor;
+                        while self.source.get(self.cursor).is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_')) { self.cursor += 1; }
+                        self.source[start..self.cursor].to_vec()
+                    };
+                    if name.is_empty() { return None; }
                     self.skip_spaces();
                     self.take_exact(b":").then_some(())?;
                     if fields.insert(name, self.disjunction()?).is_some() { return None; }
@@ -9345,21 +9349,7 @@ impl ScalarExpressionParser<'_> {
             return Some(value);
         }
         if self.source.get(self.cursor) == Some(&b'"') {
-            let start = self.cursor;
-            self.cursor += 1;
-            let mut escaped = false;
-            while let Some(byte) = self.source.get(self.cursor) {
-                self.cursor += 1;
-                if escaped {
-                    escaped = false;
-                } else if *byte == b'\\' {
-                    escaped = true;
-                } else if *byte == b'"' {
-                    let literal = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
-                    return parse_text_literal(literal).map(CanonicalScalarExpressionV1::Text);
-                }
-            }
-            return None;
+            return self.text_literal().map(CanonicalScalarExpressionV1::Text);
         }
         if self.source.get(self.cursor) == Some(&b'(') {
             self.cursor += 1;
@@ -9399,6 +9389,24 @@ impl ScalarExpressionParser<'_> {
             }
         }
         parse_scalar_atom(atom, self.current)
+    }
+
+    fn text_literal(&mut self) -> Option<String> {
+        let start = self.cursor;
+        self.take_exact(b"\"").then_some(())?;
+        let mut escaped = false;
+        while let Some(byte) = self.source.get(self.cursor) {
+            self.cursor += 1;
+            if escaped {
+                escaped = false;
+            } else if *byte == b'\\' {
+                escaped = true;
+            } else if *byte == b'"' {
+                let literal = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
+                return parse_text_literal(literal);
+            }
+        }
+        None
     }
 
     fn skip_spaces(&mut self) {
