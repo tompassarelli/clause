@@ -160,6 +160,11 @@ fn remap_predicate(edit: &CanonicalSourceEditV1, predicate: &mut CanonicalExecut
 fn remap_expression(edit: &CanonicalSourceEditV1, expression: &mut CanonicalExecutableExpressionV1, member_sets: &mut BTreeMap<Vec<FormationLocalId>, Vec<FormationLocalId>>) -> Result<(), CanonicalSourceErrorV1> {
     use CanonicalExecutableExpressionV1 as E;
     match expression {
+        E::Widen { value, .. } => remap_expression(edit, value, member_sets)?,
+        E::Match { value, cases } => {
+            remap_expression(edit, value, member_sets)?;
+            for (_, _, body) in cases { remap_expression(edit, body, member_sets)?; }
+        }
         E::Constant(value) => remap_value(edit, value)?,
         E::State(state) => edit.rebind_state(state)?,
         E::Argument(_) | E::Binding(_) | E::EmptySequence(_) => {}

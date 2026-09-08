@@ -29,6 +29,7 @@ fn unsupported<T>(message: impl Into<String>) -> Result<T> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ValueType {
+    Alternatives(Vec<Self>),
     Sequence(Box<Self>),
     Record(BTreeMap<Vec<u8>, Self>),
     Number,
@@ -39,6 +40,7 @@ enum ValueType {
 impl ValueType {
     fn descriptor(&self) -> String {
         match self {
+            Self::Alternatives(types) => format!("[\"alternatives\",[{}]]", types.iter().map(Self::descriptor).collect::<Vec<_>>().join(",")),
             Self::Sequence(element) => format!("[\"sequence\",{}]", element.descriptor()),
             Self::Record(fields) => format!("[\"record\",[{}]]", fields.iter().map(|(key, value)| format!("[{},{}]", quote(std::str::from_utf8(key).expect("checked field")), value.descriptor())).collect::<Vec<_>>().join(",")),
             Self::Number => "[\"number\"]".into(),
@@ -49,6 +51,7 @@ impl ValueType {
     }
     fn declaration(&self) -> String {
         match self {
+            Self::Alternatives(types) => format!("({})", types.iter().map(Self::declaration).collect::<Vec<_>>().join(" | ")),
             Self::Sequence(element) => format!("ReadonlyArray<{}>", element.declaration()),
             Self::Record(fields) => format!("{{ {} }}", fields.iter().map(|(key,value)| format!("readonly {}: {}", quote(std::str::from_utf8(key).expect("checked field")), value.declaration())).collect::<Vec<_>>().join("; ")),
             Self::Number => "number".into(),
@@ -79,6 +82,7 @@ fn scalar_type(kind: CanonicalScalarValueKindV1) -> Result<ValueType> {
 }
 fn callable_type(kind: &CanonicalValueTypeV1) -> Result<ValueType> {
     match kind {
+        CanonicalValueTypeV1::Alternatives(types) => Ok(ValueType::Alternatives(types.iter().map(callable_type).collect::<Result<_>>()?)),
         CanonicalValueTypeV1::Delayed { .. } | CanonicalValueTypeV1::OpaqueForeign { .. } => unsupported("JavaScript does not execute delayed target construction"),
         CanonicalValueTypeV1::Scalar(kind) => scalar_type(*kind),
         CanonicalValueTypeV1::Sequence(element) => Ok(ValueType::Sequence(Box::new(callable_type(element)?))),
@@ -91,6 +95,8 @@ fn foreign_name(module: &str) -> String {
 fn foreign_modules(expression: &CanonicalExecutableExpressionV1, modules: &mut BTreeSet<String>) {
     use CanonicalExecutableExpressionV1 as E;
     match expression {
+        E::Widen { value, .. } => foreign_modules(value, modules),
+        E::Match { value, cases } => { foreign_modules(value, modules); for (_, _, body) in cases { foreign_modules(body, modules); } }
         E::Foreign { binding, arguments } => {
             modules.insert(binding.module.clone());
             for value in arguments { foreign_modules(value, modules); }
@@ -178,6 +184,25 @@ impl Lowerer<'_> {
     ) -> Result<(String, ValueType)> {
         use CanonicalExecutableExpressionV1 as E;
         let result = match expression {
+            E::Widen { value, kind } => {
+                let (value, _) = self.expression(value, None)?;
+                (value, callable_type(kind)?)
+            }
+            E::Match { value, cases } => {
+                let (value, ValueType::Alternatives(_)) = self.expression(value, None)? else { return unsupported("match requires alternatives"); };
+                let mut branches = String::new();
+                let mut result = expected.clone();
+                for (kind, binding, body) in cases {
+                    let kind = callable_type(kind)?;
+                    let previous = self.bindings.insert(*binding, kind.clone());
+                    let lowered = self.expression(body, result.clone());
+                    if let Some(previous) = previous { self.bindings.insert(*binding, previous); } else { self.bindings.remove(binding); }
+                    let (body, actual) = lowered?;
+                    result = Some(actual);
+                    branches.push_str(&format!("if(accepts(value,{})){{const b{binding}=value;return ({body});}}", kind.descriptor()));
+                }
+                (format!("((value)=>{{{branches}return fail('TypeMismatch');}})({value})"), result.ok_or_else(|| JavaScriptLoweringErrorV1("empty match".into()))?)
+            }
             E::Sequence(values) => {
                 let element = match &expected { Some(ValueType::Sequence(element)) => Some(element.as_ref().clone()), _ => None };
                 let mut kind = element;
@@ -852,8 +877,10 @@ function scalarText(value){
  return (negative?'-':'')+decimal;
 }
 function text(value){if(typeof value!=='string'||!value.isWellFormed()||new TextEncoder().encode(value).length>16777216)fail('TextDomain');return value;}
+function accepts(value,kind){try{validate(value,kind);return true;}catch{return false;}}
 function validate(value,kind){
  switch(kind[0]){
+ case 'alternatives':if(!kind[1].some(type=>accepts(value,type)))fail('TypeMismatch');break;
  case 'number':finite(value);break;
  case 'text':text(value);break;
  case 'boolean':if(typeof value!=='boolean')fail('TypeMismatch');break;
@@ -865,6 +892,7 @@ function validate(value,kind){
 }
 function crossing(value,kind){
  validate(value,kind);
+ if(kind[0]==='alternatives')return crossing(value,kind[1].find(type=>accepts(value,type)));
  if(kind[0]==='sequence')return Object.freeze(value.map(v=>crossing(v,kind[1])));
  if(kind[0]==='record')return Object.freeze(Object.fromEntries(kind[1].map(([key,type])=>[key,crossing(value[key],type)])));
  return value;

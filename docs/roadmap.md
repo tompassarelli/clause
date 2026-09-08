@@ -20,6 +20,21 @@ A delivered application slice does not complete those remaining criteria.
 
 ### Resident source compiler and runtime
 
+Disjoint structural alternative contracts (`Execution | Diagnostic`) and exhaustive
+`match` now run through native callable invocation and generated JavaScript. The
+focused `callable_outcomes` test executes the same Firn request/diagnostic producer
+and consumer, checks case coverage and payload fields, and rejects malformed
+JavaScript arguments. Alternatives must be immediate, disjoint contracts;
+recursive and overlapping alternatives remain unsupported. The separate
+physical-program codec does not yet carry match expressions.
+
+The existing `pure_composition_bounds_expanded_definitions` regression aborts
+with a stack overflow under the unoptimized test profile and default test-thread
+stack, both on baseline `9a75cbb9ee3fd82a5bbc80c1b8c908a223328737` and with
+alternatives. Its expansion-limit counterexample remains in
+`clause:crates/clause-workbench/tests/pure_callable.rs`; the owning recursion
+repair remains open. The focused alternative and authoring checks pass.
+
 The resident source compiler uses ordinary `domain`, `range`, and
 `cardinality` facts as binary role contracts. The same role definitions govern
 initial facts, handler patterns, recursive laws, runtime tables, structural

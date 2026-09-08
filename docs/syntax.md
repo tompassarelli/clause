@@ -332,7 +332,8 @@ export description(?enabled: Bool)
 ```
 
 Every nested record field retains its inferred type. Forward calls use the
-callee's checked result. Conflicting conditional branches, unknown fields,
+callee's checked result. Without an explicit alternative contract, conflicting
+conditional branches reject. Unknown fields,
 unresolved bindings, and empty sequences without an element contract reject.
 An explicit result annotation remains an exact checking obligation.
 
@@ -351,6 +352,27 @@ a declared Shape supplies each field once, as in
 The same recursive element and field contracts
 check exported arguments, results, and foreign crossings. Equality compares
 sequence elements in order and record fields structurally.
+
+An explicit contract `Execution | Diagnostic` admits either exact structural
+value type. The alternatives are unordered and must be distinct and disjoint:
+a value cannot satisfy two cases. Records with different field sets are disjoint;
+records with the same fields can differ through disjoint field contracts.
+Sequence alternatives overlap at the empty sequence and therefore reject.
+Delayed and opaque foreign contracts are not alternatives in this slice.
+
+When a result or argument requires an alternative contract, the checker includes
+a value of one declared alternative in that contract. A conditional checks both
+branches against the same contract; it does not infer a union from conflicting
+branches. The runtime value retains its ordinary representation.
+
+`match(value, ?request: Execution => body, ?error: Diagnostic => body)` evaluates
+`value` once and selects the one case whose contract accepts it. Every alternative
+must appear exactly once, even when the value is locally known. Missing,
+duplicate, or unreachable cases reject. The case binding is available only
+inside its body and has that case's exact type; accessing the other case's fields
+rejects. Case bodies must have the same checked result type and only the selected
+body executes. [The running dispatch example](../test-vectors/authoring/callable-outcomes.clause)
+produces and consumes both execution requests and diagnostics through this rule.
 
 `?reply.message` projects the declared `message` field. `drop(sequence, count)`
 returns the ordered suffix after a nonnegative integer count.
