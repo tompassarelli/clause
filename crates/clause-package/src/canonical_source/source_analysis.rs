@@ -73,6 +73,7 @@ impl CheckedCanonicalSourceAnalysisV1 {
                 _ => None,
             }).collect::<Result<BTreeSet<_>, _>>()?;
             let mut retained = Vec::new();
+            let mut member_sets = BTreeMap::new();
             for handler in &self.package.executable_handlers {
                 if handler.id == changed { continue; }
                 let scalar = scalar_handlers.contains(&handler.id);
@@ -82,7 +83,7 @@ impl CheckedCanonicalSourceAnalysisV1 {
                 handler.id = edit.formation(handler.id)?;
                 for rule in &mut handler.rules {
                     for origin in &mut rule.law_origins { *origin = translate_origin(edit, *origin)?; }
-                    for predicate in &mut rule.predicates { remap_predicate(edit, predicate)?; }
+                    for predicate in &mut rule.predicates { remap_predicate(edit, predicate, &mut member_sets)?; }
                     for state in rule.required_present.iter_mut().chain(&mut rule.required_absent).chain(&mut rule.removals) {
                         edit.rebind_state(state)?;
                     }
@@ -91,7 +92,7 @@ impl CheckedCanonicalSourceAnalysisV1 {
                     rule.removals.sort();
                     for assignment in &mut rule.assignments {
                         edit.rebind_state(&mut assignment.target)?;
-                        remap_expression(edit, &mut assignment.value)?;
+                        remap_expression(edit, &mut assignment.value, &mut member_sets)?;
                     }
                     if sorted_assignments { rule.assignments.sort_by(|a, b| a.target.cmp(&b.target)); }
                 }
@@ -146,17 +147,17 @@ fn remap_value(edit: &CanonicalSourceEditV1, value: &mut CanonicalScalarValueV1)
     Ok(())
 }
 
-fn remap_predicate(edit: &CanonicalSourceEditV1, predicate: &mut CanonicalExecutablePredicateV1) -> Result<(), CanonicalSourceErrorV1> {
+fn remap_predicate(edit: &CanonicalSourceEditV1, predicate: &mut CanonicalExecutablePredicateV1, member_sets: &mut BTreeMap<Vec<FormationLocalId>, Vec<FormationLocalId>>) -> Result<(), CanonicalSourceErrorV1> {
     use CanonicalExecutablePredicateV1 as P;
     let (a, b) = match predicate {
         P::RelationMatch(state, a, b) => { edit.rebind_state(state)?; (a, b) }
         P::Equal(a, b) | P::GreaterThan(a, b) | P::LessThanOrEqual(a, b) | P::Contains(a, b) => (a, b),
     };
-    remap_expression(edit, a)?;
-    remap_expression(edit, b)
+    remap_expression(edit, a, member_sets)?;
+    remap_expression(edit, b, member_sets)
 }
 
-fn remap_expression(edit: &CanonicalSourceEditV1, expression: &mut CanonicalExecutableExpressionV1) -> Result<(), CanonicalSourceErrorV1> {
+fn remap_expression(edit: &CanonicalSourceEditV1, expression: &mut CanonicalExecutableExpressionV1, member_sets: &mut BTreeMap<Vec<FormationLocalId>, Vec<FormationLocalId>>) -> Result<(), CanonicalSourceErrorV1> {
     use CanonicalExecutableExpressionV1 as E;
     match expression {
         E::Constant(value) => remap_value(edit, value)?,
@@ -179,30 +180,38 @@ fn remap_expression(edit: &CanonicalSourceEditV1, expression: &mut CanonicalExec
         },
         E::FreshReferent { domain, .. } => *domain = edit.formation(*domain)?,
         E::ReferentFacet { value, domain, members } => {
-            remap_expression(edit, value)?;
+            remap_expression(edit, value, member_sets)?;
             *domain = edit.formation(*domain)?;
-            for member in members.iter_mut() { *member = edit.formation(*member)?; }
-            members.sort();
+            // Repeated facets carry the same complete member set. Reuse only
+            // an exact set translated successfully under this one checked edit.
+            if let Some(retained) = member_sets.get(members.as_slice()) {
+                members.clone_from(retained);
+            } else {
+                let old = members.clone();
+                for member in members.iter_mut() { *member = edit.formation(*member)?; }
+                members.sort();
+                member_sets.insert(old, members.clone());
+            }
         }
         E::Sum { inputs, predicates, value } => {
-            for input in inputs { remap_expression(edit, input)?; }
-            for predicate in predicates { remap_predicate(edit, predicate)?; }
-            remap_expression(edit, value)?;
+            for input in inputs { remap_expression(edit, input, member_sets)?; }
+            for predicate in predicates { remap_predicate(edit, predicate, member_sets)?; }
+            remap_expression(edit, value, member_sets)?;
         }
-        E::MatchesAny(cases) => for case in cases { for predicate in case { remap_predicate(edit, predicate)?; } },
+        E::MatchesAny(cases) => for case in cases { for predicate in case { remap_predicate(edit, predicate, member_sets)?; } },
         E::RelationEffects(effects) => for effect in effects {
             use CanonicalRelationEffectV1 as R;
             let (a, b) = match effect { R::Put(a,b) | R::Insert(a,b) | R::Remove(a,b) | R::Accumulate(a,b) => (a,b) };
-            remap_expression(edit, a)?; remap_expression(edit, b)?;
+            remap_expression(edit, a, member_sets)?; remap_expression(edit, b, member_sets)?;
         },
-        E::SquareRoot(value) | E::Not(value) | E::Accumulate(value) | E::TextTransform(_,value) => remap_expression(edit,value)?,
+        E::SquareRoot(value) | E::Not(value) | E::Accumulate(value) | E::TextTransform(_,value) => remap_expression(edit, value, member_sets)?,
         E::Conditional(a,b,c) | E::RelationPut(a,b,c) | E::RelationInsert(a,b,c) | E::RelationRemoveValue(a,b,c) => {
-            remap_expression(edit,a)?; remap_expression(edit,b)?; remap_expression(edit,c)?;
+            remap_expression(edit, a, member_sets)?; remap_expression(edit, b, member_sets)?; remap_expression(edit, c, member_sets)?;
         }
         E::ContainsText(a,b) | E::StartsWith(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b)
         | E::RelationRead(a,b) | E::RelationPresent(a,b) | E::RelationRemoveRow(a,b) | E::Concatenate(a,b)
         | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::Insert(a,b) | E::Remove(a,b) => {
-            remap_expression(edit,a)?; remap_expression(edit,b)?;
+            remap_expression(edit, a, member_sets)?; remap_expression(edit, b, member_sets)?;
         }
     }
     Ok(())
