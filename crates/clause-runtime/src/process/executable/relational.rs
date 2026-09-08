@@ -292,6 +292,7 @@ struct SumQuery {
     contribution: ExecutableExpressionV1,
     captured_reads: bool,
     results: Vec<SumResult>,
+    plan: Option<Arc<scalar_reuse::ScalarPlan>>,
 }
 
 struct SumResult {
@@ -353,7 +354,10 @@ pub(super) fn sum_with_values(
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumQuery);
     let query_reads = std::cell::RefCell::new(Vec::new());
     let query_context = EvaluationContextV1 { reads: context.reads.map(|_| &query_reads), ..context };
-    let plan = scalar_plan(value, query_context)?;
+    let plan = if let Some(retained) = context.sum_queries.and_then(|queries|
+        queries.borrow().entries.iter().find(|previous| same_query(previous)).map(|query| query.plan.clone())) {
+        retained
+    } else { scalar_plan(value, query_context)? };
     let mut visits = 0;
     let mut total = 0.0;
     let matches = match_sum(predicates, configuration, &inputs,
@@ -394,6 +398,7 @@ pub(super) fn sum_with_values(
             queries.entries.push(SumQuery {
                 shape: shape.cloned(), predicates: predicates.to_vec(), contribution: value.clone(),
                 captured_reads: context.reads.is_some(), results: vec![result],
+                plan,
             });
         }
     }
@@ -1420,6 +1425,41 @@ mod sum_reuse_tests {
 #[cfg(test)]
 mod match_ownership_tests {
     use super::*;
+
+    #[test]
+    fn bound_subject_selection_preserves_empty_single_and_many_rows() {
+        use ExecutableExpressionV1 as E;
+        let subject = ExecutableReferentV1::declared(7, 1);
+        let table = |values: BTreeSet<ExecutableValueV1>| ExecutableValueV1::RelationTable(ExecutableRelationTableV1 {
+            subject_domain: 7, value_kind: ExecutableRelationValueKindV1::Referent,
+            value_domain: Some(7), cardinality: ExecutableRelationCardinalityV1::Many, total: false,
+            rows: Arc::new(BTreeMap::from([(subject.clone(), values.into())]).into()),
+        });
+        let predicates = [E::RelationMatch(0, Box::new(E::Binding(0)), Box::new(E::Binding(0))),
+            E::RelationMatch(1, Box::new(E::Binding(0)), Box::new(E::Binding(1)))];
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
+            reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
+        for count in [0, 1, 2] {
+            let values = (0..count).map(|id| ExecutableValueV1::Referent(ExecutableReferentV1::declared(7, id))).collect::<BTreeSet<_>>();
+            let configuration = [table(BTreeSet::from([ExecutableValueV1::Referent(subject.clone())])).into(), table(values.clone()).into()];
+            for capture in [false, true] {
+                let mut visits = 0;
+                let matches = match_rule(&predicates, &configuration, &[], context, &mut visits, capture).unwrap();
+                assert_eq!(visits, 1 + count as usize);
+                let accepted = matches.iter().filter(|(_, accepted)| *accepted).collect::<Vec<_>>();
+                assert_eq!(accepted.iter().map(|(matched, _)| matched.bindings.get(&1).unwrap().clone()).collect::<BTreeSet<_>>(), values);
+                if capture && count == 0 {
+                    assert_eq!(matches.len(), 1);
+                    assert_eq!(matches[0].0.predicates[1].reads, vec![ExecutableReadV1::RelationSearch(1, Some(subject.clone()), 0)]);
+                    assert!(!matches[0].0.bindings.contains_key(&1));
+                }
+            }
+            let mut visits = MAX_JOIN_VISITS - 1;
+            let result = match_rule(&predicates, &configuration, &[], context, &mut visits, false);
+            if count == 0 { assert!(result.is_ok()); }
+            else { assert!(matches!(result, Err(ExecutableErrorV1::ResourceLimit))); }
+        }
+    }
 
     #[test]
     fn contiguous_bindings_preserve_sparse_map_order_replacement_and_removal() {
