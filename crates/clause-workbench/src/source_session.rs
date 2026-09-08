@@ -1049,6 +1049,8 @@ impl ResidentSourceWorkbenchV1 {
         }).transpose()? };
         let preparation = clause_runtime::encode_executable_source_preparation_v1(exact_source, allocation_plan.root(), self.declared_frontend.exact_source(), &self.imports)
             .map_err(|error| boxed_error("source preparation encode", error))?;
+        let states = lowered.states.clone();
+        drop(lowered);
         phase("encode");
         let opened = if let Some(prepared) = prepared {
             self.boundary.commit_scalar_edit(prepared)?
@@ -1073,7 +1075,7 @@ impl ResidentSourceWorkbenchV1 {
         phase("commit-encode");
         self.handlers = handlers;
         self.callables = callables;
-        self.states = lowered.states.clone();
+        self.states = states;
         self.default_occurrences = default_occurrences;
         self.next_change = next_change;
         self.exact_source = exact_source.to_vec();
