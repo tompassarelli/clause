@@ -67,9 +67,10 @@ pub(super) fn read(
                 let (callable, _) = callable::read(block, origin, &cst.items)?
                     .ok_or(CanonicalSourceErrorV1::InvalidImport { origin, reason: "expected a foreign declaration" })?;
                 result.callables.push(callable);
-            } else if !cst.items.iter().any(|item| item.origin == origin && matches!(item.kind, CstKind::ForeignType { .. })) {
+            } else if !cst.items.iter().any(|item| item.origin == origin && matches!(item.kind, CstKind::ForeignType { .. }))
+                && !cst.callables.iter().any(|callable| callable.origin == origin && callable.exported) {
                 return Err(CanonicalSourceErrorV1::InvalidImport {
-                    origin, reason: "declaration sources contain foreign types and functions only",
+                    origin, reason: "declaration sources contain exported definitions and foreign declarations only",
                 });
             }
         }
