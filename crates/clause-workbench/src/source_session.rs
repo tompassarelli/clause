@@ -824,9 +824,9 @@ impl ResidentSourceWorkbenchV1 {
         }
         let template_input = physical_plan.input.clone();
         let mut lowered = match &prepared {
-            Some(prepared) => prepared.lowered().clone(),
-            None => lower_canonical_executable_program_v1(scope, &compiled.state_cells, &compiled.executable_handlers, projection_roles)
-                .map_err(|error| boxed_error("generic canonical lowering", error))?,
+            Some(prepared) => std::borrow::Cow::Borrowed(prepared.lowered()),
+            None => std::borrow::Cow::Owned(lower_canonical_executable_program_v1(scope, &compiled.state_cells, &compiled.executable_handlers, projection_roles)
+                .map_err(|error| boxed_error("generic canonical lowering", error))?),
         };
         if let Some(checkpoint) = checkpoint {
             let recorded = clause_runtime::decode_wasm_session_open_v1(
@@ -835,7 +835,7 @@ impl ResidentSourceWorkbenchV1 {
             let recorded_plan = decode_executable_physical_plan_v1(&recorded.physical_plan_bytes)
                 .map_err(|error| boxed_error("recorded CPP1", error))?;
             clause_runtime::replay_canonical_executable_entry_layout_v1(
-                scope, &compiled, cst.artifact(), &mut lowered, &recorded_plan,
+                scope, &compiled, cst.artifact(), lowered.to_mut(), &recorded_plan,
             ).map_err(|error| boxed_error("recorded source dispatch layout", error))?;
         }
         let semantic_handlers = compiled
@@ -856,7 +856,11 @@ impl ResidentSourceWorkbenchV1 {
                 .push(binding.clone());
         }
         let declarative_only = lowered.states.is_empty() && lowered.handlers.is_empty();
-        physical_plan.program = lowered.program;
+        // A prepared edit already owns its checked CPP1. Reconstructing that
+        // program would only duplicate and discard the same retained rules.
+        if prepared.is_none() {
+            std::mem::swap(&mut physical_plan.program, &mut lowered.to_mut().program);
+        }
 
         let has_tick = lowered.handlers.iter().any(|binding| {
             matches!(
@@ -953,8 +957,8 @@ impl ResidentSourceWorkbenchV1 {
                 // An event-only source still needs a physical checkpoint at
                 // which to emit a hidden candidate. This rule has no source
                 // effects; it does not execute an arbitrary input handler.
-                let entry = physical_plan
-                    .program
+                let program = if prepared.is_some() { &lowered.program } else { &physical_plan.program };
+                let entry = program
                     .rules
                     .iter()
                     .map(|rule| rule.entry)
@@ -1039,6 +1043,8 @@ impl ResidentSourceWorkbenchV1 {
         }).transpose()? };
         let preparation = clause_runtime::encode_executable_source_preparation_v1(exact_source, allocation_plan.root(), self.declared_frontend.exact_source(), &self.imports)
             .map_err(|error| boxed_error("source preparation encode", error))?;
+        let states = lowered.states.clone();
+        drop(lowered);
         let opened = if let Some(prepared) = prepared {
             self.boundary.commit_scalar_edit(prepared)?
         } else if let Some(checkpoint) = checkpoint {
@@ -1061,7 +1067,7 @@ impl ResidentSourceWorkbenchV1 {
             .expect("a valid fixed-width allocation preserves the prechecked CWR1 shape");
         self.handlers = handlers;
         self.callables = callables;
-        self.states = lowered.states;
+        self.states = states;
         self.default_occurrences = default_occurrences;
         self.next_change = next_change;
         self.exact_source = exact_source.to_vec();
