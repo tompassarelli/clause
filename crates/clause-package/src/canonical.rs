@@ -1001,26 +1001,7 @@ fn encode_term(
         term.scope().universe.encode(encoder)?;
         term.scope().semantics.encode(encoder)?;
     }
-    match term.value() {
-        TermValueRef::Atom(atom) => {
-            encoder.u8(0);
-            encoder.blob("atom kind", atom.kind())?;
-            encoder.u32(u32::try_from(atom.payload_len()).map_err(|_| CanonicalEncodeError::LengthExceedsU32 { field: "atom canonical payload", length: atom.payload_len() })?);
-            if encoder.count_only {
-                encoder.count_bytes(atom.payload_len());
-            } else {
-                for segment in atom.shared_payload_segments() { encoder.shared(segment); }
-            }
-            atom.equality_contract().encode(encoder)?;
-        }
-        TermValueRef::Triple(triple) => {
-            encoder.u8(1);
-            for slot in triple.slots() {
-                encode_term_value(slot, encoder, depth + 1)?;
-            }
-        }
-    }
-    Ok(())
+    encode_term_value(term, encoder, depth)
 }
 
 fn encode_term_value(
@@ -1028,11 +1009,18 @@ fn encode_term_value(
     encoder: &mut Encoder,
     depth: usize,
 ) -> Result<(), CanonicalEncodeError> {
-    if depth > MAX_TERM_DEPTH {
+    if depth.checked_add(term.depth()).is_none_or(|depth| depth > MAX_TERM_DEPTH) {
         return Err(CanonicalEncodeError::TermDepthExceeded {
             maximum: MAX_TERM_DEPTH,
         });
     }
+    if encoder.count_only {
+        if let Some(length) = term.canonical_value_length() {
+            encoder.count_bytes(length);
+            return Ok(());
+        }
+    }
+    let start = encoder.length;
     match term.value() {
         TermValueRef::Atom(atom) => {
             encoder.u8(0);
@@ -1051,6 +1039,9 @@ fn encode_term_value(
                 encode_term_value(slot, encoder, depth + 1)?;
             }
         }
+    }
+    if encoder.count_only && !encoder.byte_limit_exceeded {
+        term.retain_canonical_value_length(encoder.length - start);
     }
     Ok(())
 }
@@ -3487,6 +3478,34 @@ fn ensure_by_key<T, K: Ord>(
 #[cfg(test)]
 mod ingress_size_tests {
     use super::*;
+
+    #[test]
+    fn retained_subtree_counts_preserve_identity_updates_and_enclosing_limits() {
+        use std::hash::{Hash, Hasher};
+        let scope = TermScope { universe: UniverseId::from_bytes([1; IDENTITY_BYTES]), semantics: ClauseSemanticsId::from_bytes([2; IDENTITY_BYTES]) };
+        let leaf = |value| Term::atom(scope, b"value".to_vec(), vec![value], EqualityContract::ExactOctetsV1).unwrap();
+        let shared = Term::triple([leaf(1), leaf(2), leaf(3)]).unwrap();
+        let independent = decode_canonical_term_bytes(&canonical_term_bytes(&shared).unwrap()).unwrap();
+        let hash = |term: &Term| { let mut state = std::hash::DefaultHasher::new(); term.hash(&mut state); state.finish() };
+        let before = hash(&shared);
+        let length = canonical_term_byte_len(&shared).unwrap();
+        assert_eq!(shared, independent);
+        assert_eq!(hash(&shared), before);
+        assert_eq!(hash(&independent), before);
+        for value in [4, 5] {
+            let changed = Term::triple([shared.clone(), leaf(value), shared.clone()]).unwrap();
+            assert_eq!(canonical_term_byte_len(&changed).unwrap(), canonical_term_bytes(&changed).unwrap().len());
+        }
+        let mut exact = Encoder::counting();
+        exact.count_bytes(MAX_CANONICAL_BYTES - length);
+        shared.encode(&mut exact).unwrap();
+        assert_eq!(exact.finish_size(), Ok(MAX_CANONICAL_BYTES));
+        let mut oversized = Encoder::counting();
+        oversized.count_bytes(MAX_CANONICAL_BYTES - length + 1);
+        shared.encode(&mut oversized).unwrap();
+        assert!(matches!(oversized.finish_size(), Err(CanonicalEncodeError::EncodedBytesTooLong { .. })));
+        assert!(matches!(encode_term_value(&shared, &mut Encoder::counting(), MAX_TERM_DEPTH), Err(CanonicalEncodeError::TermDepthExceeded { .. })));
+    }
 
     #[test]
     fn segmented_payload_count_matches_flat_nested_encoding_and_ceiling() {

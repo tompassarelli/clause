@@ -211,6 +211,35 @@ enum TermValue {
     Triple(Triple),
 }
 
+struct TermNode {
+    value: TermValue,
+    canonical_value_length: OnceLock<usize>,
+}
+
+impl TermNode {
+    fn new(value: TermValue) -> Self {
+        Self { value, canonical_value_length: OnceLock::new() }
+    }
+}
+
+// Derived wire metadata has no part in structural identity or diagnostics.
+impl PartialEq for TermNode {
+    fn eq(&self, other: &Self) -> bool { self.value == other.value }
+}
+impl Eq for TermNode {}
+impl PartialOrd for TermNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
+}
+impl Ord for TermNode {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.value.cmp(&other.value) }
+}
+impl Hash for TermNode {
+    fn hash<H: Hasher>(&self, state: &mut H) { self.value.hash(state); }
+}
+impl fmt::Debug for TermNode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result { self.value.fmt(formatter) }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct TermComplexity {
     depth: usize,
@@ -253,7 +282,7 @@ impl TermComplexity {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Term {
     scope: TermScope,
-    value: Arc<TermValue>,
+    value: Arc<TermNode>,
     complexity: TermComplexity,
 }
 
@@ -266,11 +295,11 @@ impl Term {
     ) -> Result<Self, TermError> {
         Ok(Self {
             scope,
-            value: Arc::new(TermValue::Atom(Atom::new(
+            value: Arc::new(TermNode::new(TermValue::Atom(Atom::new(
                 kind,
                 canonical_payload,
                 equality_contract,
-            )?)),
+            )?))),
             complexity: TermComplexity::ATOM,
         })
     }
@@ -284,7 +313,7 @@ impl Term {
     ) -> Result<Self, TermError> {
         let atom = Atom { kind: kind.into(), canonical_payload: AtomPayload::new(segments)?, equality_contract };
         atom.validate()?;
-        Ok(Self { scope, value: Arc::new(TermValue::Atom(atom)), complexity: TermComplexity::ATOM })
+        Ok(Self { scope, value: Arc::new(TermNode::new(TermValue::Atom(atom))), complexity: TermComplexity::ATOM })
     }
 
     pub fn triple(slots: [Term; 3]) -> Result<Self, TermError> {
@@ -292,7 +321,7 @@ impl Term {
         let scope = triple.scope();
         Ok(Self {
             scope,
-            value: Arc::new(TermValue::Triple(triple)),
+            value: Arc::new(TermNode::new(TermValue::Triple(triple))),
             complexity,
         })
     }
@@ -300,17 +329,27 @@ impl Term {
     pub(crate) fn from_atom(scope: TermScope, atom: Atom) -> Self {
         Self {
             scope,
-            value: Arc::new(TermValue::Atom(atom)),
+            value: Arc::new(TermNode::new(TermValue::Atom(atom))),
             complexity: TermComplexity::ATOM,
         }
     }
 
     pub(crate) fn value(&self) -> TermValueRef<'_> {
-        match self.value.as_ref() {
+        match &self.value.value {
             TermValue::Atom(atom) => TermValueRef::Atom(atom),
             TermValue::Triple(triple) => TermValueRef::Triple(triple),
         }
     }
+
+    pub(crate) fn canonical_value_length(&self) -> Option<usize> {
+        self.value.canonical_value_length.get().copied()
+    }
+
+    pub(crate) fn retain_canonical_value_length(&self, length: usize) {
+        let _ = self.value.canonical_value_length.set(length);
+    }
+
+    pub(crate) fn depth(&self) -> usize { self.complexity.depth }
 
     #[must_use]
     pub const fn scope(&self) -> TermScope {
@@ -319,7 +358,7 @@ impl Term {
 
     #[must_use]
     pub fn as_atom(&self) -> Option<&Atom> {
-        match self.value.as_ref() {
+        match &self.value.value {
             TermValue::Atom(atom) => Some(atom),
             TermValue::Triple(_) => None,
         }
@@ -327,7 +366,7 @@ impl Term {
 
     #[must_use]
     pub fn as_triple(&self) -> Option<&Triple> {
-        match self.value.as_ref() {
+        match &self.value.value {
             TermValue::Atom(_) => None,
             TermValue::Triple(triple) => Some(triple),
         }
