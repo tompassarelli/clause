@@ -1036,6 +1036,7 @@ fn retain_lowered_source_rules(
     edit: &CanonicalSourceEditV1,
     slots: &BTreeMap<CanonicalStateRefV1, u16>,
 ) -> Result<BTreeMap<(FormationLocalId, usize), ExecutableRuleV1>, ExecutableErrorV1> {
+    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RetainedRuleRebinding);
     let mut handlers = preparation.analysis.package().executable_handlers.iter().collect::<Vec<_>>();
     handlers.sort_by_key(|handler| handler.id);
     let mut offsets = BTreeMap::new();

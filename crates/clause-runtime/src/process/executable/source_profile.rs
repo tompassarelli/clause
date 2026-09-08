@@ -49,8 +49,9 @@ pub enum SourceProfilePhaseV1 {
     ScalarPlanBuild,
     ScalarEvaluation,
     ProgramValidation,
+    RetainedRuleRebinding,
 }
-const NAMES: [&str; 44] = [
+const NAMES: [&str; 45] = [
     "transfer",
     "witness-check",
     "source-read",
@@ -95,6 +96,7 @@ const NAMES: [&str; 44] = [
     "scalar-plan-build",
     "scalar-evaluation",
     "program-validation",
+    "retained-rule-rebinding",
 ];
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -107,7 +109,7 @@ pub struct SourceProfileMeasurementV1 {
 pub struct ExecutableSourceProfileV1 {
     pub wall_milliseconds: f64,
     pub truncated: bool,
-    pub phases: [SourceProfileMeasurementV1; 44],
+    pub phases: [SourceProfileMeasurementV1; 45],
 }
 impl ExecutableSourceProfileV1 {
     /// Fixed field names and finite numeric measurements; no source or secrets.
@@ -175,7 +177,7 @@ pub fn begin_executable_source_profile_v1() -> bool {
             report: ExecutableSourceProfileV1 {
                 wall_milliseconds: 0.0,
                 truncated: false,
-                phases: [SourceProfileMeasurementV1::default(); 44],
+                phases: [SourceProfileMeasurementV1::default(); 45],
             },
         });
         true
