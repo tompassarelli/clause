@@ -115,7 +115,7 @@ pub(super) fn foreign_accesses(
                 collect(c, contracts);
             }
             E::SequenceSort(value)
-            | E::TextCharacters(value)
+            | E::TextCodepoint(value) | E::TextFromCodepoint(value) | E::TextCharacters(value)
             | E::ParseIntegerPrefix(value)
             | E::SequenceCount(value)
             | E::SequenceRange(value)
@@ -219,6 +219,8 @@ pub(super) fn read(
         b"sqrt",
         b"trim",
         b"characters",
+        b"codepoint",
+        b"from-codepoint",
         b"split-text",
         b"parse-integer-prefix",
         b"lowercase",
@@ -810,6 +812,8 @@ fn bind_body(
             E::SequenceFold { accumulator: fresh_accumulator, item: fresh_item, source, initial, body }
         }
         E::TextCharacters(a) => E::TextCharacters(recur(a)?),
+        E::TextCodepoint(a) => E::TextCodepoint(recur(a)?),
+        E::TextFromCodepoint(a) => E::TextFromCodepoint(recur(a)?),
         E::ParseIntegerPrefix(a) => E::ParseIntegerPrefix(recur(a)?),
         E::TextSplit(a, b) => E::TextSplit(recur(a)?, recur(b)?),
         E::SequenceCount(a) => E::SequenceCount(recur(a)?),
@@ -1053,6 +1057,8 @@ fn lower(
             E::SequenceFold { accumulator: fresh_accumulator, item: fresh_item, source, initial, body }
         }
         S::TextCharacters(a) => E::TextCharacters(recur(a)?),
+        S::TextCodepoint(a) => E::TextCodepoint(recur(a)?),
+        S::TextFromCodepoint(a) => E::TextFromCodepoint(recur(a)?),
         S::ParseIntegerPrefix(a) => E::ParseIntegerPrefix(recur(a)?),
         S::TextSplit(a, b) => E::TextSplit(recur(a)?, recur(b)?),
         S::SequenceCount(a) => E::SequenceCount(recur(a)?),
@@ -1525,6 +1531,8 @@ fn expression_kind(
             require(b, &K::Text.into())?;
             K::Boolean.into()
         }
+        E::TextCodepoint(a) => { require(a, &K::Text.into())?; K::Number.into() }
+        E::TextFromCodepoint(a) => { require(a, &K::Number.into())?; K::Text.into() }
         E::TextCharacters(a) => {
             require(a, &K::Text.into())?;
             T::Sequence(Box::new(K::Text.into()))

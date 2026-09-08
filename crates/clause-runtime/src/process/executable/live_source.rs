@@ -1113,7 +1113,7 @@ fn rebind_lowered_expression(value: &mut ExecutableExpressionV1, edit: &Canonica
             rebind_lowered_expression(initial, edit, member_sets)?;
             rebind_lowered_expression(body, edit, member_sets)?;
         },
-        E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceRange(value) | E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => rebind_lowered_expression(value, edit, member_sets)?,
+        E::TextCodepoint(value) | E::TextFromCodepoint(value) | E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceRange(value) | E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => rebind_lowered_expression(value, edit, member_sets)?,
         E::SequenceAt(a, b) | E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::Dictionary(a, b) | E::SequenceAppend(a, b) => {
             rebind_lowered_expression(a, edit, member_sets)?; rebind_lowered_expression(b, edit, member_sets)?;
         },

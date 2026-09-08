@@ -176,7 +176,7 @@ fn remap_expression(edit: &CanonicalSourceEditV1, expression: &mut CanonicalExec
         E::SequenceFold { source, initial, body, .. } => {
             remap_expression(edit, source, member_sets)?; remap_expression(edit, initial, member_sets)?; remap_expression(edit, body, member_sets)?;
         },
-        E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceRange(value) | E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => remap_expression(edit, value, member_sets)?,
+        E::TextCodepoint(value) | E::TextFromCodepoint(value) | E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceRange(value) | E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => remap_expression(edit, value, member_sets)?,
         E::Apply(a, b) | E::SequenceAt(a, b) | E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::Dictionary(a, b) | E::SequenceAppend(a, b) => {
             remap_expression(edit, a, member_sets)?; remap_expression(edit, b, member_sets)?;
         },

@@ -1,0 +1,53 @@
+# Unicode escape rules adapted from beagle:native-core/src/native/json.bjs
+# at cd2c1a93ce434f62a0fcf33abda2e64d59929414, MIT. See LICENSE-MIT.
+
+Decoded:
+  text: Text
+  end: F64
+Rejected:
+  offset: F64
+  message: Text
+
+export byte-length(?source: Text): F64
+  fold(characters(?source), 0, ?bytes, ?character,
+    ?bytes + scalar-width(codepoint(?character)))
+
+scalar-width(?point: F64): F64
+  if(?point <= 127, 1, if(?point <= 2047, 2, if(?point <= 65535, 3, 4)))
+
+hex-value(?character: Text): F64
+  ?point: codepoint(?character)
+  if(?point >= 48 and ?point <= 57, ?point - 48,
+    if(?point >= 65 and ?point <= 70, ?point - 55,
+      if(?point >= 97 and ?point <= 102, ?point - 87, -1)))
+
+hex4(?source: Sequence<Text>, ?start: F64): F64
+  if(?start + 4 > count(?source), -1,
+    fold(range(4), 0, ?value, ?index,
+      if(?value < 0 or hex-value(at(?source, ?start + ?index)) < 0, -1,
+        ?value * 16 + hex-value(at(?source, ?start + ?index)))))
+
+low-surrogate(?source: Sequence<Text>, ?high: F64, ?offset: F64): Decoded | Rejected
+  ?missing: "high surrogate is not followed by a low surrogate"
+  if(byte-length(join(?source, "")) < 12, {offset: ?offset, message: ?missing},
+    if(at(?source, 6) != "\\" or at(?source, 7) != "u", {offset: ?offset, message: ?missing},
+      paired(hex4(?source, 8), ?high, ?offset)))
+
+paired(?low: F64, ?high: F64, ?offset: F64): Decoded | Rejected
+  if(?low < 56320 or ?low > 57343,
+    {offset: ?offset + 8, message: "high surrogate is not followed by a low surrogate"},
+    {text: from-codepoint(65536 + (?high - 55296) * 1024 + ?low - 56320), end: ?offset + 12})
+
+escape-unit(?source: Sequence<Text>, ?unit: F64, ?offset: F64): Decoded | Rejected
+  if(?unit < 0, {offset: ?offset + 2, message: "invalid four-digit Unicode escape"},
+    if(?unit >= 55296 and ?unit <= 56319, low-surrogate(?source, ?unit, ?offset),
+      if(?unit >= 56320 and ?unit <= 57343, {offset: ?offset, message: "unpaired low surrogate"},
+        {text: from-codepoint(?unit), end: ?offset + 6})))
+
+export unicode-escape(?source: Text, ?offset: F64): Decoded | Rejected
+  ?characters: characters(?source)
+  require(starts-with(?source, "\\u"),
+    escape-unit(?characters, hex4(?characters, 2), ?offset), "expected Unicode escape")
+
+export after-prefix(?raw-prefix: Text, ?escape: Text): Decoded | Rejected
+  unicode-escape(?escape, byte-length(?raw-prefix))

@@ -366,6 +366,15 @@ argument or result, as a named shape's field contract, or inside
 unconstrained value type. See `clause:test-vectors/authoring/empty-record/` for
 native and target examples.
 
+`codepoint(text)` returns the F64 value of exactly one Unicode scalar.
+Empty or multiple-scalar Text rejects with `NumericDomain`.
+`from-codepoint(number)` constructs Text from a finite integral scalar between
+0 and 0x10ffff, excluding 0xd800 through 0xdfff; invalid scalar numbers reject
+with `NumericDomain`. Neither operation replaces, clamps, normalizes, or coerces
+its argument. Ill-formed JavaScript strings remain outside the Text boundary.
+See `clause:test-vectors/authoring/unicode-scalars/json-escape.clause` for
+source-owned surrogate-pair handling and exact UTF-8 byte offsets.
+
 `characters(text)` returns an ordered `Sequence<Text>` containing one Unicode
 scalar value per element, without normalization; empty Text yields an empty
 sequence. `split-text(text, delimiter)` splits at nonoverlapping literal

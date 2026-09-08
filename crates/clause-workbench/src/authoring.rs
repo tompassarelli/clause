@@ -28,6 +28,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/pure-callable.clause"),
     },
     AuthoringExampleV1 {
+        slug: "unicode-scalars",
+        title: "Checked Unicode scalar conversion",
+        summary: "codepoint(Text) accepts exactly one Unicode scalar and returns its F64 scalar value. from-codepoint(F64) accepts a finite integral scalar from 0 through 0x10ffff excluding surrogates and constructs Text. Invalid scalar arguments reject, without replacement or coercion. Source-owned JSON escape handling and byte-offset arithmetic can compose these operations.",
+        source: include_str!("../../../test-vectors/authoring/unicode-scalars/scalars.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "finite-iteration",
         title: "Finite integer ranges and checked indexing",
         summary: "range(end) constructs ordered F64 integers from zero up to the exclusive end. The end must be finite, nonnegative and integral; the portable sequence count limit rejects oversized allocation. at(sequence, index) preserves the exact element contract and rejects invalid or out-of-range indices. Arguments evaluate once in source order. Existing folds express dynamic padding and row-by-row title distance in this complete source.",

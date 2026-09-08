@@ -1,0 +1,8 @@
+export scalar(?value: Text): F64
+  codepoint(?value)
+
+export character(?value: F64): Text
+  from-codepoint(?value)
+
+export roundtrip(?value: Text): Text
+  from-codepoint(codepoint(?value))

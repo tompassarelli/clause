@@ -111,7 +111,7 @@ fn foreign_modules(expression: &CanonicalExecutableExpressionV1, modules: &mut B
         E::Record(fields) => { for value in fields.values() { foreign_modules(value, modules); } }
         E::TextSplit(a,b) | E::Dictionary(a,b) | E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::Apply(a,b) | E::SequenceAt(a,b) | E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
         E::Require(a,b,c) | E::Conditional(a,b,c) => { foreign_modules(a,modules); foreign_modules(b,modules); foreign_modules(c,modules); }
-        E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceSort(value) | E::SequenceRange(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
+        E::TextCodepoint(value) | E::TextFromCodepoint(value) | E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceSort(value) | E::SequenceRange(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
         _ => {}
     }
 }
@@ -270,6 +270,14 @@ impl Lowerer<'_> {
             E::TextCharacters(value) => {
                 let (value, _) = self.expression(value, Some(ValueType::Text))?;
                 (format!("Object.freeze(Array.from({value}))"), ValueType::Sequence(Box::new(ValueType::Text)))
+            }
+            E::TextCodepoint(value) => {
+                let (value, _) = self.expression(value, Some(ValueType::Text))?;
+                (format!("textCodepoint({value})"), ValueType::Number)
+            }
+            E::TextFromCodepoint(value) => {
+                let (value, _) = self.expression(value, Some(ValueType::Number))?;
+                (format!("textFromCodepoint({value})"), ValueType::Text)
             }
             E::TextTransform(operation, value) => {
                 let (value, _) = self.expression(value, Some(ValueType::Text))?;
@@ -948,6 +956,8 @@ function trimText(value){return value.replace(/^\p{White_Space}+|\p{White_Space}
 function firstWord(value){return value.match(/[^\p{White_Space}]+/u)?.[0]??'';}
 function remainingWords(value){value=value.replace(/^\p{White_Space}+/u,'');const end=value.search(/\p{White_Space}/u);return end<0?'':value.slice(end).replace(/^\p{White_Space}+/u,'');}
 function lowercaseText(value){return text(value.toLowerCase());}
+function textCodepoint(value){const point=value.codePointAt(0);if(point===undefined||point>=0xd800&&point<=0xdfff||value.length!==(point>0xffff?2:1))fail('NumericDomain');return point;}
+function textFromCodepoint(value){if(!Number.isFinite(value)||!Number.isInteger(value)||value<0||value>0x10ffff||value>=0xd800&&value<=0xdfff)fail('NumericDomain');return text(String.fromCodePoint(value));}
 function parseIntegerPrefix(value){const parsed=Number.parseInt(value,10);return Number.isFinite(parsed)?(parsed===0?0:parsed):value;}
 function drop(value,count){if(!Number.isFinite(count)||!Number.isInteger(count)||count<0)fail('NumericDomain');return Object.freeze(value.slice(count));}
 function integerRange(end){if(!Number.isFinite(end)||!Number.isInteger(end)||end<0)fail('NumericDomain');if(end>65535)fail('ResourceLimit');return Object.freeze(Array.from({length:end},(_,index)=>index));}
