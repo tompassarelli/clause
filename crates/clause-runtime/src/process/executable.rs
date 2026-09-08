@@ -7568,8 +7568,12 @@ impl<'a> Decoder<'a> {
                 Ok(ExecutableValueV1::Record(fields))
             }
             0 => {
-                let value = f64::from_bits(self.u64()?);
-                ExecutableValueV1::number(value)
+                let bits = self.u64()?;
+                if !f64::from_bits(bits).is_finite() {
+                    return Err(ExecutableErrorV1::NumericDomain);
+                }
+                // Decoding preserves finite recorded bits, including signed zero.
+                Ok(ExecutableValueV1::Number(bits))
             }
             1 => match self.byte()? {
                 0 => Ok(ExecutableValueV1::Boolean(false)),

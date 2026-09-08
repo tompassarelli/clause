@@ -9,6 +9,23 @@ const SOURCE: &[u8] = include_bytes!("../../../test-vectors/authoring/dynamic-te
 const CHILD_PATH: &str = "CLAUSE_CHECKPOINT_CHILD_PATH";
 
 #[test]
+fn checkpoint_preserves_admitted_negative_zero_bits() {
+    let source = include_bytes!("../../../test-vectors/authoring/optional-derived-formation.clause");
+    let mut w = ResidentSourceWorkbenchV1::open_continuous(source).unwrap();
+    let negative_zero = V::Number((-0.0_f64).to_bits());
+    let before = run(&mut w, b"vitality", &[negative_zero]);
+    assert_eq!(field(field(&before, b"first"), b"health").as_atom().unwrap().canonical_payload(), (-0.0_f64).to_bits().to_le_bytes());
+    let checkpoint = w.checkpoint_admitted().unwrap();
+    let mut reopened = ResidentSourceWorkbenchV1::reopen(source, &checkpoint).unwrap();
+    assert_eq!(reopened.project_current_world().unwrap(), before);
+    assert_eq!(reopened.checkpoint_admitted().unwrap(), checkpoint);
+    let after = run(&mut reopened, b"vitality", &[V::number(1.0).unwrap()]);
+    assert_ne!(after, before);
+    let next = reopened.checkpoint_admitted().unwrap();
+    assert_eq!(ResidentSourceWorkbenchV1::reopen(source, &next).unwrap().project_current_world().unwrap(), after);
+}
+
+#[test]
 fn scalar_edit_checkpoint_retains_state_layout() {
     let source = include_bytes!("../../../test-vectors/authoring/coherent-declarations.clause");
     let mut w = ResidentSourceWorkbenchV1::open_continuous(source).unwrap();
