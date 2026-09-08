@@ -74,13 +74,13 @@ impl CheckedCanonicalSourceAnalysisV1 {
                     for origin in &mut rule.law_origins { *origin = translate_origin(edit, *origin)?; }
                     for predicate in &mut rule.predicates { remap_predicate(edit, predicate)?; }
                     for state in rule.required_present.iter_mut().chain(&mut rule.required_absent).chain(&mut rule.removals) {
-                        *state = edit.state(state)?;
+                        edit.rebind_state(state)?;
                     }
                     rule.required_present.sort();
                     rule.required_absent.sort();
                     rule.removals.sort();
                     for assignment in &mut rule.assignments {
-                        assignment.target = edit.state(&assignment.target)?;
+                        edit.rebind_state(&mut assignment.target)?;
                         remap_expression(edit, &mut assignment.value)?;
                     }
                     if sorted_assignments { rule.assignments.sort_by(|a, b| a.target.cmp(&b.target)); }
@@ -128,7 +128,7 @@ fn remap_value(edit: &CanonicalSourceEditV1, value: &mut CanonicalScalarValueV1)
 fn remap_predicate(edit: &CanonicalSourceEditV1, predicate: &mut CanonicalExecutablePredicateV1) -> Result<(), CanonicalSourceErrorV1> {
     use CanonicalExecutablePredicateV1 as P;
     let (a, b) = match predicate {
-        P::RelationMatch(state, a, b) => { *state = edit.state(state)?; (a, b) }
+        P::RelationMatch(state, a, b) => { edit.rebind_state(state)?; (a, b) }
         P::Equal(a, b) | P::GreaterThan(a, b) | P::LessThanOrEqual(a, b) | P::Contains(a, b) => (a, b),
     };
     remap_expression(edit, a)?;
@@ -139,7 +139,7 @@ fn remap_expression(edit: &CanonicalSourceEditV1, expression: &mut CanonicalExec
     use CanonicalExecutableExpressionV1 as E;
     match expression {
         E::Constant(value) => remap_value(edit, value)?,
-        E::State(state) => *state = edit.state(state)?,
+        E::State(state) => edit.rebind_state(state)?,
         E::Argument(_) | E::Binding(_) => {}
         E::FreshReferent { domain, .. } => *domain = edit.formation(*domain)?,
         E::ReferentFacet { value, domain, members } => {

@@ -119,7 +119,7 @@ pub enum CanonicalAllocationJudgmentV1 {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CanonicalAllocatedIdentityV1 {
     Formation(FormationLocalId),
     Capability(CapabilityLocalId),

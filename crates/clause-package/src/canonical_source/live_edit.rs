@@ -29,9 +29,15 @@ pub struct CanonicalSourceEditV1 {
     source: CanonicalSourceCstV1,
     plan: CanonicalSourceAllocationPlanV1,
     retained: BTreeMap<CanonicalAllocatedIdentityV1, CanonicalAllocatedIdentityV1>,
+    retained_index: std::sync::OnceLock<std::collections::HashMap<CanonicalAllocatedIdentityV1, CanonicalAllocatedIdentityV1>>,
 }
 
 impl CanonicalSourceEditV1 {
+    fn retained_identity(&self, old: CanonicalAllocatedIdentityV1) -> Option<CanonicalAllocatedIdentityV1> {
+        self.retained_index.get_or_init(|| self.retained.iter().map(|(old, new)| (*old, *new)).collect())
+            .get(&old).copied()
+    }
+
     pub fn source(&self) -> &CanonicalSourceCstV1 {
         &self.source
     }
@@ -49,11 +55,8 @@ impl CanonicalSourceEditV1 {
         &self,
         old: FormationLocalId,
     ) -> Result<FormationLocalId, CanonicalSourceErrorV1> {
-        match self
-            .retained
-            .get(&CanonicalAllocatedIdentityV1::Formation(old))
-        {
-            Some(CanonicalAllocatedIdentityV1::Formation(new)) => Ok(*new),
+        match self.retained_identity(CanonicalAllocatedIdentityV1::Formation(old)) {
+            Some(CanonicalAllocatedIdentityV1::Formation(new)) => Ok(new),
             _ => Err(CanonicalSourceErrorV1::RecordedPlanMismatch),
         }
     }
@@ -72,31 +75,39 @@ impl CanonicalSourceEditV1 {
         &self,
         old: &CanonicalStateRefV1,
     ) -> Result<CanonicalStateRefV1, CanonicalSourceErrorV1> {
-        let role = |old| match self.retained.get(&CanonicalAllocatedIdentityV1::Role(old)) {
-            Some(CanonicalAllocatedIdentityV1::Role(new)) => Ok(*new),
-            _ => Err(CanonicalSourceErrorV1::RecordedPlanMismatch),
-        };
-        let relation = match self
-            .retained
-            .get(&CanonicalAllocatedIdentityV1::RelationSchema(old.relation))
-        {
-            Some(CanonicalAllocatedIdentityV1::RelationSchema(new)) => *new,
-            _ => return Err(CanonicalSourceErrorV1::RecordedPlanMismatch),
-        };
         let mut new = old.clone();
-        new.assertion = self.formation(old.assertion)?;
-        new.relation = relation;
-        new.subject_role = role(old.subject_role)?;
-        new.value_role = role(old.value_role)?;
-        new.subject_identity = old
-            .subject_identity
-            .map(|value| self.referent(value))
-            .transpose()?;
-        if let CanonicalStatePathV1::Field { formation, .. } = &mut new.path {
-            *formation = self.formation(*formation)?;
-        }
+        self.rebind_state(&mut new)?;
         Ok(new)
     }
+
+    pub(super) fn rebind_state(&self, state: &mut CanonicalStateRefV1) -> Result<(), CanonicalSourceErrorV1> {
+        let role = |old| match self.retained_identity(CanonicalAllocatedIdentityV1::Role(old)) {
+            Some(CanonicalAllocatedIdentityV1::Role(new)) => Ok(new),
+            _ => Err(CanonicalSourceErrorV1::RecordedPlanMismatch),
+        };
+        let relation = match self.retained_identity(CanonicalAllocatedIdentityV1::RelationSchema(state.relation)) {
+            Some(CanonicalAllocatedIdentityV1::RelationSchema(new)) => new,
+            _ => return Err(CanonicalSourceErrorV1::RecordedPlanMismatch),
+        };
+        let assertion = self.formation(state.assertion)?;
+        let subject_role = role(state.subject_role)?;
+        let value_role = role(state.value_role)?;
+        let subject_identity = state.subject_identity.map(|value| self.referent(value)).transpose()?;
+        let field = match &state.path {
+            CanonicalStatePathV1::Field { formation, .. } => Some(self.formation(*formation)?),
+            _ => None,
+        };
+        state.assertion = assertion;
+        state.relation = relation;
+        state.subject_role = subject_role;
+        state.value_role = value_role;
+        state.subject_identity = subject_identity;
+        if let (CanonicalStatePathV1::Field { formation, .. }, Some(new)) = (&mut state.path, field) {
+            *formation = new;
+        }
+        Ok(())
+    }
+
 }
 
 pub fn canonical_scalar_effects_v1(
@@ -378,6 +389,7 @@ pub(super) fn replace_bound_scalar_effect(
         source,
         plan,
         retained,
+        retained_index: std::sync::OnceLock::new(),
     })
 }
 
@@ -603,5 +615,6 @@ pub fn replace_canonical_source_items_v1(
         source,
         plan,
         retained,
+        retained_index: std::sync::OnceLock::new(),
     })
 }
