@@ -50,6 +50,10 @@ impl RetiredPersistentProcessRuntimeV1 {
 }
 
 impl PersistentProcessSessionV1 {
+    pub(crate) fn source_continuity(&self) -> Result<&super::ExecutableSourceContinuityV1, PersistentProcessSessionErrorV1> {
+        Ok(self.runtime()?.source_continuity()?)
+    }
+
     pub fn source_continuity_term(&self) -> Result<clause_package::Term, PersistentProcessSessionErrorV1> {
         Ok(self.runtime()?.source_continuity_term()?)
     }

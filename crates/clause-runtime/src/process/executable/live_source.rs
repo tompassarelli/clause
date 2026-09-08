@@ -1021,13 +1021,13 @@ fn migrate_value(
 }
 
 impl ExecutableProcessRuntimeV1 {
+    pub(crate) fn source_continuity(&self) -> Result<&ExecutableSourceContinuityV1, ExecutableErrorV1> {
+        self.source_continuity.as_ref().ok_or(ExecutableErrorV1::SourceContinuityRejected(
+            "no explicit source transition"))
+    }
+
     pub fn source_continuity_term(&self) -> Result<Term, ExecutableErrorV1> {
-        let continuity =
-            self.source_continuity
-                .as_ref()
-                .ok_or(ExecutableErrorV1::SourceContinuityRejected(
-                    "no explicit source transition",
-                ))?;
+        let continuity = self.source_continuity()?;
         let scope = TermScope {
             universe: self.carrier.carrier().constitution().universe(),
             semantics: self.carrier.carrier().constitution().semantics(),

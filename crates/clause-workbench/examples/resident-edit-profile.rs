@@ -26,6 +26,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::fs::write(directory.join(format!("{}.cwr1", index + 1)), &workbench.generation().cwr1)?;
             std::fs::write(directory.join(format!("{}.cws1", index + 1)), session_open(&workbench.generation().cwr1)?)?;
             std::fs::write(directory.join(format!("{}.cet1", index + 1)), workbench.last_source_edit().ok_or("checked edit omitted witness")?)?;
+            std::fs::write(directory.join(format!("{}.csc1", index + 1)), workbench.source_continuity_bytes()?)?;
+            std::fs::write(directory.join(format!("{}.continuity-term", index + 1)), clause_package::canonical_term_bytes(&workbench.source_continuity()?)?)?;
         }
         println!("{}", report.to_json());
     }

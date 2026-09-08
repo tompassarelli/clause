@@ -50,7 +50,10 @@ fn independently_prepared_boundary_preserves_custody_and_rejects_stale_source() 
         let next = consumer.scalar_edit(current.handle, 0, witness).unwrap();
         assert_eq!(consumer.prepare_source(current.handle, 0, &capsule), Err(WasmProcessStatusV1::StaleSessionHandle));
         assert!(consumer.prepare_source(next.handle, 0, &capsule).is_err());
-        assert!(consumer.source_continuity_bytes(next.handle).is_ok());
+        let compact = consumer.source_continuity_bytes(next.handle).unwrap();
+        let diagnostic = consumer.source_continuity_term(next.handle).unwrap();
+        assert_complete_continuity_projection(&compact, &diagnostic);
+        assert_eq!(consumer.source_continuity_bytes(current.handle), Err(WasmProcessStatusV1::StaleSessionHandle));
         while consumer.reclaim_retired() {}
         current = next;
     }
@@ -83,4 +86,60 @@ fn native_prepared_token_rejects_changed_custody_and_other_boundary() {
             source: ExecutableInputSourceV1::Keyboard { code: b"BeginEncounter".to_vec(), phase: ExecutableKeyPhaseV1::Down }, value: None }) }).unwrap();
     a.command(&command).unwrap();
     assert_eq!(a.commit_scalar_edit(prepared).unwrap_err(), WasmProcessStatusV1::SequenceRejected);
+}
+
+fn assert_complete_continuity_projection(bytes: &[u8], diagnostic: &clause_package::Term) {
+    use clause_package::Term;
+    use std::collections::BTreeMap;
+    fn fields(term: &Term) -> BTreeMap<&[u8], &Term> {
+        let mut result = BTreeMap::new();
+        let mut current = term;
+        while let Some(triple) = current.as_triple() {
+            let [key, value, rest] = triple.slots();
+            assert!(result.insert(key.as_atom().unwrap().canonical_payload(), value).is_none());
+            current = rest;
+        }
+        result
+    }
+    fn index(term: &Term) -> BTreeMap<u32, &Term> {
+        let coordinate = |key| std::str::from_utf8(key).unwrap().parse::<u32>().unwrap();
+        fields(term).into_iter().flat_map(|(page, values)| {
+            fields(values).into_iter().map(move |(key, value)| (coordinate(page) * 64 + coordinate(key), value))
+        }).collect()
+    }
+    fn number(term: &Term) -> f64 {
+        f64::from_le_bytes(term.as_atom().unwrap().canonical_payload().try_into().unwrap())
+    }
+    fn hex(bytes: &[u8]) -> Vec<u8> {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect::<String>().into_bytes()
+    }
+    let u32_at = |offset| u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
+    let u16_at = |offset| u16::from_le_bytes(bytes[offset..offset + 2].try_into().unwrap());
+    assert_eq!(&bytes[..4], b"CSC1");
+    let root = fields(diagnostic);
+    assert_eq!(root.len(), 4);
+    assert_eq!(root[b"old-snapshot".as_slice()].as_atom().unwrap().canonical_payload(), hex(&bytes[4..36]));
+    assert_eq!(root[b"new-snapshot".as_slice()].as_atom().unwrap().canonical_payload(), hex(&bytes[36..68]));
+    let occurrences = u32_at(68) as usize;
+    let slots = u32_at(72) as usize;
+    assert_eq!(bytes.len(), 76 + occurrences * 76 + slots * 4);
+    let formations = index(root[b"formations".as_slice()]);
+    assert_eq!(formations.len(), occurrences);
+    for i in 0..occurrences {
+        let offset = 76 + i * 76;
+        let fields = fields(formations[&(i as u32)]);
+        assert_eq!(fields.len(), 5);
+        assert_eq!(number(fields[b"old".as_slice()]), f64::from(u32_at(offset)));
+        assert_eq!(number(fields[b"new".as_slice()]), f64::from(u32_at(offset + 4)));
+        assert_eq!(fields[b"occurrence-snapshot".as_slice()].as_atom().unwrap().canonical_payload(), hex(&bytes[offset + 8..offset + 40]));
+        assert_eq!(number(fields[b"occurrence-coordinate".as_slice()]), f64::from(u32_at(offset + 40)));
+        assert_eq!(fields[b"occurrence".as_slice()].as_atom().unwrap().canonical_payload(), hex(&bytes[offset + 44..offset + 76]));
+    }
+    let expected_slots = index(root[b"slots".as_slice()]);
+    let actual_slots = (0..slots).map(|i| {
+        let offset = 76 + occurrences * 76 + i * 4;
+        (u32::from(u16_at(offset)), f64::from(u16_at(offset + 2)))
+    }).collect::<BTreeMap<_, _>>();
+    assert_eq!(actual_slots.len(), slots);
+    assert_eq!(expected_slots.into_iter().map(|(slot, value)| (slot, number(value))).collect::<BTreeMap<_, _>>(), actual_slots);
 }

@@ -3,6 +3,7 @@
 use clause_package::*;
 
 mod checkpoint;
+mod source_continuity;
 pub use checkpoint::{wasm_session_checkpoint_context_v1, wasm_session_checkpoint_open_v1};
 
 use super::wasm_boundary::{
@@ -387,10 +388,9 @@ impl WasmPersistentSessionBoundaryV1 {
     }
 
     pub fn source_continuity_bytes(&self, handle: WasmSessionHandleV1) -> Result<Vec<u8>, WasmProcessStatusV1> {
-        diagnostic_bytes_with_limit(
-            self.source_continuity_term(handle)?,
-            WASM_SOURCE_CONTINUITY_LIMIT_V1,
-        )
+        let continuity = self.captured_session(handle)?.source_continuity()
+            .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        source_continuity::encode(continuity, WASM_SOURCE_CONTINUITY_LIMIT_V1)
     }
 
     pub fn intervention_bytes(&self, handle: WasmSessionHandleV1, request: &[u8]) -> Result<Vec<u8>, WasmProcessStatusV1> {
@@ -2260,36 +2260,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn source_continuity_aggregate_accepts_exact_limit_and_rejects_limit_plus_one() {
-        let scope = TermScope {
-            universe: UniverseId::from_bytes([1; 32]),
-            semantics: ClauseSemanticsId::from_bytes([2; 32]),
-        };
-        let term = |payload| {
-            Term::atom(
-                scope,
-                b"continuity".to_vec(),
-                vec![0; payload],
-                EqualityContract::ExactOctetsV1,
-            )
-            .unwrap()
-        };
-        let fixed = canonical_term_bytes(&term(0)).unwrap().len();
-        let exact = diagnostic_bytes_with_limit(
-            term(WASM_SOURCE_CONTINUITY_LIMIT_V1 - fixed),
-            WASM_SOURCE_CONTINUITY_LIMIT_V1,
-        )
-        .unwrap();
-        assert_eq!(exact.len(), WASM_SOURCE_CONTINUITY_LIMIT_V1);
-        assert_eq!(
-            diagnostic_bytes_with_limit(
-                term(WASM_SOURCE_CONTINUITY_LIMIT_V1 - fixed + 1),
-                WASM_SOURCE_CONTINUITY_LIMIT_V1,
-            ),
-            Err(WasmProcessStatusV1::ResponseOutOfBounds),
-        );
-    }
+
 }
 
 #[cfg(target_arch = "wasm32")]

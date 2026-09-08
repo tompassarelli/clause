@@ -446,6 +446,11 @@ impl ResidentSourceWorkbenchV1 {
     /// captured live Wasm generation. It contains no native runtime state.
     pub fn last_source_edit(&self) -> Option<&[u8]> { self.last_source_edit.as_deref() }
 
+    /// Compact passive view of the same complete source-continuity diagnostic.
+    pub fn source_continuity_bytes(&self) -> Result<Vec<u8>, ResidentSourceWorkbenchErrorV1> {
+        Ok(self.boundary.source_continuity_bytes(self.generation.handle)?)
+    }
+
     pub fn source_continuity(&self) -> Result<clause_package::Term, ResidentSourceWorkbenchErrorV1> {
         Ok(self.boundary.source_continuity_term(self.generation.handle)?)
     }
