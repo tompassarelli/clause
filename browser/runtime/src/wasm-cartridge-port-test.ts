@@ -246,6 +246,47 @@ test.test("cartridge byte custody survives mutation of the producer's array", ()
   expect(actual).toHaveLength(1);
 });
 
+test.test("source continuity decodes the complete CSC1 map with exact identities and bounds", () => {
+  const bytes = [67, 83, 67, 49, ...identity(1), ...identity(2)];
+  append_u32_bang(bytes, 2); append_u32_bang(bytes, 2);
+  for (const [old, next, first, occurrence] of [[0xffffffff, 19, 23, 3], [17, 0, 0xffffffff, 4]]) {
+    append_u32_bang(bytes, old); append_u32_bang(bytes, next);
+    bytes.push(...identity(5)); append_u32_bang(bytes, first); bytes.push(...identity(occurrence));
+  }
+  bytes.push(0, 0, 255, 255, 255, 255, 0, 0);
+  let current = new Uint8Array(bytes);
+  const module = { ...module_for_bang([opened_event_bang()], []),
+    clause_session_v1_project_bulk: () => new Uint8Array(),
+    clause_session_v1_explain_bulk: () => new Uint8Array(),
+    clause_session_v1_intervene_bulk: () => new Uint8Array(),
+    clause_session_v1_source_continuity_bulk: () => current,
+  };
+  const port = wasm["create-wasm-cartridge-port"](module, policy());
+  const started = startSession(port, acceptPackage(port, wasm["->ExactProcessRequest"](minimal_cwr1_bang())).acceptedPackage);
+  const hex = (tag: number) => identity(tag).map(byte => byte.toString(16).padStart(2, "0")).join("");
+  const expected = { "old-snapshot": hex(1), "new-snapshot": hex(2),
+    formations: { "0": {
+      "0": { old: 0xffffffff, new: 19, "occurrence-snapshot": hex(5), "occurrence-coordinate": 23, occurrence: hex(3) },
+      "1": { old: 17, new: 0, "occurrence-snapshot": hex(5), "occurrence-coordinate": 0xffffffff, occurrence: hex(4) },
+    } }, slots: { "0": { "0": 65535 }, "1023": { "63": 0 } },
+  };
+  const actual = wasm.sourceContinuity(module, started.session);
+  expect(actual).toEqual(expected);
+  expect(Object.isFrozen(actual)).toBe(true);
+  current.fill(0);
+  expect(actual).toEqual(expected);
+  for (const malformed of [bytes.slice(0, 75), bytes.slice(0, -1), [...bytes, 0],
+    [0, ...bytes.slice(1)], [...bytes.slice(0, 68), 255, 255, 255, 255, ...bytes.slice(72)],
+    [...bytes.slice(0, -4), 0, 0, 1, 0]]) {
+    current = new Uint8Array(malformed);
+    expect(() => wasm.sourceContinuity(module, started.session)).toThrow();
+  }
+  current = new Uint8Array([...bytes.slice(0, 68), 0, 0, 0, 0, 0, 0, 0, 0]);
+  expect(wasm.sourceContinuity(module, started.session)).toEqual({
+    "old-snapshot": hex(1), "new-snapshot": hex(2), formations: {}, slots: {},
+  });
+});
+
 test.test("cartridge byte custody rejects malformed octets and skipped-blob bounds", () => {
   const port = wasm["create-wasm-cartridge-port"](module_for_bang([], []), policy());
   const invalid: number[][] = [];

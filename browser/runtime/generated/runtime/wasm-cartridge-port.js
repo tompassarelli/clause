@@ -2091,7 +2091,57 @@ export function explainSession(module, incomingSession, entry) {
 export function sourceContinuity(module, incomingSession) {
     const session = require_live_session(incomingSession);
     const bytes = diagnosticModule(module).clause_session_v1_source_continuity_bulk(session.handle.slot, session.handle.generation);
-    return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), source_continuity_max_bytes);
+    if (bytes.length < 76 || bytes.length > source_continuity_max_bytes ||
+        bytes[0] !== 67 || bytes[1] !== 83 || bytes[2] !== 67 || bytes[3] !== 49) {
+        throw new Error("source continuity has an invalid CSC1 envelope");
+    }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const occurrenceCount = view.getUint32(68, true);
+    const slotCount = view.getUint32(72, true);
+    if (76 + occurrenceCount * 76 + slotCount * 4 !== bytes.length) {
+        throw new Error("source continuity has an invalid CSC1 length");
+    }
+    const hex = (start) => {
+        let value = "";
+        for (let index = start; index < start + 32; index++)
+            value += bytes[index].toString(16).padStart(2, "0");
+        return value;
+    };
+    const formations = [];
+    let offset = 76;
+    for (let index = 0; index < occurrenceCount; index++, offset += 76) {
+        formations.push([String(index), Object.freeze({
+                old: view.getUint32(offset, true), new: view.getUint32(offset + 4, true),
+                "occurrence-snapshot": hex(offset + 8),
+                "occurrence-coordinate": view.getUint32(offset + 40, true),
+                occurrence: hex(offset + 44),
+            })]);
+    }
+    const slots = [];
+    const seenSlots = new Set();
+    for (let index = 0; index < slotCount; index++, offset += 4) {
+        const old = view.getUint16(offset, true);
+        if (seenSlots.has(old))
+            throw new Error("source continuity duplicates a slot");
+        seenSlots.add(old);
+        slots.push([String(old), view.getUint16(offset + 2, true)]);
+    }
+    const paged = (entries) => {
+        const pages = new Map();
+        for (const [key, value] of entries) {
+            const index = Number(key), page = Math.floor(index / 64);
+            let fields = pages.get(page);
+            if (fields === undefined) {
+                fields = [];
+                pages.set(page, fields);
+            }
+            fields.push([String(index % 64), value]);
+        }
+        return Object.freeze(Object.fromEntries([...pages].map(([page, fields]) => [String(page), Object.freeze(Object.fromEntries(fields))])));
+    };
+    return Object.freeze({ "old-snapshot": hex(4), "new-snapshot": hex(36),
+        formations: paged(formations), slots: paged(slots),
+    });
 }
 /** Read-only opaque CIQ1/CIQ2 request: all search and semantic evaluation occurs
  * inside the live Wasm runtime against a retained actual event. */
