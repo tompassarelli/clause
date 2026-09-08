@@ -438,6 +438,25 @@ reject. Each imported definition retains its own source origin and uses the
 same exact type and foreign binding checks as a local declaration. The complete
 two-consumer example is in `clause:test-vectors/authoring/shared-foreign/`.
 
+A `Dictionary<Value>` is a finite collection keyed by Text, with one exact
+value contract shared by every entry. `dictionary(key, value)` constructs a
+singleton dictionary; its value contract is inferred recursively or checked
+against the expected dictionary contract. Keys are ordinary data, including
+empty text and punctuation. A dictionary does not establish any statically
+known field and cannot be projected with `field-at` or field syntax. Immediate
+dictionaries use the same finite keyed representation as records; alternative
+contracts reject when their accepted representations overlap.
+
+A delayed Text key constructs a delayed dictionary in that same target. All
+nested delayed values must belong to that target; construction incorporates
+their exact contracts into the dictionary's element contract. For example,
+`dictionary(username(), {enabled: true})` with a
+`Delayed<nix,Text>` username has contract
+`Delayed<nix,Dictionary<Settings>>`, where `Settings` has the exact
+`enabled: Bool` field. Nix construction preserves the key expression until Nix
+evaluation. The complete consumers are in
+`clause:test-vectors/authoring/dynamic-user-modules/`.
+
 A static field path fixes a nonempty sequence of field designations:
 
 ```clause

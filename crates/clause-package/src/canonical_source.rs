@@ -355,6 +355,7 @@ pub enum CanonicalExecutableExpressionV1 {
     SequenceAppend(Box<Self>, Box<Self>),
     SequenceSort(Box<Self>),
     EmptySequence(CanonicalValueTypeV1),
+    Dictionary(Box<Self>, Box<Self>),
     Record(BTreeMap<Vec<u8>, Self>),
     Field(Box<Self>, Vec<u8>),
     Require(Box<Self>, Box<Self>, Box<Self>),
@@ -554,6 +555,7 @@ pub enum CanonicalScalarExpressionV1 {
     /// Static field segments; consumed by checking, never a runtime Text value.
     StaticFieldPath(Vec<Vec<u8>>),
     RecordAt(Box<Self>, Box<Self>),
+    Dictionary(Box<Self>, Box<Self>),
     FieldAt(Box<Self>, Box<Self>),
     Sequence(Vec<Self>),
     SequenceDrop(Box<Self>, Box<Self>),
@@ -4653,6 +4655,7 @@ fn canonical_scalar_executable_expression(
         | CanonicalScalarExpressionV1::Record(_)
         | CanonicalScalarExpressionV1::Field(_, _)
         | CanonicalScalarExpressionV1::StaticFieldPath(_)
+        | CanonicalScalarExpressionV1::Dictionary(_, _)
         | CanonicalScalarExpressionV1::RecordAt(_, _)
         | CanonicalScalarExpressionV1::FieldAt(_, _)
         | CanonicalScalarExpressionV1::Require(_, _, _) => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
@@ -5055,6 +5058,7 @@ fn relational_scalar_expression(
         | CanonicalScalarExpressionV1::Record(_)
         | CanonicalScalarExpressionV1::Field(_, _)
         | CanonicalScalarExpressionV1::StaticFieldPath(_)
+        | CanonicalScalarExpressionV1::Dictionary(_, _)
         | CanonicalScalarExpressionV1::RecordAt(_, _)
         | CanonicalScalarExpressionV1::FieldAt(_, _)
         | CanonicalScalarExpressionV1::Require(_, _, _) => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
@@ -9346,7 +9350,7 @@ impl ScalarExpressionParser<'_> {
             self.skip_spaces(); self.take_exact(b")").then_some(())?;
             return Some(E::SequenceCount(Box::new(value)));
         }
-        for builtin in [b"drop(".as_slice(), b"require(", b"join(", b"append(", b"record-at(", b"field-at("] {
+        for builtin in [b"drop(".as_slice(), b"require(", b"join(", b"append(", b"dictionary(", b"record-at(", b"field-at("] {
             if self.take_exact(builtin) {
                 let a = Box::new(self.disjunction()?);
                 self.skip_spaces(); self.take_exact(b",").then_some(())?;
@@ -9355,6 +9359,7 @@ impl ScalarExpressionParser<'_> {
                     b"drop(" => E::SequenceDrop(a, b),
                     b"append(" => E::SequenceAppend(a, b),
                     b"join(" => E::SequenceJoin(a, b),
+                    b"dictionary(" => E::Dictionary(a, b),
                     b"record-at(" => E::RecordAt(a, b),
                     b"field-at(" => E::FieldAt(a, b),
                     _ => {
@@ -9588,6 +9593,7 @@ fn collect_scalar_expression_parameters(
         }
         CanonicalScalarExpressionV1::SequenceSort(value) => collect_scalar_expression_parameters(value, parameters),
         CanonicalScalarExpressionV1::SequenceAppend(a,b)
+        | CanonicalScalarExpressionV1::Dictionary(a,b)
         | CanonicalScalarExpressionV1::RecordAt(a,b)
         | CanonicalScalarExpressionV1::FieldAt(a,b) => {
             collect_scalar_expression_parameters(a, parameters); collect_scalar_expression_parameters(b, parameters);
@@ -11120,6 +11126,7 @@ fn scalar_expression_matches_kind(
         | CanonicalScalarExpressionV1::Record(_)
         | CanonicalScalarExpressionV1::Field(_, _)
         | CanonicalScalarExpressionV1::StaticFieldPath(_)
+        | CanonicalScalarExpressionV1::Dictionary(_, _)
         | CanonicalScalarExpressionV1::RecordAt(_, _)
         | CanonicalScalarExpressionV1::FieldAt(_, _)
         | CanonicalScalarExpressionV1::Require(_, _, _) => false,

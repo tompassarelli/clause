@@ -61,7 +61,7 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
             E::Sequence(values) => { for value in values { check(value,bound,false,depth+1,query_inputs)?; } }
             E::Record(fields) => { for value in fields.values() { check(value,bound,false,depth+1,query_inputs)?; } }
             E::SequenceSort(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) => check(value,bound,false,depth+1,query_inputs)?,
-            E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::SequenceDrop(a,b) => { check(a,bound,false,depth+1,query_inputs)?; check(b,bound,false,depth+1,query_inputs)?; }
+            E::Dictionary(a,b) | E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::SequenceDrop(a,b) => { check(a,bound,false,depth+1,query_inputs)?; check(b,bound,false,depth+1,query_inputs)?; }
             E::Require(a,b,c) => { for value in [a,b,c] { check(value,bound,false,depth+1,query_inputs)?; } }
             E::SequenceFold { accumulator, item, source, initial, body } => {
                 if pattern { return Err(ExecutableErrorV1::MalformedProgram); }

@@ -1096,7 +1096,7 @@ fn rebind_lowered_expression(value: &mut ExecutableExpressionV1, edit: &Canonica
             rebind_lowered_expression(body, edit)?;
         },
         E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => rebind_lowered_expression(value, edit)?,
-        E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::SequenceAppend(a, b) => {
+        E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::Dictionary(a, b) | E::SequenceAppend(a, b) => {
             rebind_lowered_expression(a, edit)?; rebind_lowered_expression(b, edit)?;
         },
         E::Require(a, b, c) => {
