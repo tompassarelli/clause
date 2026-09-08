@@ -74,13 +74,14 @@ fn construct(e: &E, bindings: &BTreeMap<u16, NixExpr>, roots: &mut BTreeSet<Stri
                 return Err("foreign construction target mismatch".into());
             }
             if !identifier(&binding.module) { return Err("Nix foreign root must be an identifier".into()); }
-            let path = binding.member.split('.').map(str::to_owned).collect::<Vec<_>>();
+            let path = if binding.operation == CanonicalForeignOperationV1::Root { Vec::new() }
+                else { binding.member.split('.').map(str::to_owned).collect::<Vec<_>>() };
             if path.iter().any(String::is_empty) { return Err("Nix foreign member path is empty".into()); }
             roots.insert(binding.module.clone());
             let reference = NixExpr::Reference { root: binding.module.clone(), path };
             let values = arguments.iter().map(|v| construct(v, bindings, roots, depth + 1)).collect::<Result<Vec<_>,_>>()?;
             match binding.operation {
-                CanonicalForeignOperationV1::Get => reference,
+                CanonicalForeignOperationV1::Get | CanonicalForeignOperationV1::Root => reference,
                 CanonicalForeignOperationV1::Call => NixExpr::Apply(Box::new(reference), values),
             }
         }
@@ -156,6 +157,7 @@ fn render(e: &NixExpr, roots: &BTreeSet<String>) -> Result<String, String> {
         NixExpr::Sequence(values) => format!("[ {} ]", values.iter().map(|v| render(v).map(|v| format!("({v})"))).collect::<Result<Vec<_>,_>>()?.join(" ")),
         NixExpr::Dictionary(key, value) => format!("{{ ${{{}}} = {}; }}", render(key)?, render(value)?),
         NixExpr::Record(fields) => format!("{{ {} }}", fields.iter().map(|(k,v)| Ok(format!("{} = {};", quote(std::str::from_utf8(k).map_err(|_| "non-UTF8 field")?), render(v)?))).collect::<Result<Vec<_>,String>>()?.join(" ")),
+        NixExpr::Reference { root, path } if path.is_empty() => root.clone(),
         NixExpr::Reference { root, path } => format!("{root}.{}", path.iter().map(|p| quote(p)).collect::<Vec<_>>().join(".")),
         NixExpr::Apply(function, arguments) => format!("({} {})", render(function)?, arguments.iter().map(|v| render(v).map(|v| format!("({v})"))).collect::<Result<Vec<_>,_>>()?.join(" ")),
     })

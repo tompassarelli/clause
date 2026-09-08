@@ -23,6 +23,8 @@ pub enum CanonicalForeignOperationV1 {
     /// Invoke the exported function without a receiver.
     Call,
     Get,
+    /// Refer to the external root itself, without selecting a member.
+    Root,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -35,13 +37,18 @@ impl CanonicalForeignBindingV1 {
     /// this exact member and validates its typed crossing.
     pub fn check(&self) -> Result<(), &'static str> {
         if self.module.is_empty()
-            || self.member.is_empty()
+            || (self.member.is_empty() && self.operation != CanonicalForeignOperationV1::Root)
             || self.module.contains('\0')
             || self.member.contains('\0')
         {
             return Err("foreign module and member must be nonempty identifiers");
         }
-        if self.operation == CanonicalForeignOperationV1::Get && !self.arguments.is_empty() {
+        if self.operation == CanonicalForeignOperationV1::Root {
+            if !self.member.is_empty() || !matches!(self.evaluation, CanonicalForeignEvaluationV1::Construct { .. }) {
+                return Err("foreign root access requires delayed construction and no member");
+            }
+        }
+        if self.operation != CanonicalForeignOperationV1::Call && !self.arguments.is_empty() {
             return Err("foreign property access takes no arguments");
         }
         for kind in self.arguments.iter().chain(std::iter::once(&self.result)) {
@@ -89,6 +96,9 @@ pub(super) fn read_abi(
         let (key, value) = line.text.trim().split_once(": ")?;
         match key {
             "construction" if construction.is_none() => construction = Some(parse_text_literal(value)?),
+            "get" if value == "root" && member.is_none() => {
+                member = Some((CanonicalForeignOperationV1::Root, MemberCst::Exact(String::new())));
+            }
             "get" | "call" if member.is_none() => {
                 member = Some((
                     if key == "get" {

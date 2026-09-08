@@ -52,6 +52,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/foreign-construction-inferred.clause"),
     },
     AuthoringExampleV1 {
+        slug: "foreign-root",
+        title: "Typed external root values",
+        summary: "A delayed foreign declaration uses bare `get: root` to reference its external root directly, with no arguments or member selection. The declared result remains the eventual value contract. Quoted `get: \"root\"` selects an ordinary member named root. Nix retains the actual external value and its target interpolation semantics; native and JavaScript execution reject delayed construction.",
+        source: include_str!("../../../test-vectors/authoring/foreign-root/root.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "foreign-cli",
         title: "Ordered arguments and typed foreign procedures",
         summary: "Sequences preserve order and repeated values; named record contracts check each field. Pure dispatch composes a typed message and status. Explicit foreign declarations identify the actual module/member, input/output types and throwing failure contract; procedures permit those accesses. Native invocation without a foreign binding rejects. This executable comparison covers only the existing firn module-add missing-name branch.",
