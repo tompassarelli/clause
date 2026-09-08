@@ -9,6 +9,7 @@ pub struct CheckedCanonicalSourceAnalysisV1 {
     context: CanonicalSourceContextV1,
     package: CanonicalSourcePackageSliceV1,
     scalar_effects: std::sync::OnceLock<Vec<CanonicalScalarEffectV1>>,
+    retained_rules: Option<(ProgramChangeOccurrenceId, BTreeMap<(FormationLocalId, usize), (FormationLocalId, usize)>)>,
 }
 
 pub(super) struct RetainedSourceDerivations<'a> {
@@ -21,7 +22,7 @@ impl CheckedCanonicalSourceAnalysisV1 {
     pub fn new(source: CanonicalSourceCstV1, plan: CanonicalSourceAllocationPlanV1, context: CanonicalSourceContextV1) -> Result<Self, CanonicalSourceErrorV1> {
         rematerialize_canonical_source_allocation_plan_v1(&source, &plan)?;
         let package = elaborate_canonical_source_package_v1(&source, context, &plan)?;
-        Ok(Self { source, plan, context, package, scalar_effects: std::sync::OnceLock::new() })
+        Ok(Self { source, plan, context, package, scalar_effects: std::sync::OnceLock::new(), retained_rules: None })
     }
     pub fn source(&self) -> &CanonicalSourceCstV1 { &self.source }
     pub fn plan(&self) -> &CanonicalSourceAllocationPlanV1 { &self.plan }
@@ -49,10 +50,18 @@ impl CheckedCanonicalSourceAnalysisV1 {
         live_edit::replace_bound_scalar_effect(&self.source, &self.plan, selected, replacement, new_root)
     }
 
+    /// Checked correspondence for unchanged rules from the preceding source.
+    /// Rebinding can reorder rules, so ordinals alone do not identify them.
+    pub fn retained_rule(&self, old_root: ProgramChangeOccurrenceId, handler: FormationLocalId, rule: usize) -> Option<(FormationLocalId, usize)> {
+        let (root, rules) = self.retained_rules.as_ref()?;
+        (*root == old_root).then(|| rules.get(&(handler, rule)).copied()).flatten()
+    }
+
     pub fn advance(&self, edit: &CanonicalSourceEditV1) -> Result<Self, CanonicalSourceErrorV1> {
         if edit.old_artifact != self.source.artifact() || edit.old_root != self.plan.root() {
             return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
         }
+        let mut retained_rules = BTreeMap::new();
         let package = if let Some((changed, _, _, _)) = edit.scalar_change {
             let selected = BTreeSet::from([edit.formation(changed)?]);
             let scalar_handlers = self.source.items.iter().filter_map(|item| match &item.kind {
@@ -68,6 +77,7 @@ impl CheckedCanonicalSourceAnalysisV1 {
                 if handler.id == changed { continue; }
                 let scalar = scalar_handlers.contains(&handler.id);
                 let sorted_assignments = scalar || relational_handlers.contains(&handler.id);
+                let old_handler = handler.id;
                 let mut handler = handler.clone();
                 handler.id = edit.formation(handler.id)?;
                 for rule in &mut handler.rules {
@@ -85,7 +95,12 @@ impl CheckedCanonicalSourceAnalysisV1 {
                     }
                     if sorted_assignments { rule.assignments.sort_by(|a, b| a.target.cmp(&b.target)); }
                 }
-                if scalar { handler.rules.sort_by(|a, b| a.assignments.first().map(|a| &a.target).cmp(&b.assignments.first().map(|b| &b.target))); }
+                let mut rules = handler.rules.into_iter().enumerate().collect::<Vec<_>>();
+                if scalar { rules.sort_by(|(_, a), (_, b)| a.assignments.first().map(|a| &a.target).cmp(&b.assignments.first().map(|b| &b.target))); }
+                handler.rules = rules.into_iter().enumerate().map(|(new_index, (old_index, rule))| {
+                    retained_rules.insert((handler.id, new_index), (old_handler, old_index));
+                    rule
+                }).collect();
                 retained.push(handler);
             }
             let formations = self.package.checked_package.constitution().preimage().formations.iter()
@@ -96,7 +111,7 @@ impl CheckedCanonicalSourceAnalysisV1 {
         } else {
             elaborate_canonical_source_package_v1(edit.source(), self.context, edit.plan())?
         };
-        Ok(Self { source: edit.source().clone(), plan: edit.plan().clone(), context: self.context, package, scalar_effects: std::sync::OnceLock::new() })
+        Ok(Self { source: edit.source().clone(), plan: edit.plan().clone(), context: self.context, package, scalar_effects: std::sync::OnceLock::new(), retained_rules: Some((self.plan.root(), retained_rules)) })
     }
 }
 

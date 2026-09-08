@@ -24,6 +24,22 @@ fn incremental_scalar_analysis_matches_full_check_and_rejects_stale_or_invalid_e
             assert_eq!(edit.plan(), full_edit.plan());
             assert_eq!(edit.retained(), full_edit.retained());
             let next = checked.advance(&edit).unwrap();
+            let mut retained_count = 0;
+            for handler in &next.package().executable_handlers {
+                for index in 0..handler.rules.len() {
+                    assert!(next.retained_rule(root, handler.id, index).is_none());
+                    let retained = next.retained_rule(checked.plan().root(), handler.id, index);
+                    if handler.id == edit.formation(selected.handler).unwrap() {
+                        assert!(retained.is_none());
+                    } else {
+                        let (old_handler, old_index) = retained.unwrap();
+                        assert_eq!(edit.formation(old_handler).unwrap(), handler.id);
+                        assert!(old_index < checked.package().executable_handlers.iter().find(|handler| handler.id == old_handler).unwrap().rules.len());
+                        retained_count += 1;
+                    }
+                }
+            }
+            assert!(retained_count > 0);
             let full_source = read_canonical_source_with_imports_v1(edit.source().exact_source(), &imports).unwrap();
             let full_plan = plan_independent_canonical_source_allocations_v1(&full_source, root).unwrap();
             assert_eq!(edit.plan(), &full_plan);

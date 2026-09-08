@@ -12,7 +12,7 @@ use clause_package::{
     DECLARED_FOCUSED_FRONTEND_SOURCE_V1, LocalRoleRefV2, ProcessPackageId,
     ProgramChangeOccurrenceId, RoleLocalId, StateRevisionId, TermScope, check_process_package,
     decode_process_package, derive_program_snapshot_id, encode_process_package,
-    elaborate_canonical_source_package_v1, plan_independent_canonical_source_allocations_v1,
+    plan_independent_canonical_source_allocations_v1,
     read_canonical_source_with_imports_and_frontend_v1,
 };
 use clause_runtime::{
@@ -91,7 +91,6 @@ pub struct ResidentSourceWorkbenchV1 {
     boundary: WasmPersistentSessionBoundaryV1,
     coherent_template: WasmProcessRequestV1,
     template_scope: TermScope,
-    template_projection_roles: Vec<LocalRoleRefV2>,
     template_physical_plan: ExecutablePhysicalPlanV1,
     generation: ResidentSourceGenerationV1,
     package: ProcessPackageId,
@@ -106,6 +105,7 @@ pub struct ResidentSourceWorkbenchV1 {
     default_occurrences: Vec<Vec<u8>>,
     handlers: BTreeMap<Vec<u8>, Vec<ExecutableCanonicalHandlerBindingV1>>,
     callables: BTreeMap<Vec<u8>, clause_runtime::ExecutableCallableV1>,
+    states: Vec<clause_runtime::ExecutableCanonicalStateBindingV1>,
     last_source_edit: Option<Vec<u8>>,
     declared_frontend: CanonicalDeclaredFrontendV1,
 }
@@ -201,19 +201,6 @@ impl ResidentSourceWorkbenchV1 {
             universe: checked_template.constitution().universe(),
             semantics: checked_template.constitution().semantics(),
         };
-        let mut template_projection_roles = checked_template
-            .constitution()
-            .preimage()
-            .schemas
-            .iter()
-            .flat_map(|schema| {
-                schema.roles.iter().map(|role| LocalRoleRefV2 {
-                    schema: schema.id,
-                    role: role.id,
-                })
-            })
-            .collect::<Vec<_>>();
-        template_projection_roles.sort();
         let template_physical_plan =
             decode_executable_physical_plan_v1(&coherent_template.physical_plan_bytes)
                 .map_err(|error| boxed_error("CPP1 template decode", error))?;
@@ -234,7 +221,6 @@ impl ResidentSourceWorkbenchV1 {
             session: template.authority.session,
             coherent_template,
             template_scope,
-            template_projection_roles,
             template_physical_plan,
             sequence: 0,
             pending: None,
@@ -246,6 +232,7 @@ impl ResidentSourceWorkbenchV1 {
             default_occurrences: Vec::new(),
             handlers: BTreeMap::new(),
             callables: BTreeMap::new(),
+            states: Vec::new(),
             last_source_edit: None,
             declared_frontend,
         };
@@ -362,8 +349,14 @@ impl ResidentSourceWorkbenchV1 {
             return Ok(self.generation.clone());
         }
         self.install_source(exact_source)?;
-        while self.boundary.reclaim_retired() {}
         Ok(self.generation.clone())
+    }
+
+    /// Release one bounded batch of an already-revoked generation. Hosts may
+    /// call this after delivering the checked replacement. Another replacement
+    /// drains any remaining retirement before installing its new generation.
+    pub fn reclaim_retired(&mut self) -> bool {
+        self.boundary.reclaim_retired()
     }
 
     /// Exact source bytes checked and installed in the current generation.
@@ -412,7 +405,6 @@ impl ResidentSourceWorkbenchV1 {
         let analysis = std::sync::Arc::clone(prepared.analysis());
         let source = analysis.source().exact_source().to_vec();
         self.install_source_inner(&source, None, None, Some(analysis), Some(prepared))?;
-        while self.boundary.reclaim_retired() {}
         Ok(self.generation.clone())
     }
 
@@ -486,7 +478,6 @@ impl ResidentSourceWorkbenchV1 {
         };
         let next_analysis = analysis.advance(&edit).map_err(|error| debug_error("incremental source elaboration", error))?;
         self.install_source_inner(edit.source().exact_source(), Some(witness), None, Some(std::sync::Arc::new(next_analysis)), None)?;
-        while self.boundary.reclaim_retired() {}
         Ok(self.generation.clone())
     }
 
@@ -555,15 +546,7 @@ impl ResidentSourceWorkbenchV1 {
     }
 
     pub fn state_bindings(&self) -> Result<Vec<clause_runtime::ExecutableCanonicalStateBindingV1>, ResidentSourceWorkbenchErrorV1> {
-        let cst = self.read_source(&self.exact_source)
-            .map_err(|error| debug_error("state source", error))?;
-        let allocations = plan_independent_canonical_source_allocations_v1(&cst, ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change)))
-            .map_err(|error| debug_error("state allocation", error))?;
-        let compiled = elaborate_canonical_source_package_v1(&cst, CanonicalSourceContextV1 {
-            universe: self.template_scope.universe, semantics: self.template_scope.semantics }, &allocations)
-            .map_err(|error| debug_error("state elaboration", error))?;
-        Ok(lower_canonical_executable_program_v1(self.template_scope, &compiled.state_cells, &compiled.executable_handlers, &self.template_projection_roles)
-            .map_err(|error| boxed_error("state binding", error))?.states)
+        Ok(self.states.clone())
     }
 
     /// Run the template's opaque occurrence sequence and stop at a hidden
@@ -786,6 +769,7 @@ impl ResidentSourceWorkbenchV1 {
         analysis: Option<std::sync::Arc<clause_package::CheckedCanonicalSourceAnalysisV1>>,
         prepared: Option<clause_runtime::PreparedWasmScalarEditV1>,
     ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
+        while self.reclaim_retired() {}
         let next_change = self.next_change.checked_add(1).ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("source change sequence exhausted".into())
         })?;
@@ -1077,6 +1061,7 @@ impl ResidentSourceWorkbenchV1 {
             .expect("a valid fixed-width allocation preserves the prechecked CWR1 shape");
         self.handlers = handlers;
         self.callables = callables;
+        self.states = lowered.states;
         self.default_occurrences = default_occurrences;
         self.next_change = next_change;
         self.exact_source = exact_source.to_vec();

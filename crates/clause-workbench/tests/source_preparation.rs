@@ -51,8 +51,13 @@ fn independently_prepared_boundary_preserves_custody_and_rejects_stale_source() 
         assert_eq!(consumer.prepare_source(current.handle, 0, &capsule), Err(WasmProcessStatusV1::StaleSessionHandle));
         assert!(consumer.prepare_source(next.handle, 0, &capsule).is_err());
         let compact = consumer.source_continuity_bytes(next.handle).unwrap();
+        let occurrences = u32::from_le_bytes(compact[68..72].try_into().unwrap()) as usize;
+        for pair in compact[76 + occurrences * 76..].chunks_exact(4) {
+            assert_eq!(&pair[..2], &pair[2..], "scalar edits retain each checked physical state slot");
+        }
         let diagnostic = consumer.source_continuity_term(next.handle).unwrap();
         assert_complete_continuity_projection(&compact, &diagnostic);
+        consumer.prepare_source(next.handle, 0, &producer.source_preparation().unwrap()).unwrap();
         assert_eq!(consumer.source_continuity_bytes(current.handle), Err(WasmProcessStatusV1::StaleSessionHandle));
         while consumer.reclaim_retired() {}
         current = next;
