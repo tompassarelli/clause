@@ -88,7 +88,8 @@ pub(super) fn foreign_accesses(
                     collect(value, contracts);
                 }
             }
-            E::SequenceJoin(a, b)
+            E::Dictionary(a, b)
+            | E::SequenceJoin(a, b)
             | E::SequenceAppend(a, b)
             | E::SequenceDrop(a, b)
             | E::Concatenate(a, b)
@@ -215,6 +216,7 @@ pub(super) fn read(
         b"starts-with",
         b"path",
         b"record-at",
+        b"dictionary",
         b"field-at",
     ]
     .contains(&designation.as_slice())
@@ -480,7 +482,13 @@ pub(super) fn text_template(source: &str) -> Option<(CanonicalScalarExpressionV1
     while let Some(&byte) = bytes.get(cursor) {
         match byte {
             b'\\' => {
-                cursor += 2;
+                if bytes.get(cursor + 1..cursor + 3) == Some(b"u{") {
+                    cursor += 3;
+                    while *bytes.get(cursor)? != b'}' { cursor += 1; }
+                    cursor += 1;
+                } else {
+                    cursor += 2;
+                }
             }
             b'"' | b'{' => {
                 let literal = format!("\"{}\"", source.get(start..cursor)?);
@@ -745,6 +753,7 @@ fn bind_body(
             }
             E::Match { value, cases: bound_cases }
         }
+        E::Dictionary(key, value) => E::Dictionary(recur(key)?, recur(value)?),
         E::EmptySequence(kind) => E::EmptySequence(kind.clone()),
         E::SequenceSort(a) => E::SequenceSort(recur(a)?),
         E::SequenceAppend(a,b) => E::SequenceAppend(recur(a)?, recur(b)?),
@@ -915,6 +924,15 @@ fn lower(
         S::StaticFieldPath(_) => return Err(CanonicalSourceErrorV1::InvalidCallable {
             origin, reason: "FieldPath cannot become a runtime value",
         }),
+        S::Dictionary(key, value) => {
+            let key = recur(key)?;
+            let element = match expected {
+                Some(CanonicalValueTypeV1::Dictionary(element)) => Some(element.as_ref()),
+                _ => None,
+            };
+            let value = lower(value, arguments, locals, static_paths, origin, expansion, depth + 1, mode, element)?;
+            E::Dictionary(key, Box::new(value))
+        }
         S::RecordAt(path, value) => {
             let path = static_field_path(path, static_paths, locals, origin)?;
             let mut wanted = expected;
@@ -1147,12 +1165,12 @@ fn lower(
             Box::new(lower(c, arguments, locals, static_paths, origin, expansion, depth + 1, mode, expected)?)),
         S::Current | S::Symbol(_) => return Err(error()),
     };
-    if let Some(kind @ CanonicalValueTypeV1::Alternatives(types)) = expected {
+    if let Some(kind @ CanonicalValueTypeV1::Alternatives(_)) = expected {
         let argument_types = arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>();
         let binding_types = locals.values().cloned().collect();
         let actual = expression_kind(&lowered, &argument_types, &binding_types, 0, mode)
             .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
-        if types.contains(&actual) { return Ok(E::Widen { value: Box::new(lowered), kind: kind.clone() }); }
+        if &actual != kind && kind.includes_alternatives(&actual) { return Ok(E::Widen { value: Box::new(lowered), kind: kind.clone() }); }
     }
     Ok(lowered)
 }
@@ -1170,7 +1188,7 @@ pub fn check_canonical_callable_v1(
         match kind {
             CanonicalValueTypeV1::Scalar(K::Text | K::Number | K::Boolean) => true,
             CanonicalValueTypeV1::Delayed { .. } => kind.check().is_ok(),
-            CanonicalValueTypeV1::Sequence(element) => supported(element),
+            CanonicalValueTypeV1::Sequence(element) | CanonicalValueTypeV1::Dictionary(element) => supported(element),
             CanonicalValueTypeV1::Record(fields) => fields.values().all(supported),
             CanonicalValueTypeV1::Alternatives(types) => kind.check().is_ok() && types.iter().all(supported),
             _ => false,
@@ -1229,8 +1247,8 @@ fn expression_kind(
     Ok(match expression {
         E::Widen { value, kind } => {
             kind.check()?;
-            let T::Alternatives(types) = kind else { return Err("inclusion requires an alternative contract"); };
-            if !types.contains(&recur(value)?) { return Err("value is not a declared alternative"); }
+            let T::Alternatives(_) = kind else { return Err("inclusion requires an alternative contract"); };
+            if !kind.includes_alternatives(&recur(value)?) { return Err("value is not a declared alternative"); }
             kind.clone()
         }
         E::Match { value, cases } => {
@@ -1297,6 +1315,16 @@ fn expression_kind(
                 require(value, &kind)?;
             }
             T::Sequence(Box::new(kind))
+        }
+        E::Dictionary(key, value) => {
+            let element = recur(value)?;
+            match recur(key)? {
+                T::Scalar(K::Text) => T::Dictionary(Box::new(element)),
+                T::Delayed { target, value } if *value == T::Scalar(K::Text) => T::Delayed {
+                    value: Box::new(T::Dictionary(Box::new(element.constructed_value(&target)?))), target,
+                },
+                _ => return Err("dictionary key requires Text or delayed Text"),
+            }
         }
         E::Record(fields) => T::Record(
             fields

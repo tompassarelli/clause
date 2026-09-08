@@ -2434,6 +2434,22 @@ export jq-module()
 ```
 
 
+## Text-key dictionaries
+
+`Dictionary<Value>` keeps one exact value contract for runtime Text keys. `dictionary(key, value)` constructs one entry; keys remain data and never establish a static record field. Delayed Text keys retain their target and incorporate same-target nested values into the delayed dictionary. See clause:test-vectors/authoring/dynamic-user-modules/ for whole zoxide and VIA modules.
+
+```clause
+Settings:
+  enabled: Bool
+  labels: Sequence<Text>
+
+export settings(?name: Text): Dictionary<Settings>
+  dictionary(?name, {enabled: true, labels: ["kept"]})
+
+export preserve(?settings: Dictionary<Settings>): Dictionary<Settings>
+  ?settings
+```
+
 ## Static field paths
 
 `path(details.title)` names fixed field segments. A `?path: FieldPath` parameter is specialized at each call; it never accepts runtime Text or becomes a runtime value. `record-at(?path, value)` constructs the exact nested record and `field-at(record, ?path)` checks every selected field. Delayed foreign declarations may use `get: ?path` for a declared static path while keeping their target, external root, result and failure contracts explicit. These complete module sources state the option path once and select the package independently; the shared module meaning remains Clause source.

@@ -177,7 +177,7 @@ fn remap_expression(edit: &CanonicalSourceEditV1, expression: &mut CanonicalExec
             remap_expression(edit, source, member_sets)?; remap_expression(edit, initial, member_sets)?; remap_expression(edit, body, member_sets)?;
         },
         E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => remap_expression(edit, value, member_sets)?,
-        E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::SequenceAppend(a, b) => {
+        E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::Dictionary(a, b) | E::SequenceAppend(a, b) => {
             remap_expression(edit, a, member_sets)?; remap_expression(edit, b, member_sets)?;
         },
         E::Require(a, b, c) => {

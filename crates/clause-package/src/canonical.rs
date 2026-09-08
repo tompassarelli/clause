@@ -1426,6 +1426,7 @@ impl Wire for CanonicalValueTypeV1 {
                 }),
                 T::Delayed { target, value } => { encoder.u8(8); encoder.blob("delayed target",target.as_bytes())?; encode(value,encoder)?; }
                 T::OpaqueForeign { module, name } => { encoder.u8(9); encoder.blob("foreign type module",module.as_bytes())?; encoder.blob("foreign type name",name.as_bytes())?; }
+                T::Dictionary(element) => { encoder.u8(11); encode(element,encoder)?; }
                 T::Sequence(element) => { encoder.u8(6); encode(element,encoder)?; }
                 T::Alternatives(types) => {
                     encoder.u8(10);
@@ -1454,6 +1455,7 @@ impl Wire for CanonicalValueTypeV1 {
             let value=match cursor.u8()? {
                 0 => K::Number.into(), 1 => K::Boolean.into(), 2 => K::Symbol.into(),
                 3 => K::Text.into(), 4 => K::Referent.into(), 5 => K::RelationTable.into(),
+                11 => T::Dictionary(Box::new(decode(cursor,depth+1)?)),
                 6 => T::Sequence(Box::new(decode(cursor,depth+1)?)),
                 8 => T::Delayed {
                     target: String::from_utf8(cursor.blob()?).map_err(|_| CanonicalDecodeError::InvalidForeignContract { offset, reason: "invalid target" })?,
