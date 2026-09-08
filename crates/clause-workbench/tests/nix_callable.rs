@@ -4,6 +4,30 @@ use clause_workbench::ResidentSourceWorkbenchV1;
 const SOURCE: &[u8] = include_bytes!("../../../test-vectors/authoring/foreign-construction.clause");
 
 #[test]
+fn static_field_paths_construct_and_select_exact_native_records() {
+    let source = include_str!("../../../test-vectors/authoring/static-field-paths.clause");
+    let opened = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let baseline = ResidentSourceWorkbenchV1::open(b"export specimen()\n  {details: {title: \"Clause\"}}\n").unwrap();
+    assert_eq!(opened.checked_source_package().unwrap().callables[0].result_kind,
+        baseline.checked_source_package().unwrap().callables[0].result_kind);
+    assert_eq!(opened.invoke_callable(b"specimen", &[]).unwrap(), baseline.invoke_callable(b"specimen", &[]).unwrap());
+
+    let selection = format!("{source}\nselect<Value: Record>(?record: Value, ?path: static FieldPath)\n  field-at(?record, ?path)\n\nexport selected(): Text\n  select(specimen(), path(details.title))\n");
+    let opened = ResidentSourceWorkbenchV1::open(selection.as_bytes()).unwrap();
+    assert_eq!(opened.invoke_callable(b"selected", &[]).unwrap(), clause_runtime::ExecutableValueV1::text("Clause").unwrap());
+    for wrong in [
+        source.replace("path(details.title)", "\"details.title\""),
+        source.replace("path(details.title)", "if(true, path(details.title), path(other))"),
+        source.replace("at-path(path(details.title), \"Clause\")", "path(details.title)"),
+        selection.replace("select(specimen(), path(details.title))", "select(specimen(), path(details.missing))"),
+        selection.replace("select(specimen(), path(details.title))", "select(specimen(), path(details.title.extra))"),
+        selection.replace("export selected(): Text", "export selected(?path: Text): Text").replace("select(specimen(), path(details.title))", "select(specimen(), ?path)"),
+    ] {
+        assert!(ResidentSourceWorkbenchV1::open(wrong.as_bytes()).is_err(), "accepted invalid static path: {wrong}");
+    }
+}
+
+#[test]
 fn staged_foreign_construction_preserves_checked_contracts_and_strict_bindings() {
     let opened = ResidentSourceWorkbenchV1::open(SOURCE).unwrap();
     let checked = opened.checked_source_package().unwrap();
@@ -70,6 +94,40 @@ const JQ: &str = include_str!("../../../test-vectors/authoring/shared-foreign/jq
 
 fn imports(source: &str) -> CanonicalSourceImportsV1 {
     CanonicalSourceImportsV1::from([("nixpkgs.clause".into(), source.as_bytes().to_vec())])
+}
+
+#[test]
+fn static_module_paths_retain_exact_contracts_and_independent_package_selection() {
+    let shared = include_str!("../../../test-vectors/authoring/static-modules/nixpkgs.clause");
+    let btop = include_str!("../../../test-vectors/authoring/static-modules/btop.clause");
+    let jq = include_str!("../../../test-vectors/authoring/static-modules/jq.clause");
+    for (source, original, entry) in [(btop, BTOP, b"btop-module".as_slice()), (jq, JQ, b"jq-module".as_slice())] {
+        let opened = ResidentSourceWorkbenchV1::open_with_imports(source.as_bytes(), imports(shared)).unwrap();
+        let checked = opened.checked_source_package().unwrap();
+        let callable = checked.callables.iter().find(|c| c.designation == entry).unwrap();
+        let baseline = ResidentSourceWorkbenchV1::open_with_imports(original.as_bytes(), imports(SHARED)).unwrap().checked_source_package().unwrap();
+        let baseline = baseline.callables.iter().find(|c| c.designation == entry).unwrap();
+        assert_eq!(callable.result_kind, baseline.result_kind);
+        assert_eq!(render_nix_callable_v1(callable).unwrap(), render_nix_callable_v1(baseline).unwrap());
+        assert!(lower_javascript_v1(&checked).is_err());
+        assert!(clause_runtime::lower_canonical_callable_v1(callable).is_err());
+    }
+    let independently_selected = btop.replace("package(path(btop))", "package(path(jq))");
+    let opened = ResidentSourceWorkbenchV1::open_with_imports(independently_selected.as_bytes(), imports(shared)).unwrap();
+    let checked = opened.checked_source_package().unwrap();
+    let rendered = render_nix_callable_v1(checked.callables.iter().find(|c| c.designation == b"btop-module").unwrap()).unwrap();
+    assert!(rendered.contains("config.\"myConfig\".\"modules\".\"btop\".\"enable\""));
+    assert!(rendered.contains("pkgs.\"jq\""));
+    assert!(!rendered.contains("pkgs.\"btop\""));
+    for wrong in [
+        shared.replace("get: ?path", "get: ?missing"),
+        shared.replace("foreign configured(?path: static FieldPath): Bool", "foreign configured(?path: static FieldPath): Package"),
+        shared.replace("?condition: Delayed<nix,Bool>", "?condition: Delayed<other,Bool>"),
+        shared.replace("?path: static FieldPath", "?path: Text"),
+        shared.replace("  construction: \"nix\"\n  get: ?path", "  get: ?path"),
+    ] {
+        assert!(ResidentSourceWorkbenchV1::open_with_imports(btop.as_bytes(), imports(&wrong)).is_err(), "accepted invalid foreign path contract: {wrong}");
+    }
 }
 
 #[test]
@@ -152,14 +210,14 @@ fn shared_foreign_sources_check_and_compile_through_the_file_commands() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let output = root.join("target/shared-foreign-proof");
     std::fs::create_dir_all(&output).unwrap();
-    for name in ["btop", "jq"] {
-        let source = root.join(format!("test-vectors/authoring/shared-foreign/{name}.clause"));
+    for (directory, name) in ["shared-foreign", "static-modules"].into_iter().flat_map(|directory| ["btop", "jq"].map(|name| (directory, name))) {
+        let source = root.join(format!("test-vectors/authoring/{directory}/{name}.clause"));
         let check = std::process::Command::new(env!("CARGO_BIN_EXE_clause-workbench"))
             .arg("check-source").arg(&source).output().unwrap();
         assert!(check.status.success(), "{}", String::from_utf8_lossy(&check.stderr));
         let compile = std::process::Command::new(env!("CARGO_BIN_EXE_clause-workbench"))
             .arg("compile-nix").arg(&source).arg(format!("{name}-module"))
-            .arg(output.join(format!("{name}.nix"))).output().unwrap();
+            .arg(output.join(format!("{directory}-{name}.nix"))).output().unwrap();
         assert!(compile.status.success(), "{}", String::from_utf8_lossy(&compile.stderr));
     }
 }

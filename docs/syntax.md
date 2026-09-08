@@ -415,6 +415,33 @@ reject. Each imported definition retains its own source origin and uses the
 same exact type and foreign binding checks as a local declaration. The complete
 two-consumer example is in `clause:test-vectors/authoring/shared-foreign/`.
 
+A static field path fixes a nonempty sequence of field designations:
+
+```clause
+at-path(?path: static FieldPath, ?value: Text)
+  record-at(?path, ?value)
+
+export specimen()
+  at-path(path(details.title), "Clause")
+```
+
+`record-at(path(details.title), value)` constructs `{details: {title: value}}`
+with the complete inferred type. `field-at(record, path(details.title))`
+checks each selected field and returns its exact type. Static parameters accept
+path literals or other static parameters; runtime Text, conditional path values,
+and returning a path as a runtime value reject. Ordinary value arguments remain
+strict and are bound once. Specialization has the same bounded expansion and
+recursion checks as ordinary generic callables.
+
+A delayed foreign declaration can use `get: ?path` (or `call: ?path`) when
+`?path: static FieldPath` is a declared parameter. It specializes the exact
+foreign member path without passing a runtime argument. The declared external
+root, eventual result, target and failure contract still apply at every use.
+The path does not establish that an external member exists or that the foreign
+contract is true; the selected foreign boundary must discharge that obligation.
+See the complete executing modules in
+`clause:test-vectors/authoring/static-modules/`.
+
 A foreign declaration with `construction: "nix"` instead constructs a delayed
 expression for that target. It performs no foreign attempt. Its written result
 is the eventual value contract; the construction declaration derives the checked

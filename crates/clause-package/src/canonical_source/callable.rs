@@ -121,7 +121,22 @@ pub(super) fn foreign_accesses(
 #[derive(Clone, Debug)]
 struct CallableArgumentCst {
     designation: Vec<u8>,
-    value_kind: value_type::Pattern,
+    contract: CallableArgumentContract,
+}
+
+#[derive(Clone, Debug)]
+enum CallableArgumentContract {
+    Value(value_type::Pattern),
+    StaticFieldPath,
+}
+
+impl CallableArgumentCst {
+    fn value_kind(&self) -> Option<&value_type::Pattern> {
+        match &self.contract {
+            CallableArgumentContract::Value(kind) => Some(kind),
+            CallableArgumentContract::StaticFieldPath => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -132,7 +147,7 @@ enum CallableBodyCst {
         operation: CanonicalForeignOperationV1,
         failure: CanonicalForeignFailureV1,
         module: String,
-        member: String,
+        member: foreign::MemberCst,
     },
 }
 
@@ -192,6 +207,9 @@ pub(super) fn read(
         b"remaining-words",
         b"contains-text",
         b"starts-with",
+        b"path",
+        b"record-at",
+        b"field-at",
     ]
     .contains(&designation.as_slice())
     {
@@ -223,8 +241,12 @@ pub(super) fn read(
         if !names.insert(name.clone()) {
             return Err(error("duplicate argument binding"));
         }
-        let value_kind = value_type::Pattern::read(domain.trim().as_bytes(), declarations, &type_parameters)
-            .map_err(error)?;
+        let contract = if domain.trim() == "static FieldPath" {
+            CallableArgumentContract::StaticFieldPath
+        } else {
+            CallableArgumentContract::Value(value_type::Pattern::read(domain.trim().as_bytes(), declarations, &type_parameters)
+                .map_err(error)?)
+        };
         roles.push(RelationRoleCst {
             name: name.clone(),
             domain: domain.trim().as_bytes().to_vec(),
@@ -232,7 +254,7 @@ pub(super) fn read(
         });
         arguments.push(CallableArgumentCst {
             designation: name,
-            value_kind,
+            contract,
         });
     }
     if arguments.len() > usize::from(u16::MAX) {
@@ -259,10 +281,23 @@ pub(super) fn read(
             });
             roles.last_mut().expect("callable result role").domain = format!("Delayed<{target},{}>", result.trim()).into_bytes();
         }
-        if module.is_empty() || member.is_empty() || module.contains('\0') || member.contains('\0') {
+        if module.is_empty() || module.contains('\0') {
             return Err(error("foreign module and member must be nonempty identifiers"));
         }
-        if operation == CanonicalForeignOperationV1::Get && !arguments.is_empty() {
+        match &member {
+            foreign::MemberCst::Exact(member) if member.is_empty() || member.contains('\0') =>
+                return Err(error("foreign module and member must be nonempty identifiers")),
+            foreign::MemberCst::StaticFieldPath(name) => {
+                if !matches!(evaluation, CanonicalForeignEvaluationV1::Construct { .. }) {
+                    return Err(error("static foreign field paths require delayed construction"));
+                }
+                if !arguments.iter().any(|argument| argument.designation == *name && argument.value_kind().is_none()) {
+                    return Err(error("foreign member requires a declared static FieldPath argument"));
+                }
+            }
+            _ => {}
+        }
+        if operation == CanonicalForeignOperationV1::Get && arguments.iter().any(|a| a.value_kind().is_some()) {
             return Err(error("foreign property access takes no arguments"));
         }
         CallableBodyCst::Foreign { evaluation, operation, failure, module, member }
@@ -352,13 +387,13 @@ pub(super) fn read(
         }],
     };
     for parameter in &callable.type_parameters {
-        if !callable.arguments.iter().any(|argument| argument.value_kind.contains(parameter)) {
+        if !callable.arguments.iter().filter_map(CallableArgumentCst::value_kind).any(|kind| kind.contains(parameter)) {
             return Err(error("type parameter must be inferred from an argument"));
         }
     }
     if foreign {
         let result = callable.result_kind.as_ref().expect("foreign result contract");
-        for pattern in callable.arguments.iter().map(|a| &a.value_kind).chain(std::iter::once(result)) {
+        for pattern in callable.arguments.iter().filter_map(CallableArgumentCst::value_kind).chain(std::iter::once(result)) {
             pattern.check().map_err(error)?;
             match &callable.body {
                 CallableBodyCst::Foreign { evaluation: CanonicalForeignEvaluationV1::Attempt, .. }
@@ -369,14 +404,19 @@ pub(super) fn read(
             }
         }
     }
-    let relation = callable.type_parameters.is_empty().then_some(relation);
+    let relation = (!callable.requires_specialization()).then_some(relation);
     Ok(Some((callable, relation)))
 }
 
 impl CallableCst {
+    fn requires_specialization(&self) -> bool {
+        !self.type_parameters.is_empty() || self.arguments.iter().any(|a| a.value_kind().is_none())
+    }
+
     fn foreign_binding(
         &self,
         substitutions: &BTreeMap<Vec<u8>, CanonicalValueTypeV1>,
+        static_paths: &BTreeMap<Vec<u8>, Vec<Vec<u8>>>,
         origin: CanonicalSourceOriginV1,
     ) -> Result<CanonicalForeignBindingV1, CanonicalSourceErrorV1> {
         let error = |reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason };
@@ -385,8 +425,14 @@ impl CallableCst {
         };
         let binding = CanonicalForeignBindingV1 {
             evaluation: evaluation.clone(), operation: *operation, failure: *failure,
-            module: module.clone(), member: member.clone(),
-            arguments: self.arguments.iter().map(|a| a.value_kind.instantiate(substitutions)).collect::<Result<_, _>>().map_err(error)?,
+            module: module.clone(), member: match member {
+                foreign::MemberCst::Exact(member) => member.clone(),
+                foreign::MemberCst::StaticFieldPath(name) => static_paths.get(name)
+                    .ok_or_else(|| error("unresolved static field path"))?.iter()
+                    .map(|field| std::str::from_utf8(field).map_err(|_| error("invalid field path segment")))
+                    .collect::<Result<Vec<_>, _>>()?.join("."),
+            },
+            arguments: self.arguments.iter().filter_map(CallableArgumentCst::value_kind).map(|kind| kind.instantiate(substitutions)).collect::<Result<_, _>>().map_err(error)?,
             result: self.result_kind.as_ref().ok_or_else(|| error("foreign result contract is missing"))?
                 .instantiate(substitutions).map_err(error)?,
         };
@@ -505,12 +551,12 @@ pub(super) fn check_definitions(
         next_binding: 0,
     };
     for (index, definition) in definitions.iter().enumerate() {
-        if definition.type_parameters.is_empty() {
-            expansion.compile(index, &BTreeMap::new(), definition.origin)?;
+        if !definition.requires_specialization() {
+            expansion.compile(index, &BTreeMap::new(), &BTreeMap::new(), definition.origin)?;
         }
     }
     Ok((0..definitions.len())
-        .filter(|index| definitions[*index].type_parameters.is_empty())
+        .filter(|index| !definitions[*index].requires_specialization())
         .map(|index| {
             expansion
                 .checked
@@ -560,6 +606,7 @@ impl Expansion<'_> {
         &mut self,
         index: usize,
         substitutions: &BTreeMap<Vec<u8>, CanonicalValueTypeV1>,
+        static_paths: &BTreeMap<Vec<u8>, Vec<Vec<u8>>>,
         origin: CanonicalSourceOriginV1,
     ) -> Result<CanonicalCallableV1, CanonicalSourceErrorV1> {
         if let Some(checked) = self.checked.get(&index) {
@@ -579,9 +626,9 @@ impl Expansion<'_> {
         }
         let definitions = self.definitions;
         let definition = &definitions[index];
-        let arguments = definition.arguments.iter().map(|argument| Ok(CanonicalCallableArgumentV1 {
+        let arguments = definition.arguments.iter().filter_map(|argument| argument.value_kind().map(|kind| (argument, kind))).map(|(argument, kind)| Ok(CanonicalCallableArgumentV1 {
             designation: argument.designation.clone(),
-            value_kind: argument.value_kind.instantiate(substitutions)
+            value_kind: kind.instantiate(substitutions)
                 .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?,
         })).collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
         let expression = match &definition.body {
@@ -596,6 +643,7 @@ impl Expansion<'_> {
                             expression,
                             &arguments,
                             &BTreeMap::new(),
+                            static_paths,
                             definition.expression_origin,
                             self,
                             0,
@@ -615,8 +663,8 @@ impl Expansion<'_> {
                 body
             }
             CallableBodyCst::Foreign { .. } => CanonicalExecutableExpressionV1::Foreign {
-                binding: Box::new(definition.foreign_binding(substitutions, origin)?),
-                arguments: (0..definition.arguments.len())
+                binding: Box::new(definition.foreign_binding(substitutions, static_paths, origin)?),
+                arguments: (0..arguments.len())
                     .map(|i| CanonicalExecutableExpressionV1::Argument(i as u16))
                     .collect(),
             },
@@ -637,7 +685,7 @@ impl Expansion<'_> {
         };
         check_canonical_callable_v1(&callable)?;
         self.active.remove(&index);
-        if definition.type_parameters.is_empty() {
+        if !definition.requires_specialization() {
             self.checked.insert(index, callable.clone());
         }
         Ok(callable)
@@ -777,10 +825,31 @@ fn bind_body(
     })
 }
 
+fn static_field_path(
+    expression: &CanonicalScalarExpressionV1,
+    paths: &BTreeMap<Vec<u8>, Vec<Vec<u8>>>,
+    locals: &BTreeMap<Vec<u8>, (u16, CanonicalValueTypeV1)>,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Vec<Vec<u8>>, CanonicalSourceErrorV1> {
+    let path = match expression {
+        CanonicalScalarExpressionV1::StaticFieldPath(fields) => Some(fields),
+        CanonicalScalarExpressionV1::Parameter(name) if !locals.contains_key(name) =>
+            name.strip_prefix(b"?").and_then(|name| paths.get(name)),
+        _ => None,
+    };
+    path.filter(|fields| !fields.is_empty() && fields.len() < MAX_CALL_DEPTH
+        && fields.iter().all(|field| !field.is_empty()
+            && field.iter().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))))
+        .cloned().ok_or(CanonicalSourceErrorV1::InvalidCallable {
+            origin, reason: "expected a static FieldPath literal or parameter",
+        })
+}
+
 fn lower(
     expression: &CanonicalScalarExpressionV1,
     arguments: &[CanonicalCallableArgumentV1],
     locals: &BTreeMap<Vec<u8>, (u16, CanonicalValueTypeV1)>,
+    static_paths: &BTreeMap<Vec<u8>, Vec<Vec<u8>>>,
     origin: CanonicalSourceOriginV1,
     expansion: &mut Expansion<'_>,
     depth: usize,
@@ -795,14 +864,34 @@ fn lower(
     };
     expansion.consume(origin, depth)?;
     let mut recur =
-        |e| lower(e, arguments, locals, origin, expansion, depth + 1, mode, None).map(Box::new);
+        |e| lower(e, arguments, locals, static_paths, origin, expansion, depth + 1, mode, None).map(Box::new);
     Ok(match expression {
+        S::StaticFieldPath(_) => return Err(CanonicalSourceErrorV1::InvalidCallable {
+            origin, reason: "static FieldPath cannot become a runtime value",
+        }),
+        S::RecordAt(path, value) => {
+            let path = static_field_path(path, static_paths, locals, origin)?;
+            let mut wanted = expected;
+            for field in &path {
+                wanted = match wanted {
+                    Some(CanonicalValueTypeV1::Record(fields)) => fields.get(field),
+                    _ => None,
+                };
+            }
+            let value = lower(value, arguments, locals, static_paths, origin, expansion, depth + path.len(), mode, wanted)?;
+            path.into_iter().rev().fold(value, |value, field| E::Record(BTreeMap::from([(field, value)])))
+        }
+        S::FieldAt(value, path) => {
+            let path = static_field_path(path, static_paths, locals, origin)?;
+            let value = lower(value, arguments, locals, static_paths, origin, expansion, depth + path.len(), mode, None)?;
+            path.into_iter().fold(value, |value, field| E::Field(Box::new(value), field))
+        }
         S::Sequence(values) => {
             let element = match expected { Some(CanonicalValueTypeV1::Sequence(element)) => Some(element.as_ref()), _ => None };
             if values.is_empty() {
                 E::EmptySequence(element.ok_or(CanonicalSourceErrorV1::InvalidCallable { origin, reason: "empty sequence literal needs an element contract" })?.clone())
             } else {
-                E::Sequence(values.iter().map(|v| lower(v, arguments, locals, origin, expansion, depth + 1, mode, element)).collect::<Result<_, _>>()?)
+                E::Sequence(values.iter().map(|v| lower(v, arguments, locals, static_paths, origin, expansion, depth + 1, mode, element)).collect::<Result<_, _>>()?)
             }
         },
         S::Record(fields) => E::Record(
@@ -810,25 +899,25 @@ fn lower(
                 .iter()
                 .map(|(k, v)| {
                     let wanted = match expected { Some(CanonicalValueTypeV1::Record(fields)) => fields.get(k), _ => None };
-                    Ok((k.clone(), lower(v, arguments, locals, origin, expansion, depth + 1, mode, wanted)?))
+                    Ok((k.clone(), lower(v, arguments, locals, static_paths, origin, expansion, depth + 1, mode, wanted)?))
                 })
                 .collect::<Result<_, CanonicalSourceErrorV1>>()?,
         ),
-        S::SequenceSort(a) => E::SequenceSort(Box::new(lower(a, arguments, locals, origin, expansion, depth + 1, mode,
+        S::SequenceSort(a) => E::SequenceSort(Box::new(lower(a, arguments, locals, static_paths, origin, expansion, depth + 1, mode,
             Some(&CanonicalValueTypeV1::Sequence(Box::new(CanonicalScalarValueKindV1::Text.into()))))?)),
         S::SequenceAppend(a,b) => {
-            let a = Box::new(lower(a, arguments, locals, origin, expansion, depth + 1, mode, expected)?);
+            let a = Box::new(lower(a, arguments, locals, static_paths, origin, expansion, depth + 1, mode, expected)?);
             let types = arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>();
             let bindings = locals.values().cloned().collect();
             let CanonicalValueTypeV1::Sequence(element) = expression_kind(&a, &types, &bindings, 0, mode)
                 .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })? else { return Err(error()); };
-            let b = Box::new(lower(b, arguments, locals, origin, expansion, depth + 1, mode, Some(&element))?);
+            let b = Box::new(lower(b, arguments, locals, static_paths, origin, expansion, depth + 1, mode, Some(&element))?);
             E::SequenceAppend(a,b)
         }
         S::SequenceFold { accumulator, item, source, initial, body } => {
             if accumulator == item { return Err(CanonicalSourceErrorV1::InvalidCallable { origin, reason: "duplicate fold binding" }); }
             let source = recur(source)?;
-            let initial = Box::new(lower(initial, arguments, locals, origin, expansion, depth + 1, mode, expected)?);
+            let initial = Box::new(lower(initial, arguments, locals, static_paths, origin, expansion, depth + 1, mode, expected)?);
             let types = arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>();
             let bindings = locals.values().cloned().collect();
             let kind = |e| expression_kind(e, &types, &bindings, 0, mode)
@@ -840,7 +929,7 @@ fn lower(
             let mut nested = locals.clone();
             nested.insert(accumulator.clone(), (fresh_accumulator, accumulator_kind.clone()));
             nested.insert(item.clone(), (fresh_item, *element));
-            let body = Box::new(lower(body, arguments, &nested, origin, expansion, depth + 1, mode, Some(&accumulator_kind))?);
+            let body = Box::new(lower(body, arguments, &nested, static_paths, origin, expansion, depth + 1, mode, Some(&accumulator_kind))?);
             E::SequenceFold { accumulator: fresh_accumulator, item: fresh_item, source, initial, body }
         }
         S::SequenceCount(a) => E::SequenceCount(recur(a)?),
@@ -873,6 +962,7 @@ fn lower(
                 body,
                 arguments,
                 &nested,
+                static_paths,
                 origin,
                 expansion,
                 depth + 1,
@@ -899,28 +989,32 @@ fn lower(
                 },
             )?;
             let definition = &expansion.definitions[index];
-            let wanted = definition.arguments.iter().map(|a| a.value_kind.instantiate(&BTreeMap::new()).ok()).collect::<Vec<_>>();
-            let values = actual.iter().enumerate().map(|(i,a)| lower(a, arguments, locals, origin, expansion, depth + 1, mode,
-                wanted.get(i).and_then(Option::as_ref))).collect::<Result<Vec<_>, _>>()?;
+            if actual.len() != definition.arguments.len() {
+                return Err(CanonicalSourceErrorV1::InvalidCallable { origin, reason: "callable argument count mismatch" });
+            }
+            let mut values = Vec::new();
             let mut substitutions = BTreeMap::new();
-            if !definition.type_parameters.is_empty() {
+            let mut callee_paths = BTreeMap::new();
+            for (actual, parameter) in actual.iter().zip(&definition.arguments) {
+                let Some(pattern) = parameter.value_kind() else {
+                    callee_paths.insert(parameter.designation.clone(), static_field_path(actual, static_paths, locals, origin)?);
+                    continue;
+                };
+                let wanted = pattern.instantiate(&substitutions).ok();
+                let value = lower(actual, arguments, locals, static_paths, origin, expansion, depth + 1, mode, wanted.as_ref())?;
                 let argument_types = arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>();
                 let binding_types = locals.values().cloned().collect();
-                if values.len() != definition.arguments.len() {
-                    return Err(CanonicalSourceErrorV1::InvalidCallable { origin, reason: "callable argument count mismatch" });
-                }
-                for (value, parameter) in values.iter().zip(&definition.arguments) {
-                    let actual = expression_kind(value, &argument_types, &binding_types, 0, mode)
-                        .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
-                    parameter.value_kind.unify(&actual, &mut substitutions)
-                        .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
-                }
-                if matches!(definition.body, CallableBodyCst::Foreign { .. }) {
-                    let binding = definition.foreign_binding(&substitutions, origin)?;
-                    return Ok(E::Foreign { binding: Box::new(binding), arguments: values });
-                }
+                let kind = expression_kind(&value, &argument_types, &binding_types, 0, mode)
+                    .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
+                pattern.unify(&kind, &mut substitutions)
+                    .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
+                values.push(value);
             }
-            let callee = expansion.compile(index, &substitutions, origin)?;
+            if definition.requires_specialization() && matches!(definition.body, CallableBodyCst::Foreign { .. }) {
+                let binding = definition.foreign_binding(&substitutions, &callee_paths, origin)?;
+                return Ok(E::Foreign { binding: Box::new(binding), arguments: values });
+            }
+            let callee = expansion.compile(index, &substitutions, &callee_paths, origin)?;
             if mode == CanonicalCallableModeV1::Function
                 && callee.mode == CanonicalCallableModeV1::Procedure
             {
@@ -1003,8 +1097,8 @@ fn lower(
         S::SquareRoot(a) => E::SquareRoot(recur(a)?),
         S::TextTransform(op, a) => E::TextTransform(*op, recur(a)?),
         S::Conditional(a, b, c) => E::Conditional(recur(a)?,
-            Box::new(lower(b, arguments, locals, origin, expansion, depth + 1, mode, expected)?),
-            Box::new(lower(c, arguments, locals, origin, expansion, depth + 1, mode, expected)?)),
+            Box::new(lower(b, arguments, locals, static_paths, origin, expansion, depth + 1, mode, expected)?),
+            Box::new(lower(c, arguments, locals, static_paths, origin, expansion, depth + 1, mode, expected)?)),
         S::Current | S::Symbol(_) => return Err(error()),
     })
 }

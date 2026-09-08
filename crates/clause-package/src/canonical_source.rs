@@ -544,6 +544,10 @@ pub enum CanonicalTextTransformV1 {
 pub enum CanonicalScalarExpressionV1 {
     /// Parsed pure definition application; eliminated by checked callable expansion.
     Call { designation: Vec<u8>, arguments: Vec<Self> },
+    /// Static field segments; consumed by checking, never a runtime Text value.
+    StaticFieldPath(Vec<Vec<u8>>),
+    RecordAt(Box<Self>, Box<Self>),
+    FieldAt(Box<Self>, Box<Self>),
     Sequence(Vec<Self>),
     SequenceDrop(Box<Self>, Box<Self>),
     SequenceCount(Box<Self>),
@@ -4601,6 +4605,9 @@ fn canonical_scalar_executable_expression(
         | CanonicalScalarExpressionV1::SequenceSort(_)
         | CanonicalScalarExpressionV1::Record(_)
         | CanonicalScalarExpressionV1::Field(_, _)
+        | CanonicalScalarExpressionV1::StaticFieldPath(_)
+        | CanonicalScalarExpressionV1::RecordAt(_, _)
+        | CanonicalScalarExpressionV1::FieldAt(_, _)
         | CanonicalScalarExpressionV1::Require(_, _, _) => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             let (yes, no) = pair(yes, no)?;
@@ -4999,6 +5006,9 @@ fn relational_scalar_expression(
         | CanonicalScalarExpressionV1::SequenceSort(_)
         | CanonicalScalarExpressionV1::Record(_)
         | CanonicalScalarExpressionV1::Field(_, _)
+        | CanonicalScalarExpressionV1::StaticFieldPath(_)
+        | CanonicalScalarExpressionV1::RecordAt(_, _)
+        | CanonicalScalarExpressionV1::FieldAt(_, _)
         | CanonicalScalarExpressionV1::Require(_, _, _) => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             let domain = expected_domain.or_else(|| relational::expression_domain(yes, domains))
@@ -9096,6 +9106,22 @@ impl ScalarExpressionParser<'_> {
     fn primary_value(&mut self) -> Option<CanonicalScalarExpressionV1> {
         use CanonicalScalarExpressionV1 as E;
         self.skip_spaces();
+        if self.interpolate && self.take_exact(b"path(") {
+            let mut fields = Vec::new();
+            loop {
+                self.skip_spaces();
+                let start = self.cursor;
+                while self.source.get(self.cursor).is_some_and(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')) {
+                    self.cursor += 1;
+                }
+                if start == self.cursor || fields.len() >= 63 { return None; }
+                fields.push(self.source[start..self.cursor].to_vec());
+                self.skip_spaces();
+                if self.take_exact(b")") { break; }
+                self.take_exact(b".").then_some(())?;
+            }
+            return Some(E::StaticFieldPath(fields));
+        }
         if self.take_exact(b"[") {
             let mut values = Vec::new();
             self.skip_spaces();
@@ -9170,7 +9196,7 @@ impl ScalarExpressionParser<'_> {
             self.skip_spaces(); self.take_exact(b")").then_some(())?;
             return Some(E::SequenceCount(Box::new(value)));
         }
-        for builtin in [b"drop(".as_slice(), b"require(", b"join(", b"append("] {
+        for builtin in [b"drop(".as_slice(), b"require(", b"join(", b"append(", b"record-at(", b"field-at("] {
             if self.take_exact(builtin) {
                 let a = Box::new(self.disjunction()?);
                 self.skip_spaces(); self.take_exact(b",").then_some(())?;
@@ -9179,6 +9205,8 @@ impl ScalarExpressionParser<'_> {
                     b"drop(" => E::SequenceDrop(a, b),
                     b"append(" => E::SequenceAppend(a, b),
                     b"join(" => E::SequenceJoin(a, b),
+                    b"record-at(" => E::RecordAt(a, b),
+                    b"field-at(" => E::FieldAt(a, b),
                     _ => {
                         self.skip_spaces(); self.take_exact(b",").then_some(())?;
                         E::Require(a, b, Box::new(self.disjunction()?))
@@ -9397,7 +9425,9 @@ fn collect_scalar_expression_parameters(
             parameters.extend(nested);
         }
         CanonicalScalarExpressionV1::SequenceSort(value) => collect_scalar_expression_parameters(value, parameters),
-        CanonicalScalarExpressionV1::SequenceAppend(a,b) => {
+        CanonicalScalarExpressionV1::SequenceAppend(a,b)
+        | CanonicalScalarExpressionV1::RecordAt(a,b)
+        | CanonicalScalarExpressionV1::FieldAt(a,b) => {
             collect_scalar_expression_parameters(a, parameters); collect_scalar_expression_parameters(b, parameters);
         }
         CanonicalScalarExpressionV1::SequenceMap { binding, source, body } => {
@@ -9442,6 +9472,7 @@ fn collect_scalar_expression_parameters(
             collect_scalar_expression_parameters(right, parameters);
         }
         CanonicalScalarExpressionV1::Current
+        | CanonicalScalarExpressionV1::StaticFieldPath(_)
         | CanonicalScalarExpressionV1::Number(_)
         | CanonicalScalarExpressionV1::Boolean(_)
         | CanonicalScalarExpressionV1::Symbol(_)
@@ -10928,6 +10959,9 @@ fn scalar_expression_matches_kind(
         | CanonicalScalarExpressionV1::SequenceSort(_)
         | CanonicalScalarExpressionV1::Record(_)
         | CanonicalScalarExpressionV1::Field(_, _)
+        | CanonicalScalarExpressionV1::StaticFieldPath(_)
+        | CanonicalScalarExpressionV1::RecordAt(_, _)
+        | CanonicalScalarExpressionV1::FieldAt(_, _)
         | CanonicalScalarExpressionV1::Require(_, _, _) => false,
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             matches(condition, &CanonicalScalarValueV1::Boolean(false))

@@ -319,5 +319,15 @@ Live source tooling offers an explicit checked scalar-effect replacement, not ar
     ] {
         writeln!(card, "`{path}`\n\n```clause\n{source}```\n").expect("writing to a String cannot fail");
     }
+    card.push_str("\n## Static field paths\n\n`path(details.title)` names fixed field segments. A `?path: static FieldPath` parameter is specialized at each call; it never accepts runtime Text or becomes a runtime value. `record-at(?path, value)` constructs the exact nested record and `field-at(record, ?path)` checks every selected field. Delayed foreign declarations may use `get: ?path` for a declared static path while keeping their target, external root, result and failure contracts explicit. These complete module sources state the option path once and select the package independently; the shared module meaning remains Clause source.\n\n");
+    for (path, source) in [
+        ("clause:test-vectors/authoring/static-modules/nixpkgs.clause", include_str!("../../../test-vectors/authoring/static-modules/nixpkgs.clause")),
+        ("clause:test-vectors/authoring/static-modules/btop.clause", include_str!("../../../test-vectors/authoring/static-modules/btop.clause")),
+        ("clause:test-vectors/authoring/static-modules/jq.clause", include_str!("../../../test-vectors/authoring/static-modules/jq.clause")),
+    ] {
+        writeln!(card, "`{path}`\n\n```clause\n{source}```\n").expect("writing to a String cannot fail");
+    }
+    card.truncate(card.trim_end().len());
+    card.push('\n');
     card
 }
