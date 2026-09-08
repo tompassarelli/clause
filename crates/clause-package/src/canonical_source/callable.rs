@@ -381,7 +381,7 @@ impl CallableCst {
     ) -> Result<CanonicalForeignBindingV1, CanonicalSourceErrorV1> {
         let error = |reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason };
         let CallableBodyCst::Foreign { evaluation, operation, failure, module, member } = &self.body else {
-            return Err(error("type parameters require a foreign declaration"));
+            return Err(error("expected a foreign declaration"));
         };
         let binding = CanonicalForeignBindingV1 {
             evaluation: evaluation.clone(), operation: *operation, failure: *failure,
@@ -506,7 +506,7 @@ pub(super) fn check_definitions(
     };
     for (index, definition) in definitions.iter().enumerate() {
         if definition.type_parameters.is_empty() {
-            expansion.compile(index, definition.origin)?;
+            expansion.compile(index, &BTreeMap::new(), definition.origin)?;
         }
     }
     Ok((0..definitions.len())
@@ -559,6 +559,7 @@ impl Expansion<'_> {
     fn compile(
         &mut self,
         index: usize,
+        substitutions: &BTreeMap<Vec<u8>, CanonicalValueTypeV1>,
         origin: CanonicalSourceOriginV1,
     ) -> Result<CanonicalCallableV1, CanonicalSourceErrorV1> {
         if let Some(checked) = self.checked.get(&index) {
@@ -580,7 +581,7 @@ impl Expansion<'_> {
         let definition = &definitions[index];
         let arguments = definition.arguments.iter().map(|argument| Ok(CanonicalCallableArgumentV1 {
             designation: argument.designation.clone(),
-            value_kind: argument.value_kind.instantiate(&BTreeMap::new())
+            value_kind: argument.value_kind.instantiate(substitutions)
                 .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?,
         })).collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
         let expression = match &definition.body {
@@ -589,7 +590,7 @@ impl Expansion<'_> {
                     .iter()
                     .enumerate()
                     .map(|(position, expression)| {
-                        let expected = if position + 1 == expressions.len() { definition.result_kind.as_ref().map(|kind| kind.instantiate(&BTreeMap::new())).transpose()
+                        let expected = if position + 1 == expressions.len() { definition.result_kind.as_ref().map(|kind| kind.instantiate(substitutions)).transpose()
                             .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })? } else { None };
                         lower(
                             expression,
@@ -614,14 +615,14 @@ impl Expansion<'_> {
                 body
             }
             CallableBodyCst::Foreign { .. } => CanonicalExecutableExpressionV1::Foreign {
-                binding: Box::new(definition.foreign_binding(&BTreeMap::new(), origin)?),
+                binding: Box::new(definition.foreign_binding(substitutions, origin)?),
                 arguments: (0..definition.arguments.len())
                     .map(|i| CanonicalExecutableExpressionV1::Argument(i as u16))
                     .collect(),
             },
         };
         let result_kind = match &definition.result_kind {
-            Some(kind) => kind.instantiate(&BTreeMap::new()),
+            Some(kind) => kind.instantiate(substitutions),
             None => expression_kind(&expression, &arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>(),
                 &BTreeMap::new(), 0, definition.mode),
         }.map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
@@ -636,7 +637,9 @@ impl Expansion<'_> {
         };
         check_canonical_callable_v1(&callable)?;
         self.active.remove(&index);
-        self.checked.insert(index, callable.clone());
+        if definition.type_parameters.is_empty() {
+            self.checked.insert(index, callable.clone());
+        }
         Ok(callable)
     }
 }
@@ -899,10 +902,10 @@ fn lower(
             let wanted = definition.arguments.iter().map(|a| a.value_kind.instantiate(&BTreeMap::new()).ok()).collect::<Vec<_>>();
             let values = actual.iter().enumerate().map(|(i,a)| lower(a, arguments, locals, origin, expansion, depth + 1, mode,
                 wanted.get(i).and_then(Option::as_ref))).collect::<Result<Vec<_>, _>>()?;
+            let mut substitutions = BTreeMap::new();
             if !definition.type_parameters.is_empty() {
                 let argument_types = arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>();
                 let binding_types = locals.values().cloned().collect();
-                let mut substitutions = BTreeMap::new();
                 if values.len() != definition.arguments.len() {
                     return Err(CanonicalSourceErrorV1::InvalidCallable { origin, reason: "callable argument count mismatch" });
                 }
@@ -912,10 +915,12 @@ fn lower(
                     parameter.value_kind.unify(&actual, &mut substitutions)
                         .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
                 }
-                let binding = definition.foreign_binding(&substitutions, origin)?;
-                return Ok(E::Foreign { binding: Box::new(binding), arguments: values });
+                if matches!(definition.body, CallableBodyCst::Foreign { .. }) {
+                    let binding = definition.foreign_binding(&substitutions, origin)?;
+                    return Ok(E::Foreign { binding: Box::new(binding), arguments: values });
+                }
             }
-            let callee = expansion.compile(index, origin)?;
+            let callee = expansion.compile(index, &substitutions, origin)?;
             if mode == CanonicalCallableModeV1::Function
                 && callee.mode == CanonicalCallableModeV1::Procedure
             {

@@ -105,8 +105,8 @@ fn shared_foreign_declarations_preserve_both_exact_contracts_and_source_origins(
 fn shared_declarations_reject_missing_ambiguous_and_wrong_contracts() {
     assert!(ResidentSourceWorkbenchV1::open(BTOP.as_bytes()).is_err());
     for wrong in [
-        BTOP.replace("when-enabled(enabled(),", "when-enabled(true,"),
-        BTOP.replace("[btop()]", "[btop(), enable-option(\"wrong\")]"),
+        BTOP.replace("enabled(), btop()", "true, btop()"),
+        BTOP.replace("enabled(), btop()", "enabled(), enable-option(\"wrong\")"),
         format!("import \"nixpkgs.clause\"\n{BTOP}"),
         format!("{BTOP}\n{SHARED}"),
     ] {
@@ -116,9 +116,34 @@ fn shared_declarations_reject_missing_ambiguous_and_wrong_contracts() {
         SHARED.replace("?condition: Delayed<nix,Bool>", "?condition: Delayed<other,Bool>"),
         SHARED.replace("?body: Body", "?body: Sequence<Body>"),
         SHARED.replace("failure: throw", "failure: ignore"),
-        format!("{SHARED}\nexport extra(): Bool\n  true\n"),
+        format!("{SHARED}\nexport extra(): Bool\n  \"wrong result\"\n"),
     ] {
         assert!(ResidentSourceWorkbenchV1::open_with_imports(BTOP.as_bytes(), imports(&wrong)).is_err(), "accepted {wrong}");
+    }
+}
+
+#[test]
+fn ordinary_record_generics_specialize_exact_contracts_and_keep_strict_arguments() {
+    let source = "identity<Value: Record>(?value: Value): Value\n  ?value\n\nexport records()\n  {text: identity({name: \"btop\"}), number: identity({count: 2})}\n";
+    let opened = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let checked = opened.checked_source_package().unwrap();
+    let callable = checked.callables.iter().find(|c| c.designation == b"records").unwrap();
+    let baseline = ResidentSourceWorkbenchV1::open(b"export records()\n  {text: {name: \"btop\"}, number: {count: 2}}\n").unwrap();
+    assert_eq!(callable.result_kind, baseline.checked_source_package().unwrap().callables[0].result_kind);
+    assert_eq!(opened.invoke_callable(b"records", &[]).unwrap(), baseline.invoke_callable(b"records", &[]).unwrap());
+
+    let strict = format!("{BTOP}\nignore<Value: Record>(?unused: Value)\n  btop-module()\n\nexport strict()\n  ignore(require(false, {{name: \"unused\"}}, \"strict generic argument failed\"))\n");
+    let opened = ResidentSourceWorkbenchV1::open_with_imports(strict.as_bytes(), imports(SHARED)).unwrap();
+    let checked = opened.checked_source_package().unwrap();
+    let callable = checked.callables.iter().find(|c| c.designation == b"strict").unwrap();
+    assert_eq!(render_nix_callable_v1(callable).unwrap_err(), "strict generic argument failed");
+
+    for wrong in [
+        source.replace("?value\n", "true\n"),
+        source.replace("identity({count: 2})", "identity(2)"),
+        source.replace("?value\n", "identity(?value)\n"),
+    ] {
+        assert!(ResidentSourceWorkbenchV1::open(wrong.as_bytes()).is_err(), "accepted {wrong}");
     }
 }
 

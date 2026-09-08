@@ -311,7 +311,7 @@ Live source tooling offers an explicit checked scalar-effect replacement, not ar
         }
     }
 
-    card.push_str("\n## Shared foreign declarations\n\nAn explicit `import \"nixpkgs.clause\"` brings checked foreign types and functions into the consumer's scope. File commands resolve the path relative to that consumer. Declaration sources contain foreign declarations only; imports are direct, and duplicate names reject. The resident API accepts the same finite import context as exact source bytes. Imported generic contracts retain each actual record type.\n\n");
+    card.push_str("\n## Shared foreign declarations and callable definitions\n\nAn explicit `import \"nixpkgs.clause\"` brings checked foreign types, foreign functions, and exported callable definitions into the consumer's scope. File commands resolve the path relative to that consumer. Imports are direct, and duplicate names reject. The resident API accepts the same finite import context as exact source bytes. Ordinary generic helpers specialize and check their bodies with each exact argument record type, retaining strict argument evaluation.\n\n");
     for (path, source) in [
         ("clause:test-vectors/authoring/shared-foreign/nixpkgs.clause", include_str!("../../../test-vectors/authoring/shared-foreign/nixpkgs.clause")),
         ("clause:test-vectors/authoring/shared-foreign/btop.clause", include_str!("../../../test-vectors/authoring/shared-foreign/btop.clause")),

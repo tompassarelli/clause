@@ -398,17 +398,20 @@ parameter in another argument or the result requires that same exact type.
 The parameter must occur in an argument; `Sequence<Body>` and
 `Delayed<target,Body>` preserve the same substitution. Every instantiated
 foreign contract passes the ordinary value, target, effect and failure checks.
-Type parameters are source-level, private foreign declarations only; exported
-signatures and canonical foreign accesses contain fully resolved types.
+Ordinary callables, including exported source helpers, may also quantify a
+Record parameter. Each call specializes and checks the body with the exact
+argument types, retaining ordinary strict argument evaluation. Generic helpers
+are source definitions; emitted callables and canonical foreign accesses
+contain fully resolved types. Generic foreign declarations remain private.
 Foreign declarations always require explicit result contracts.
 
 `import "nixpkgs.clause"` brings the named source's foreign types and functions
 into the consumer's checked scope. `check-source` and `compile-nix` resolve
 the path relative to the consumer file; the source API accepts an explicit
 finite map from import spellings to exact bytes. There is no ambient search.
-This slice admits direct imports of foreign declaration sources only, without
-nested imports, executable bodies, renaming, or shadowing. Duplicate names
-reject. Each imported declaration retains its own source origin and uses the
+This slice admits direct imports of foreign declarations and exported callable
+definitions, without nested imports, renaming, or shadowing. Duplicate names
+reject. Each imported definition retains its own source origin and uses the
 same exact type and foreign binding checks as a local declaration. The complete
 two-consumer example is in `clause:test-vectors/authoring/shared-foreign/`.
 
