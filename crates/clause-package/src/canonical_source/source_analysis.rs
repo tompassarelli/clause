@@ -11,6 +11,12 @@ pub struct CheckedCanonicalSourceAnalysisV1 {
     scalar_effects: std::sync::OnceLock<Vec<CanonicalScalarEffectV1>>,
 }
 
+pub(super) struct RetainedSourceDerivations<'a> {
+    pub handlers: &'a [CanonicalExecutableHandlerV1],
+    pub selected: &'a BTreeSet<FormationLocalId>,
+    pub formations: BTreeMap<FormationLocalId, &'a FormationJudgmentPreimageV2>,
+}
+
 impl CheckedCanonicalSourceAnalysisV1 {
     pub fn new(source: CanonicalSourceCstV1, plan: CanonicalSourceAllocationPlanV1, context: CanonicalSourceContextV1) -> Result<Self, CanonicalSourceErrorV1> {
         rematerialize_canonical_source_allocation_plan_v1(&source, &plan)?;
@@ -82,7 +88,11 @@ impl CheckedCanonicalSourceAnalysisV1 {
                 if scalar { handler.rules.sort_by(|a, b| a.assignments.first().map(|a| &a.target).cmp(&b.assignments.first().map(|b| &b.target))); }
                 retained.push(handler);
             }
-            elaborate_canonical_source_package_inner(edit.source(), self.context, edit.plan(), Some((&retained, &selected)))?
+            let formations = self.package.checked_package.constitution().preimage().formations.iter()
+                .filter_map(|formation| edit.formation(formation.id).ok().map(|id| (id, formation)))
+                .collect();
+            let derivations = RetainedSourceDerivations { handlers: &retained, selected: &selected, formations };
+            elaborate_canonical_source_package_inner(edit.source(), self.context, edit.plan(), Some(&derivations))?
         } else {
             elaborate_canonical_source_package_v1(edit.source(), self.context, edit.plan())?
         };

@@ -6075,13 +6075,17 @@ fn elaborate_canonical_source_package_inner(
     cst: &CanonicalSourceCstV1,
     context: CanonicalSourceContextV1,
     plan: &CanonicalSourceAllocationPlanV1,
-    reused: Option<(&[CanonicalExecutableHandlerV1], &BTreeSet<FormationLocalId>)>,
+    reused: Option<&source_analysis::RetainedSourceDerivations<'_>>,
 ) -> Result<CanonicalSourcePackageSliceV1, CanonicalSourceErrorV1> {
     if plan.artifact != cst.artifact {
         return Err(CanonicalSourceErrorV1::AllocationArtifactMismatch);
     }
     let expanded = structured_bindings::expand(cst, plan)?;
     let cst = expanded.as_ref();
+    let source_formation = |scope, id, source: &[u8], origin, kind: &str| {
+        source_formation(scope, id, source, origin, kind,
+            reused.and_then(|retained| retained.formations.get(&id).copied()))
+    };
     let scope = TermScope {
         universe: context.universe,
         semantics: context.semantics,
@@ -6792,7 +6796,7 @@ fn elaborate_canonical_source_package_inner(
             plan,
             input_parts,
             &scalar_parts,
-            reused,
+            reused.map(|retained| (retained.handlers, retained.selected)),
         )
     };
     let check_package = || {
@@ -11029,16 +11033,30 @@ fn source_formation(
     source: &[u8],
     origin: CanonicalSourceOriginV1,
     kind: &str,
+    retained: Option<&FormationJudgmentPreimageV2>,
 ) -> Result<FormationJudgmentPreimageV2, CanonicalSourceErrorV1> {
+    let type_kind = format!("clause/source-{kind}-type-v1");
+    let exact_atom = |term: &Term, kind: &[u8], payload: &[u8]| {
+        term.scope() == scope && term.as_atom().is_some_and(|atom|
+            atom.kind() == kind && atom.canonical_payload() == payload
+                && atom.equality_contract() == EqualityContract::ExactOctetsV1)
+    };
+    // Only explicit occurrence continuity offers a previous derivation. Its
+    // source and semantic scope must still be exact; origins are always new.
+    let retained = retained.filter(|old|
+        old.direct_dependencies.is_empty()
+            && exact_atom(&old.term, b"clause/canonical-source-slice-v1", source)
+            && exact_atom(&old.target.type_term, type_kind.as_bytes(), b"closed")
+            && exact_atom(&old.target.interpretation, b"clause/canonical-reading-v1", b"declaration-profile-v1"));
+    let (term, target) = match retained {
+        Some(old) => (old.term.clone(), old.target.clone()),
+        None => (source_term(scope, source)?, target(scope, type_kind.as_bytes(), b"closed")?),
+    };
     Ok(FormationJudgmentPreimageV2 {
         id,
         context: vec![origin_term(scope, origin)?],
-        term: source_term(scope, source)?,
-        target: target(
-            scope,
-            format!("clause/source-{kind}-type-v1").as_bytes(),
-            b"closed",
-        )?,
+        term,
+        target,
         direct_dependencies: vec![],
     })
 }
