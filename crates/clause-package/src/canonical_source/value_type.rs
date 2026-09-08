@@ -280,6 +280,9 @@ pub(super) fn resolve<Item: std::borrow::Borrow<CstItem>>(
 ) -> Result<CanonicalValueTypeV1, &'static str> {
     use CanonicalScalarValueKindV1 as K;
     let source = std::str::from_utf8(name).map_err(|_| "invalid value contract")?.trim();
+    if source == "{}" {
+        return Ok(CanonicalValueTypeV1::Record(BTreeMap::new()));
+    }
     let parts = alternatives(source);
     if parts.len() > 1 {
         let mut types = BTreeSet::new();
@@ -357,6 +360,7 @@ pub(super) fn resolve<Item: std::borrow::Borrow<CstItem>>(
 
 /// The declaration grammar uses the same recursive value contracts as callables.
 pub(super) fn designation(source: &str, origin: CanonicalSourceOriginV1) -> Result<Vec<u8>, CanonicalSourceErrorV1> {
+    if source == "{}" { return Ok(source.as_bytes().to_vec()); }
     let parts = alternatives(source);
     if parts.len() > 1 {
         for part in parts { designation(part.trim(), origin)?; }
