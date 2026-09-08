@@ -673,7 +673,8 @@ fn match_rule_from(
             for incoming in active {
                 let start_visits = *visits;
                 let mut found = false;
-                let unbound = bound_pattern(subject_pattern, &incoming.bindings) == Some(false);
+                let subject_bound = bound_pattern(subject_pattern, &incoming.bindings);
+                let unbound = subject_bound == Some(false);
                 let bound_subject = if unbound {
                     None
                 } else {
@@ -744,6 +745,11 @@ fn match_rule_from(
                     } else {
                         Box::new(first_row.into_iter().chain(rows).flat_map(|(subject, values)| values.iter().map(move |value| (subject, value))))
                     };
+                // Exact selection has already checked these side-effect-free
+                // patterns. Unbound and general expressions still unify in order.
+                let subject_selected = bound_subject.is_some() && (subject_bound == Some(true)
+                    || matches!(subject_pattern.as_ref(), ExecutableExpressionV1::Constant(_) | ExecutableExpressionV1::Argument(_)));
+                let value_selected = bound_value.is_some();
                 let mut candidates = candidates.peekable();
                 let mut incoming = Some(incoming);
                 while let Some((subject, value)) = candidates.next() {
@@ -756,7 +762,7 @@ fn match_rule_from(
                         let last = candidates.peek().is_none();
                         let mut matched = if last { incoming.take().expect("last candidate owns its prefix") }
                             else { incoming.as_ref().expect("more candidates retain their prefix").clone() };
-                        let new_bindings = [subject_pattern.as_ref(), value_pattern.as_ref()].map(|pattern| {
+                        let new_bindings = [(subject_pattern.as_ref(), subject_selected), (value_pattern.as_ref(), value_selected)].map(|(pattern, selected)| {
                             fn binding(pattern: &ExecutableExpressionV1) -> Option<u16> {
                                 match pattern {
                                     ExecutableExpressionV1::Binding(id) => Some(*id),
@@ -764,23 +770,23 @@ fn match_rule_from(
                                     _ => None,
                                 }
                             }
-                            binding(pattern).filter(|id| !matched.bindings.contains_key(id))
+                            if selected { None } else { binding(pattern).filter(|id| !matched.bindings.contains_key(id)) }
                         });
-                        if !unify(
+                        if (!subject_selected && !unify(
                             subject_pattern,
                             &ExecutableValueV1::Referent(subject.clone()),
                             &mut matched.bindings,
                             configuration,
                             arguments,
                             context,
-                        )? || !unify(
+                        )?) || (!value_selected && !unify(
                             value_pattern,
                             value,
                             &mut matched.bindings,
                             configuration,
                             arguments,
                             context,
-                        )? {
+                        )?) {
                             if last {
                                 for binding in new_bindings.into_iter().flatten() { Arc::make_mut(&mut matched.bindings).remove(&binding); }
                                 incoming = Some(matched);
@@ -1400,5 +1406,58 @@ mod match_ownership_tests {
         assert_eq!(matched.predicates.len(), 1);
         assert_eq!(matched.predicates[0].value, ExecutableValueV1::Boolean(false));
         assert!(matches!(matched.predicates[0].reads.as_slice(), [ExecutableReadV1::RelationSearch(0, None, 1)]));
+    }
+}
+
+#[cfg(test)]
+mod join_cost_tests {
+    use super::*;
+    #[test]
+    #[ignore = "owning join-loop profile with an explicit actual consumer fixture"]
+    fn measure_consumer_joins() {
+        use clause_package::*;
+        let source = std::fs::read(std::env::var("CLAUSE_SUM_INPUT_SOURCE").unwrap()).unwrap();
+        let frontend = CanonicalDeclaredFrontendV1::read(DECLARED_FOCUSED_FRONTEND_SOURCE_V1).unwrap();
+        let cst = read_canonical_source_with_declared_frontend_v1(&source, &frontend).unwrap();
+        let allocation = plan_independent_canonical_source_allocations_v1(&cst,
+            ProgramChangeOccurrenceId::from_bytes([17; 32])).unwrap();
+        let scope = TermScope { universe: UniverseId::from_bytes([1;32]), semantics: ClauseSemanticsId::from_bytes([2;32]) };
+        let compiled = elaborate_canonical_source_package_v1(&cst,
+            CanonicalSourceContextV1 { universe: scope.universe, semantics: scope.semantics }, &allocation).unwrap();
+        let roles = (0..compiled.state_cells.len()).map(|id| LocalRoleRefV2 {
+            schema: RelationSchemaLocalId::new(2), role: RoleLocalId::new(id as u32),
+        }).collect::<Vec<_>>();
+        let lowered = lower_canonical_executable_program_v1(scope, &compiled.state_cells, &compiled.executable_handlers, &roles).unwrap();
+        let slots = lowered.program.initial_configuration.iter().cloned().map(Into::into).collect::<Vec<ExecutableSlotV1>>();
+        let configuration = slots.as_slice();
+        let arguments = [ExecutableValueV1::number(0.016).unwrap()];
+        let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
+            reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
+        let configuration = closure::close(&lowered.program, configuration, context, None).unwrap();
+        let entries = lowered.handlers.iter().filter(|handler| matches!(handler.trigger,
+            CanonicalHandlerTriggerV1::FixedTickRoot | CanonicalHandlerTriggerV1::FixedTickDerived | CanonicalHandlerTriggerV1::FixedTick))
+            .map(|handler| handler.entry).collect::<BTreeSet<_>>();
+        let rules = lowered.program.rules.iter().filter(|rule| entries.contains(&rule.entry)
+            && !closure::is_derivation(rule)
+            && rule.required_present.iter().all(|slot| configuration[usize::from(*slot)].value().is_some())
+            && rule.required_absent.iter().all(|slot| configuration[usize::from(*slot)].value().is_none()))
+            .collect::<Vec<_>>();
+        let mut samples = Vec::new();
+        let mut counts = (0,0);
+        for _ in 0..7 {
+            let start = std::time::Instant::now();
+            for _ in 0..30 {
+                let mut visits = 0;
+                let mut accepted = 0;
+                for rule in &rules {
+                    let matches = match_rule(&rule.predicates, &configuration, &arguments, context, &mut visits, false).unwrap();
+                    accepted += matches.iter().filter(|(_, accepted)| *accepted).count();
+                    std::hint::black_box(matches);
+                }
+                counts = (visits, accepted);
+            }
+            samples.push(start.elapsed().as_secs_f64() * 1000.0 / 30.0);
+        }
+        eprintln!("join-loop rules={} counts={counts:?} samples_ms={samples:?}", rules.len());
     }
 }
