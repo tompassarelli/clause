@@ -82,6 +82,10 @@ fn shared_foreign_declarations_preserve_both_exact_contracts_and_source_origins(
         let opened = ResidentSourceWorkbenchV1::open_with_imports(source.as_bytes(), imports(SHARED)).unwrap();
         let checked = opened.checked_source_package().unwrap();
         let callable = checked.callables.iter().find(|c| c.designation == entry).unwrap();
+        let baseline = baseline
+            .replace("{options: {myConfig: {modules: {btop: {enable: enable-option(\"Enable btop system monitor\")}}}},\n   config: when-enabled(enabled(), {environment: {systemPackages: [btop()]}})}", "module({myConfig: {modules: {btop: {enable: enable-option(\"Enable btop system monitor\")}}}}, enabled(), btop())")
+            .replace("{options: {myConfig: {modules: {jq: {enable: enable-option(\"jq command-line JSON processor\")}}}},\n   config: when-enabled(enabled(), {environment: {systemPackages: [jq()]}})}", "module({myConfig: {modules: {jq: {enable: enable-option(\"jq command-line JSON processor\")}}}}, enabled(), jq())");
+        let baseline = format!("{baseline}\nexport module<Options: Record>(?options: Options, ?enabled: Delayed<nix,Bool>, ?package: Package)\n  {{options: ?options, config: when-enabled(?enabled, {{environment: {{systemPackages: [?package]}}}})}}\n");
         let baseline = ResidentSourceWorkbenchV1::open(baseline.as_bytes()).unwrap().checked_source_package().unwrap();
         let baseline = baseline.callables.iter().find(|c| c.designation == entry).unwrap();
         assert_eq!(callable.result_kind, baseline.result_kind);
