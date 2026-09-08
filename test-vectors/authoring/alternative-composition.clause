@@ -1,0 +1,16 @@
+Selected:
+  command: Text
+
+Diagnostic:
+  message: Text
+
+Pending:
+  node: Text
+
+select(?found: Bool): Selected | Diagnostic
+  if(?found, {command: "module list"}, {message: "Unknown command"})
+
+export advance(?state: Pending | Diagnostic): Selected | Pending | Diagnostic
+  match(?state,
+    ?pending: Pending => select(?pending.node = "module"),
+    ?diagnostic: Diagnostic => ?diagnostic)
