@@ -1,6 +1,14 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const clause_source_profile_v1_begin: () => number;
+export const clause_source_profile_v1_finish: () => [number, number];
+export const clause_branch_v1_command: () => number;
+export const clause_branch_v1_event_byte: (a: number) => number;
+export const clause_branch_v1_event_len: () => number;
+export const clause_branch_v1_io_reset: () => void;
+export const clause_branch_v1_open: () => number;
+export const clause_branch_v1_request_push: (a: number) => number;
 export const clause_session_v1_command: () => number;
 export const clause_session_v1_command_bulk: (a: number, b: number) => number;
 export const clause_session_v1_event_bulk: () => [number, number];
@@ -11,19 +19,13 @@ export const clause_session_v1_intervene_bulk: (a: number, b: number, c: number,
 export const clause_session_v1_io_reset: () => void;
 export const clause_session_v1_open: () => number;
 export const clause_session_v1_open_bulk: (a: number, b: number) => number;
+export const clause_session_v1_prepare_source: (a: number, b: number, c: bigint, d: number, e: number) => number;
 export const clause_session_v1_project_bulk: (a: number, b: number) => [number, number, number, number];
 export const clause_session_v1_reclaim_retired: () => number;
 export const clause_session_v1_request_push: (a: number) => number;
+export const clause_session_v1_scalar_edit_bulk: (a: number, b: number, c: bigint, d: number, e: number) => number;
 export const clause_session_v1_source_continuity_bulk: (a: number, b: number) => [number, number, number, number];
 export const clause_session_v1_source_edit_bulk: (a: number, b: number, c: bigint, d: number, e: number, f: number, g: number) => number;
-export const clause_source_profile_v1_begin: () => number;
-export const clause_source_profile_v1_finish: () => [number, number];
-export const clause_branch_v1_command: () => number;
-export const clause_branch_v1_event_byte: (a: number) => number;
-export const clause_branch_v1_event_len: () => number;
-export const clause_branch_v1_io_reset: () => void;
-export const clause_branch_v1_open: () => number;
-export const clause_branch_v1_request_push: (a: number) => number;
 export const clause_process_v1_dispatch: () => number;
 export const clause_process_v1_request_push: (a: number) => number;
 export const clause_process_v1_reset: () => void;

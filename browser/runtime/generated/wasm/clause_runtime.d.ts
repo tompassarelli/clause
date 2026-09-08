@@ -3,6 +3,8 @@
 
 export function clause_session_v1_open_bulk(request: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_command_bulk(request: Uint8Array<ArrayBuffer>): number;
+export function clause_session_v1_prepare_source(slot: number, generation: number, sequence: bigint, preparation: Uint8Array<ArrayBuffer>): number;
+export function clause_session_v1_scalar_edit_bulk(slot: number, generation: number, sequence: bigint, transaction: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_source_edit_bulk(slot: number, generation: number, sequence: bigint, open: Uint8Array<ArrayBuffer>, witness: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_intervene_bulk(slot: number, generation: number, request: Uint8Array<ArrayBuffer>): Uint8Array;
 
@@ -69,6 +71,14 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly clause_source_profile_v1_begin: () => number;
+    readonly clause_source_profile_v1_finish: () => [number, number];
+    readonly clause_branch_v1_command: () => number;
+    readonly clause_branch_v1_event_byte: (a: number) => number;
+    readonly clause_branch_v1_event_len: () => number;
+    readonly clause_branch_v1_io_reset: () => void;
+    readonly clause_branch_v1_open: () => number;
+    readonly clause_branch_v1_request_push: (a: number) => number;
     readonly clause_session_v1_command: () => number;
     readonly clause_session_v1_command_bulk: (a: number, b: number) => number;
     readonly clause_session_v1_event_bulk: () => [number, number];
@@ -79,19 +89,13 @@ export interface InitOutput {
     readonly clause_session_v1_io_reset: () => void;
     readonly clause_session_v1_open: () => number;
     readonly clause_session_v1_open_bulk: (a: number, b: number) => number;
+    readonly clause_session_v1_prepare_source: (a: number, b: number, c: bigint, d: number, e: number) => number;
     readonly clause_session_v1_project_bulk: (a: number, b: number) => [number, number, number, number];
     readonly clause_session_v1_reclaim_retired: () => number;
     readonly clause_session_v1_request_push: (a: number) => number;
+    readonly clause_session_v1_scalar_edit_bulk: (a: number, b: number, c: bigint, d: number, e: number) => number;
     readonly clause_session_v1_source_continuity_bulk: (a: number, b: number) => [number, number, number, number];
     readonly clause_session_v1_source_edit_bulk: (a: number, b: number, c: bigint, d: number, e: number, f: number, g: number) => number;
-    readonly clause_source_profile_v1_begin: () => number;
-    readonly clause_source_profile_v1_finish: () => [number, number];
-    readonly clause_branch_v1_command: () => number;
-    readonly clause_branch_v1_event_byte: (a: number) => number;
-    readonly clause_branch_v1_event_len: () => number;
-    readonly clause_branch_v1_io_reset: () => void;
-    readonly clause_branch_v1_open: () => number;
-    readonly clause_branch_v1_request_push: (a: number) => number;
     readonly clause_process_v1_dispatch: () => number;
     readonly clause_process_v1_request_push: (a: number) => number;
     readonly clause_process_v1_reset: () => void;
