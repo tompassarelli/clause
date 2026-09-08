@@ -1,0 +1,16 @@
+foreign target-text(): Text
+  construction: "nix"
+  get: "name"
+  from: "pkgs"
+  failure: throw
+export flags()
+  ["--system", target-text()]
+
+export reversed(): Sequence<Delayed<nix,Text>>
+  [target-text(), "--system"]
+
+export repeated()
+  ["--system", target-text(), "--system"]
+
+export nested()
+  [{flags: ["--system"]}, {flags: [target-text()]}]

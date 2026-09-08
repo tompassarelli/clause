@@ -550,6 +550,14 @@ boundary. Call, record, sequence, and strict lexical binding syntax are unchange
 A strict binding constructs its value once; it does not force the eventual Nix
 value. The `throw` contract now describes failure at target evaluation.
 
+A sequence may combine ordinary values with delayed values of the same eventual
+type and target: `["--system", target-text()]` has the exact contract
+`Sequence<Delayed<nix,Text>>` when `target-text()` constructs Nix Text.
+The same rule applies recursively to matching record fields, sequences, and
+dictionaries. Order and repeated values are preserved; conflicting element
+types or targets reject. Construction does not force the delayed elements.
+See `clause:test-vectors/authoring/mixed-delayed-sequences/flags.clause`.
+
 Equality with a delayed operand constructs a delayed Boolean when both operands
 have the same eventual type and target; an ordinary value of that type may be
 the other operand. `if` with a delayed Boolean constructs a target conditional.

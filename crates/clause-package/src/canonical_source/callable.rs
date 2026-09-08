@@ -1392,9 +1392,9 @@ fn expression_kind(
             let first = values
                 .first()
                 .ok_or("empty sequence literal needs an element contract")?;
-            let kind = recur(first)?;
+            let mut kind = recur(first)?;
             for value in &values[1..] {
-                require(value, &kind)?;
+                kind = kind.sequence_element_with(&recur(value)?)?;
             }
             T::Sequence(Box::new(kind))
         }

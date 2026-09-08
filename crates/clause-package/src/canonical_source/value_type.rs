@@ -126,6 +126,27 @@ impl CanonicalValueTypeV1 {
             _ => self.clone(),
         })
     }
+    pub(super) fn sequence_element_with(&self, other: &Self) -> Result<Self, &'static str> {
+        if self == other { return Ok(self.clone()); }
+        Ok(match (self, other) {
+            (Self::Delayed { target, .. }, _) | (_, Self::Delayed { target, .. }) => {
+                if !self.in_target(target) || !other.in_target(target) {
+                    return Err("sequence construction target mismatch");
+                }
+                let value = self.constructed_value(target)?;
+                if value != other.constructed_value(target)? {
+                    return Err("sequence element type mismatch");
+                }
+                Self::Delayed { target: target.clone(), value: Box::new(value) }
+            }
+            (Self::Sequence(a), Self::Sequence(b)) => Self::Sequence(Box::new(a.sequence_element_with(b)?)),
+            (Self::Dictionary(a), Self::Dictionary(b)) => Self::Dictionary(Box::new(a.sequence_element_with(b)?)),
+            (Self::Record(a), Self::Record(b)) if a.keys().eq(b.keys()) => Self::Record(a.iter()
+                .map(|(key, value)| Ok((key.clone(), value.sequence_element_with(&b[key])?)))
+                .collect::<Result<_, &'static str>>()?),
+            _ => return Err("sequence element type mismatch"),
+        })
+    }
     pub fn accepts(&self, value: &CanonicalScalarValueV1) -> bool {
         use CanonicalScalarValueKindV1 as K;
         use CanonicalScalarValueV1 as V;
