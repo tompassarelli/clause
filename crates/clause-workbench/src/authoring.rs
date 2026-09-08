@@ -311,5 +311,13 @@ Live source tooling offers an explicit checked scalar-effect replacement, not ar
         }
     }
 
+    card.push_str("\n## Shared foreign declarations\n\nAn explicit `import \"nixpkgs.clause\"` brings checked foreign types and functions into the consumer's scope. File commands resolve the path relative to that consumer. Declaration sources contain foreign declarations only; imports are direct, and duplicate names reject. The resident API accepts the same finite import context as exact source bytes. Imported generic contracts retain each actual record type.\n\n");
+    for (path, source) in [
+        ("clause:test-vectors/authoring/shared-foreign/nixpkgs.clause", include_str!("../../../test-vectors/authoring/shared-foreign/nixpkgs.clause")),
+        ("clause:test-vectors/authoring/shared-foreign/btop.clause", include_str!("../../../test-vectors/authoring/shared-foreign/btop.clause")),
+        ("clause:test-vectors/authoring/shared-foreign/jq.clause", include_str!("../../../test-vectors/authoring/shared-foreign/jq.clause")),
+    ] {
+        writeln!(card, "`{path}`\n\n```clause\n{source}```\n").expect("writing to a String cannot fail");
+    }
     card
 }

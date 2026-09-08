@@ -53,6 +53,15 @@ impl ResidentSourceWorkbenchV1 {
         exact_source: &[u8],
         checkpoint: &[u8],
     ) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
+        Self::reopen_with_imports(exact_source, clause_package::CanonicalSourceImportsV1::new(), checkpoint)
+    }
+
+    /// Reopen with the same explicit declaration context used to check the saved package.
+    pub fn reopen_with_imports(
+        exact_source: &[u8],
+        imports: clause_package::CanonicalSourceImportsV1,
+        checkpoint: &[u8],
+    ) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
         let mut context = clause_runtime::wasm_session_checkpoint_context_v1(checkpoint)?;
         if take(&mut context, 4)? != b"CRS1" {
             return Err(invalid());
@@ -71,7 +80,7 @@ impl ResidentSourceWorkbenchV1 {
             return Err(invalid());
         }
         let mut workbench =
-            Self::open_with_checkpoint(source, frontend, retention, Some((change, checkpoint)))?;
+            Self::open_with_checkpoint(source, frontend, retention, Some((change, checkpoint)), imports)?;
         if !edit.is_empty() {
             workbench.last_source_edit = Some(edit.to_vec());
         }

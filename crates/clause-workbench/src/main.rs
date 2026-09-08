@@ -260,14 +260,7 @@ fn print_authoring_card(destination: Option<&Path>) -> ExitCode {
 
 fn check_source(source: &Path, compile: bool, destination: Option<&Path>) -> ExitCode {
     let startup = Instant::now();
-    let exact_source = match std::fs::read(source) {
-        Ok(source) => source,
-        Err(error) => {
-            eprintln!("source read failed: {error}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let workbench = match ResidentSourceWorkbenchV1::open(&exact_source) {
+    let workbench = match ResidentSourceWorkbenchV1::open_file(source) {
         Ok(workbench) => workbench,
         Err(error) => {
             eprintln!("source check failed: {error}");

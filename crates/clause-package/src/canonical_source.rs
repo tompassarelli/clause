@@ -25,6 +25,8 @@ mod foreign;
 pub use value_type::CanonicalValueTypeV1;
 pub use foreign::{CanonicalForeignEvaluationV1, CanonicalForeignBindingV1, CanonicalForeignOperationV1, CanonicalForeignFailureV1};
 pub use callable::{CanonicalCallableV1, CanonicalCallableArgumentV1, CanonicalCallableModeV1, check_canonical_callable_v1};
+mod imports;
+pub use imports::{CanonicalSourceImportsV1, canonical_source_imports_v1};
 mod scalar_laws;
 use scalar_laws::*;
 mod live_edit;
@@ -596,6 +598,7 @@ pub struct CanonicalScalarHandlerV1 {
 pub struct CanonicalSourceCstV1 {
     artifact: CanonicalSourceArtifactIdV1,
     exact_source: Box<[u8]>,
+    imported_sources: BTreeMap<CanonicalSourceArtifactIdV1, Box<[u8]>>,
     items: Vec<CstItem>,
     denotations: Vec<CanonicalSourceDenotationV1>,
     applications: Vec<CanonicalSourceApplicationV1>,
@@ -717,12 +720,14 @@ impl CanonicalSourceCstV1 {
 
     #[must_use]
     pub fn source_slice(&self, origin: CanonicalSourceOriginV1) -> Option<&[u8]> {
-        if origin.artifact != self.artifact {
-            return None;
-        }
+        let source = if origin.artifact == self.artifact {
+            &self.exact_source
+        } else {
+            self.imported_sources.get(&origin.artifact)?
+        };
         let start = usize::try_from(origin.start).ok()?;
         let end = usize::try_from(origin.end).ok()?;
-        self.exact_source.get(start..end)
+        source.get(start..end)
     }
 
     #[must_use]
@@ -815,6 +820,7 @@ pub struct CanonicalSourceContextV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalSourceErrorV1 {
+    InvalidImport { origin: CanonicalSourceOriginV1, reason: &'static str },
     ScalarLawExpansionLimit {
         origin: CanonicalSourceOriginV1,
     },
@@ -1502,6 +1508,24 @@ pub fn read_canonical_source_with_declared_frontend_v1(
     exact_source: &[u8],
     frontend: &CanonicalDeclaredFrontendV1,
 ) -> Result<CanonicalSourceCstV1, CanonicalSourceErrorV1> {
+    read_canonical_source_with_imports_and_frontend_v1(exact_source, &CanonicalSourceImportsV1::new(), frontend)
+}
+
+/// Read a source against its explicit, finite foreign declaration imports.
+pub fn read_canonical_source_with_imports_v1(
+    exact_source: &[u8],
+    imports: &CanonicalSourceImportsV1,
+) -> Result<CanonicalSourceCstV1, CanonicalSourceErrorV1> {
+    let frontend = declared_frontend::default_declared_frontend()?;
+    read_canonical_source_with_imports_and_frontend_v1(exact_source, imports, &frontend)
+}
+
+pub fn read_canonical_source_with_imports_and_frontend_v1(
+    exact_source: &[u8],
+    imports: &CanonicalSourceImportsV1,
+    frontend: &CanonicalDeclaredFrontendV1,
+) -> Result<CanonicalSourceCstV1, CanonicalSourceErrorV1> {
+    let imported = imports::read(exact_source, imports, frontend)?;
     let source =
         std::str::from_utf8(exact_source).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
     let artifact =
@@ -1509,9 +1533,10 @@ pub fn read_canonical_source_with_declared_frontend_v1(
     let lines = source_lines(source)?;
     let frontend = frontend.with_transition_readings(artifact, &lines)?;
     let frontend = &frontend;
-    let scalar_laws = ScalarLawEnvironment::read(artifact, &lines, frontend)?;
-    let mut items = Vec::new();
-    let mut callables = Vec::new();
+    let mut scalar_laws = ScalarLawEnvironment::read(artifact, &lines, frontend)?;
+    scalar_laws.declarations.extend(imported.items.iter().filter(|item| matches!(item.kind, CstKind::ForeignType { .. })).cloned());
+    let mut items = imported.items;
+    let mut callables = imported.callables;
     let mut vocabularies = Vec::new();
     let mut subject_focuses = Vec::new();
     let mut cursor = 0;
@@ -1543,7 +1568,7 @@ pub fn read_canonical_source_with_declared_frontend_v1(
             start: block[0].start as u64,
             end: last.end as u64,
         };
-        if block[0].text.starts_with("reading ") {
+        if block[0].text.starts_with("reading ") || block[0].text.starts_with("import ") {
             continue;
         }
         if let Some((definition, relation)) = callable::read(block, origin, &scalar_laws.declarations)? {
@@ -1659,6 +1684,7 @@ pub fn read_canonical_source_with_declared_frontend_v1(
     let mut cst = CanonicalSourceCstV1 {
         artifact,
         exact_source: exact_source.into(),
+        imported_sources: imported.sources,
         items,
         denotations,
         applications,

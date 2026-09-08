@@ -675,11 +675,6 @@ pub(super) fn canonical_print(
     let lines = source_lines(source)?;
     let mut output = String::new();
     for line in lines {
-        if line.indent % 2 != 0 {
-            return Err(CanonicalSourceErrorV1::UnexpectedIndentation {
-                origin: line_origin(cst.artifact(), line),
-            });
-        }
         let content = line.text[line.indent..].trim_end();
         if !content.is_empty() {
             output.push_str(&" ".repeat(line.indent));

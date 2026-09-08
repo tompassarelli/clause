@@ -398,6 +398,16 @@ Type parameters are source-level, private foreign declarations only; exported
 signatures and canonical foreign accesses contain fully resolved types.
 Foreign declarations always require explicit result contracts.
 
+`import "nixpkgs.clause"` brings the named source's foreign types and functions
+into the consumer's checked scope. `check-source` and `compile-nix` resolve
+the path relative to the consumer file; the source API accepts an explicit
+finite map from import spellings to exact bytes. There is no ambient search.
+This slice admits direct imports of foreign declaration sources only, without
+nested imports, executable bodies, renaming, or shadowing. Duplicate names
+reject. Each imported declaration retains its own source origin and uses the
+same exact type and foreign binding checks as a local declaration. The complete
+two-consumer example is in `clause:test-vectors/authoring/shared-foreign/`.
+
 A foreign declaration with `construction: "nix"` instead constructs a delayed
 expression for that target. It performs no foreign attempt. Its written result
 is the eventual value contract; the construction declaration derives the checked

@@ -13,7 +13,7 @@ use clause_package::{
     ProgramChangeOccurrenceId, RoleLocalId, StateRevisionId, TermScope, check_process_package,
     decode_process_package, derive_program_snapshot_id, encode_process_package,
     elaborate_canonical_source_package_v1, plan_independent_canonical_source_allocations_v1,
-    read_canonical_source_with_declared_frontend_v1,
+    read_canonical_source_with_imports_and_frontend_v1,
 };
 use clause_runtime::{
     ExecutableCanonicalHandlerBindingV1, ExecutableInputBindingV1, ExecutableInputPlanV1,
@@ -101,6 +101,7 @@ pub struct ResidentSourceWorkbenchV1 {
     last_projection: Option<WasmSessionProjectionV1>,
     next_change: u64,
     exact_source: Vec<u8>,
+    imports: clause_package::CanonicalSourceImportsV1,
     default_occurrences: Vec<Vec<u8>>,
     handlers: BTreeMap<Vec<u8>, Vec<ExecutableCanonicalHandlerBindingV1>>,
     callables: BTreeMap<Vec<u8>, clause_runtime::ExecutableCallableV1>,
@@ -129,6 +130,32 @@ impl ResidentSourceWorkbenchV1 {
         Self::open_with_declared_frontend(exact_source, DECLARED_FOCUSED_FRONTEND_SOURCE_V1)
     }
 
+    /// Open with immutable exact sources for every explicit declaration import.
+    pub fn open_with_imports(
+        exact_source: &[u8],
+        imports: clause_package::CanonicalSourceImportsV1,
+    ) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
+        Self::open_with_checkpoint(exact_source, DECLARED_FOCUSED_FRONTEND_SOURCE_V1,
+            clause_runtime::WasmSessionTraceRetentionV1::FullUntilCommandLimit, None, imports)
+    }
+
+    /// Resolve direct declaration imports relative to the consumer source file.
+    pub fn open_file(source: &std::path::Path) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
+        let exact_source = std::fs::read(source).map_err(|e| boxed_error("source read", e))?;
+        let mut imports = clause_package::CanonicalSourceImportsV1::new();
+        for name in clause_package::canonical_source_imports_v1(&exact_source)
+            .map_err(|e| debug_error("source imports", e))? {
+            let path = std::path::Path::new(&name);
+            if path.is_absolute() {
+                return Err(ResidentSourceWorkbenchErrorV1("declaration imports must be relative paths".into()));
+            }
+            let path = source.parent().unwrap_or_else(|| std::path::Path::new(".")).join(path);
+            let bytes = std::fs::read(&path).map_err(|e| ResidentSourceWorkbenchErrorV1(format!("declaration source {}: {e}", path.display())))?;
+            imports.insert(name, bytes);
+        }
+        Self::open_with_imports(&exact_source, imports)
+    }
+
     pub fn open_with_declared_frontend(
         exact_source: &[u8],
         declared_frontend_source: &[u8],
@@ -150,7 +177,7 @@ impl ResidentSourceWorkbenchV1 {
         declared_frontend_source: &[u8],
         trace_retention: clause_runtime::WasmSessionTraceRetentionV1,
     ) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
-        Self::open_with_checkpoint(exact_source, declared_frontend_source, trace_retention, None)
+        Self::open_with_checkpoint(exact_source, declared_frontend_source, trace_retention, None, clause_package::CanonicalSourceImportsV1::new())
     }
 
     fn open_with_checkpoint(
@@ -158,6 +185,7 @@ impl ResidentSourceWorkbenchV1 {
         declared_frontend_source: &[u8],
         trace_retention: clause_runtime::WasmSessionTraceRetentionV1,
         checkpoint: Option<(u64, &[u8])>,
+        imports: clause_package::CanonicalSourceImportsV1,
     ) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
         let declared_frontend = CanonicalDeclaredFrontendV1::read(declared_frontend_source)
             .map_err(|error| debug_error("declared frontend", error))?;
@@ -212,6 +240,7 @@ impl ResidentSourceWorkbenchV1 {
             last_projection: None,
             next_change: 0,
             exact_source: Vec::new(),
+            imports,
             default_occurrences: Vec::new(),
             handlers: BTreeMap::new(),
             callables: BTreeMap::new(),
@@ -740,7 +769,7 @@ impl ResidentSourceWorkbenchV1 {
         &self,
         exact_source: &[u8],
     ) -> Result<CanonicalSourceCstV1, CanonicalSourceErrorV1> {
-        read_canonical_source_with_declared_frontend_v1(exact_source, &self.declared_frontend)
+        read_canonical_source_with_imports_and_frontend_v1(exact_source, &self.imports, &self.declared_frontend)
     }
 
     fn install_source_with_edit(

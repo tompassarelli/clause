@@ -12,8 +12,7 @@ fn compile(arguments: &[OsString]) -> Result<(), String> {
     let [source, entry, output] = arguments else {
         return Err("usage: clause-workbench compile-nix SOURCE.clause ENTRY OUTPUT.nix".into());
     };
-    let exact_source = std::fs::read(source).map_err(|e| e.to_string())?;
-    let workbench = ResidentSourceWorkbenchV1::open(&exact_source).map_err(|e| format!("source open: {e}"))?;
+    let workbench = ResidentSourceWorkbenchV1::open_file(Path::new(source)).map_err(|e| format!("source open: {e}"))?;
     let checked = workbench.checked_source_package().map_err(|e| e.to_string())?;
     let entry = entry.to_str().ok_or("entry must be UTF-8")?;
     let callable = checked.callables.iter().find(|c| c.exported && c.designation == entry.as_bytes()).ok_or("unknown exported Nix entry")?;
