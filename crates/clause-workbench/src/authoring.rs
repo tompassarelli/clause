@@ -28,6 +28,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/pure-callable.clause"),
     },
     AuthoringExampleV1 {
+        slug: "local-denotation",
+        title: "Strict local denotations",
+        summary: "Inside a callable body, `?name: expression` binds one value with its exact inferred type for subsequent lines. Evaluation is strict, once and in source order, including unused bindings. A final expression supplies the result. Duplicate, self-referential and unresolved names reject; procedure effects still require a procedure.",
+        source: include_str!("../../../test-vectors/authoring/local-denotation/mark-append.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "pure-composition",
         title: "Typed callable composition",
         summary: "A callable can invoke another checked pure callable in its source scope, including a later definition. Arguments evaluate once before the body; an unused argument may still fail. Conditional branches remain lazy, and private definitions remain private in generated JavaScript.",

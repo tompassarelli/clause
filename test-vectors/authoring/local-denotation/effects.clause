@@ -1,0 +1,9 @@
+foreign step(?label: Text): Text
+  call: "step"
+  from: "./effects.mjs"
+  failure: throw
+
+export procedure ordered(): Text
+  ?first: step("first")
+  ?unused: step("second")
+  "{?first}/{?first}"

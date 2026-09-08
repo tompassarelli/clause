@@ -152,7 +152,7 @@ impl CallableArgumentCst {
 
 #[derive(Clone, Debug)]
 enum CallableBodyCst {
-    Expressions(Vec<CanonicalScalarExpressionV1>),
+    Expressions(Vec<(Option<Vec<u8>>, CanonicalScalarExpressionV1)>),
     Foreign {
         evaluation: CanonicalForeignEvaluationV1,
         operation: CanonicalForeignOperationV1,
@@ -332,18 +332,27 @@ pub(super) fn read(
         };
         let mut expressions = Vec::new();
         loop {
-            expressions.push(
-                parser
-                    .disjunction()
-                    .ok_or_else(|| error("unsupported callable expression"))?,
-            );
+            parser.skip_spaces();
+            let mut binding = None;
+            let line = source[parser.cursor..].split('\n').next().unwrap_or("");
+            if let Some((name, _)) = line.strip_prefix('?').and_then(|line| line.split_once(':')) {
+                if !name.contains(|ch: char| ch.is_whitespace() || matches!(ch, '(' | ')' | '{' | '}')) {
+                    application_designation_bytes(name, expression_origin)?;
+                    binding = Some(format!("?{name}").into_bytes());
+                    parser.cursor += name.len() + 2;
+                }
+            }
+            let expression = parser.disjunction().ok_or_else(|| error("unsupported callable expression"))?;
+            let denotation = binding.is_some();
+            expressions.push((binding, expression));
             parser.skip_spaces();
             if parser.cursor == parser.source.len() {
+                if denotation { return Err(error("local denotation requires a following result expression")); }
                 break;
             }
             let trailing = &source[..parser.cursor];
             let gap = trailing.trim_end_matches(char::is_whitespace).len();
-            if mode != CanonicalCallableModeV1::Procedure || !trailing[gap..].contains('\n') {
+            if (!denotation && mode != CanonicalCallableModeV1::Procedure) || !trailing[gap..].contains('\n') {
                 return Err(error(
                     "multiple expressions require separate procedure lines",
                 ));
@@ -665,29 +674,28 @@ impl Expansion<'_> {
         })).collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
         let expression = match &definition.body {
             CallableBodyCst::Expressions(expressions) => {
-                let mut expressions = expressions
-                    .iter()
-                    .enumerate()
-                    .map(|(position, expression)| {
-                        let expected = if position + 1 == expressions.len() { definition.result_kind.as_ref().map(|kind| kind.instantiate(substitutions)).transpose()
-                            .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })? } else { None };
-                        lower(
-                            expression,
-                            &arguments,
-                            &BTreeMap::new(),
-                            static_paths,
-                            definition.expression_origin,
-                            self,
-                            0,
-                            definition.mode,
-                            expected.as_ref(),
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let mut body = expressions.pop().expect("parsed nonempty procedure body");
-                for value in expressions.into_iter().rev() {
+                let mut locals = BTreeMap::new();
+                let mut values = Vec::new();
+                let types = arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>();
+                for (position, (name, expression)) in expressions.iter().enumerate() {
+                    if name.as_ref().is_some_and(|name| locals.contains_key(name) || definition.arguments.iter().any(|a| name.strip_prefix(b"?") == Some(a.designation.as_slice()))) {
+                        return Err(CanonicalSourceErrorV1::InvalidCallable { origin, reason: "duplicate local binding" });
+                    }
+                    let expected = if position + 1 == expressions.len() { definition.result_kind.as_ref().map(|kind| kind.instantiate(substitutions)).transpose()
+                        .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })? } else { None };
+                    let value = lower(expression, &arguments, &locals, static_paths, definition.expression_origin, self, 0, definition.mode, expected.as_ref())?;
+                    let binding = self.binding(definition.expression_origin)?;
+                    if let Some(name) = name {
+                        let kind = expression_kind(&value, &types, &locals.values().cloned().collect(), 0, definition.mode)
+                            .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
+                        locals.insert(name.clone(), (binding, kind));
+                    }
+                    values.push((binding, value));
+                }
+                let (_, mut body) = values.pop().expect("parsed nonempty callable body");
+                for (binding, value) in values.into_iter().rev() {
                     body = CanonicalExecutableExpressionV1::Let {
-                        binding: self.binding(definition.expression_origin)?,
+                        binding,
                         value: Box::new(value),
                         body: Box::new(body),
                     };

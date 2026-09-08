@@ -1,0 +1,8 @@
+export label(?value: Text): Text
+  ?normalized: lowercase(?value)
+  ?result: "{?normalized}/{?normalized}"
+  ?result
+
+export strict(): Text
+  ?unused: require(false, "unused", "first binding")
+  require(false, "unused", "result expression")

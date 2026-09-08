@@ -346,6 +346,13 @@ an unused argument can still fail. Conditional expressions evaluate only their
 selected branch. Cycles and exhausted expansion bounds reject explicitly.
 
 Callable value contracts also admit `Sequence<T>` and named structural Shapes.
+Inside a callable body, `?name: expression` denotes a local value with its exact
+inferred type. Its scope is the following body lines; evaluation occurs once,
+strictly in source order, even when the value is unused. The final expression
+supplies the result. Duplicate names, self references and unresolved names
+reject. Foreign effects remain restricted to procedures. The executing
+window-mark example is `clause:test-vectors/authoring/local-denotation/mark-append.clause`.
+
 A sequence preserves order and repeated equal values. A record checked against
 a declared Shape supplies each field once, as in
 `{message: "Missing name", status: 1}`; missing, extra, or mistyped fields reject.

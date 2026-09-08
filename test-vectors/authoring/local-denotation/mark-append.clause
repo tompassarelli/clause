@@ -1,0 +1,17 @@
+Window:
+  id: F64
+  app-id: Text
+  title: Text
+
+Mark:
+  subject: Text
+  window: Window
+  marked-at: Text
+
+export mark-window(?marks: Sequence<Mark>, ?letter: Text, ?window: Window, ?timestamp: Text): Sequence<Mark>
+  ?subject: "@mark-{lowercase(?letter)}"
+  ?mark: {subject: ?subject, window: ?window, marked-at: ?timestamp}
+  if(fold(?marks, false, ?found, ?existing, ?found or ?existing.subject = ?subject),
+    fold(?marks, [], ?updated, ?existing,
+      append(?updated, if(?existing.subject = ?subject, ?mark, ?existing))),
+    append(?marks, ?mark))
