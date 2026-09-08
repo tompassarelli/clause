@@ -1,0 +1,11 @@
+Arguments:
+  config: {}
+
+export empty(?value: {}): {}
+  ?value
+
+export nested(?args: Arguments): {}
+  ?args.config
+
+export specimen(): {}
+  nested({config: empty({})})

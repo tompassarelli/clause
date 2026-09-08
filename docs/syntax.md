@@ -353,6 +353,12 @@ The same recursive element and field contracts
 check exported arguments, results, and foreign crossings. Equality compares
 sequence elements in order and record fields structurally.
 
+The value contract `{}` is a record with zero fields. It can appear as a callable
+argument or result, as a named shape's field contract, or inside
+`Delayed<nix,{}>`. It retains the ordinary record checking rules; it is not an
+unconstrained value type. See `clause:test-vectors/authoring/empty-record/` for
+native and target examples.
+
 `characters(text)` returns an ordered `Sequence<Text>` containing one Unicode
 scalar value per element, without normalization; empty Text yields an empty
 sequence. `split-text(text, delimiter)` splits at nonoverlapping literal
