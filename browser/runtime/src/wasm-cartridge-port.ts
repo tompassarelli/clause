@@ -404,12 +404,13 @@ function decode_hex_octets(
   label: string,
   maximumBytes: number,
   maximumSourceUnits: number,
-): number[] {
+): Uint16Array<ArrayBuffer> {
   if (typeof source !== "string") throw new Error(`${label} hex transport must be text`);
   if (source.length === 0 || source.length > maximumSourceUnits) {
     throw new Error(`${label} hex transport is outside its source bound`);
   }
-  const bytes: number[] = [];
+  const bytes = new Uint16Array(Math.min(maximumBytes, Math.floor(source.length / 2)));
+  let length = 0;
   let high = -1;
   for (let index = 0; index < source.length; index += 1) {
     const code = source.charCodeAt(index);
@@ -422,24 +423,24 @@ function decode_hex_octets(
     if (high < 0) {
       high = nibble;
     } else {
-      if (bytes.length >= maximumBytes) throw new Error(`${label} hex transport exceeds its byte bound`);
-      bytes.push(high * 16 + nibble);
+      if (length >= maximumBytes) throw new Error(`${label} hex transport exceeds its byte bound`);
+      bytes[length++] = high * 16 + nibble;
       high = -1;
     }
   }
   if (high >= 0) throw new Error(`${label} hex transport has an incomplete byte`);
-  if (bytes.length === 0) throw new Error(`${label} hex transport is empty`);
-  return bytes;
+  if (length === 0) throw new Error(`${label} hex transport is empty`);
+  return bytes.subarray(0, length);
 }
 
 function decode_hex_transport(source: unknown, label: string, maximumBytes: number, maximumSourceUnits: number): ExactBytes {
-  return retain_decoded_bytes(decode_hex_octets(source, label, maximumBytes, maximumSourceUnits));
+  return retain_decoded_bytes(Array.from(decode_hex_octets(source, label, maximumBytes, maximumSourceUnits)));
 }
 
 /** Decode a bounded cartridge directly to immutable request custody. */
 export function decodeProcessRequestHex(source: unknown): ExactProcessRequest {
   const bytes = decode_hex_octets(source, "CWR1", cwr1_max_bytes, cwr1_hex_max_source_units);
-  return Object.freeze({ _tag: "ExactProcessRequest", bytes: byteTextDecoder.decode(new Uint16Array(bytes)) });
+  return Object.freeze({ _tag: "ExactProcessRequest", bytes: byteTextDecoder.decode(bytes) });
 }
 
 function decode_cwr1_hex(source: unknown): ExactBytes {
