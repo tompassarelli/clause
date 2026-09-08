@@ -568,6 +568,7 @@ pub struct CanonicalSourceCstV1 {
     conformance: std::sync::OnceLock<conformance::Domains>,
     relational_handlers: std::sync::OnceLock<BTreeSet<CanonicalSourceOriginV1>>,
     relational_relations: std::sync::OnceLock<BTreeSet<Vec<u8>>>,
+    relation_items: std::sync::OnceLock<BTreeMap<Vec<u8>, Vec<usize>>>,
     allocation_requests: std::sync::OnceLock<std::sync::Arc<[AllocationRequest]>>,
 }
 
@@ -1630,6 +1631,7 @@ fn finish_canonical_source(
         conformance: std::sync::OnceLock::new(),
         relational_handlers: std::sync::OnceLock::new(),
         relational_relations: std::sync::OnceLock::new(),
+        relation_items: std::sync::OnceLock::new(),
         allocation_requests: std::sync::OnceLock::new(),
     };
     normalize_focused_state_assertions(&mut cst);
@@ -2259,14 +2261,30 @@ fn initial_assertion_slot(
     slot
 }
 
+fn source_relations<'a>(cst: &'a CanonicalSourceCstV1, surface: &[u8]) -> impl Iterator<Item = &'a RelationCst> {
+    // Keep every declaration in source order; ambiguity remains a checker
+    // judgment and cannot be erased by indexing an immutable source snapshot.
+    cst.relation_items.get_or_init(|| {
+        let mut relations = BTreeMap::<Vec<u8>, Vec<usize>>::new();
+        for (index, item) in cst.items.iter().enumerate() {
+            if let CstKind::Relation(relation) = &item.kind {
+                relations.entry(relation.surface.clone()).or_default().push(index);
+            }
+        }
+        relations
+    }).get(surface).into_iter().flatten().map(move |index| {
+        let CstKind::Relation(relation) = &cst.items[*index].kind else {
+            unreachable!("the immutable source index contains only relation items")
+        };
+        relation
+    })
+}
+
 fn declared_state_cardinality(
     cst: &CanonicalSourceCstV1,
     surface: &[u8],
 ) -> Option<SourceCardinality> {
-    let relation = cst.items.iter().find_map(|item| match &item.kind {
-        CstKind::Relation(relation) if relation.surface == surface => Some(relation),
-        _ => None,
-    })?;
+    let relation = source_relations(cst, surface).next()?;
     let subject = relation.subject.as_ref()?;
     let matching = relation
         .modes
@@ -2437,10 +2455,7 @@ fn initial_relational_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<u
         if declared_state_cardinality(cst, surface) != Some(SourceCardinality::Many) {
             return None;
         }
-        let relation = cst.items.iter().find_map(|item| match &item.kind {
-            CstKind::Relation(r) if &r.surface == surface => Some(r),
-            _ => None,
-        })?;
+        let relation = source_relations(cst, surface).next()?;
         let subject_role = relation.subject.as_ref()?;
         let domain = &relation.roles.iter().find(|role| &role.name == subject_role)?.domain;
         declared_domain_facet(cst, subject, domain).then(|| surface.clone())
@@ -2448,14 +2463,7 @@ fn initial_relational_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<u
 }
 
 fn declared_state_relation(cst: &CanonicalSourceCstV1, surface: &[u8]) -> bool {
-    let matching = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::Relation(relation) if relation.surface == surface => Some(relation),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let matching = source_relations(cst, surface).collect::<Vec<_>>();
     let [relation] = matching.as_slice() else {
         return false;
     };
@@ -2495,14 +2503,7 @@ fn resolved_state_relation<'a>(
     surface: &[u8],
     origin: CanonicalSourceOriginV1,
 ) -> Result<ResolvedStateRelation<'a>, CanonicalSourceErrorV1> {
-    let matching = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::Relation(relation) if relation.surface == surface => Some(relation),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let matching = source_relations(cst, surface).collect::<Vec<_>>();
     let [relation] = matching.as_slice() else {
         return Err(if matching.is_empty() {
             CanonicalSourceErrorV1::MissingExecutableBinding { origin }
@@ -10542,10 +10543,7 @@ fn state_relation_shape<'a>(
     cst: &'a CanonicalSourceCstV1,
     surface: &[u8],
 ) -> Option<(&'a [u8], &'a [ShapeField])> {
-    let relation = cst.items.iter().find_map(|item| match &item.kind {
-        CstKind::Relation(relation) if relation.surface == surface => Some(relation),
-        _ => None,
-    })?;
+    let relation = source_relations(cst, surface).next()?;
     let subject = relation.subject.as_ref()?;
     let produced = relation
         .modes
