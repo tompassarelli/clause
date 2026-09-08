@@ -1,0 +1,27 @@
+export pad-right(?text: Text, ?width: F64): Text
+  ?length: count(characters(?text))
+  if(?length >= ?width, ?text,
+    fold(range(?width - ?length), ?text, ?padded, ?index, ?padded ++ " "))
+
+minimum(?left: F64, ?right: F64): F64
+  if(?left <= ?right, ?left, ?right)
+
+distance-row(?previous: Sequence<F64>, ?letter: Text, ?right: Sequence<Text>): Sequence<F64>
+  fold(range(count(?right)), [at(?previous, 0) + 1], ?row, ?column,
+    append(?row,
+      minimum(minimum(at(?row, ?column) + 1, at(?previous, ?column + 1) + 1),
+        at(?previous, ?column) + if(?letter = at(?right, ?column), 0, 1))))
+
+export title-distance(?left: Text, ?right: Text): F64
+  ?right-letters: characters(?right)
+  ?last-row: fold(characters(?left), range(count(?right-letters) + 1), ?previous, ?letter,
+    distance-row(?previous, ?letter, ?right-letters))
+  at(?last-row, count(?right-letters))
+
+export similarity(?left: Text, ?right: Text): F64
+  ?normalized-left: lowercase(?left)
+  ?normalized-right: lowercase(?right)
+  ?left-length: count(characters(?normalized-left))
+  ?right-length: count(characters(?normalized-right))
+  ?longest: if(?left-length >= ?right-length, ?left-length, ?right-length)
+  if(?longest = 0, 1, 1 - title-distance(?normalized-left, ?normalized-right) / ?longest)

@@ -94,6 +94,7 @@ pub(super) fn foreign_accesses(
             | E::SequenceJoin(a, b)
             | E::SequenceAppend(a, b)
             | E::SequenceDrop(a, b)
+            | E::SequenceAt(a, b)
             | E::Concatenate(a, b)
             | E::Equal(a, b)
             | E::GreaterThan(a, b)
@@ -117,6 +118,7 @@ pub(super) fn foreign_accesses(
             | E::TextCharacters(value)
             | E::ParseIntegerPrefix(value)
             | E::SequenceCount(value)
+            | E::SequenceRange(value)
             | E::ScalarText(value)
             | E::Field(value, _)
             | E::SquareRoot(value)
@@ -208,6 +210,8 @@ pub(super) fn read(
     if [
         b"drop".as_slice(),
         b"count",
+        b"range",
+        b"at",
         b"join",
         b"require",
         b"if".as_slice(),
@@ -793,6 +797,8 @@ fn bind_body(
         E::ParseIntegerPrefix(a) => E::ParseIntegerPrefix(recur(a)?),
         E::TextSplit(a, b) => E::TextSplit(recur(a)?, recur(b)?),
         E::SequenceCount(a) => E::SequenceCount(recur(a)?),
+        E::SequenceRange(a) => E::SequenceRange(recur(a)?),
+        E::SequenceAt(a, b) => E::SequenceAt(recur(a)?, recur(b)?),
         E::ScalarText(a) => E::ScalarText(recur(a)?),
         E::SequenceJoin(a, b) => E::SequenceJoin(recur(a)?, recur(b)?),
         E::SequenceMap {
@@ -1034,6 +1040,8 @@ fn lower(
         S::ParseIntegerPrefix(a) => E::ParseIntegerPrefix(recur(a)?),
         S::TextSplit(a, b) => E::TextSplit(recur(a)?, recur(b)?),
         S::SequenceCount(a) => E::SequenceCount(recur(a)?),
+        S::SequenceRange(a) => E::SequenceRange(recur(a)?),
+        S::SequenceAt(a, b) => E::SequenceAt(recur(a)?, recur(b)?),
         S::ScalarText(a) => E::ScalarText(recur(a)?),
         S::SequenceJoin(a, b) => E::SequenceJoin(recur(a)?, recur(b)?),
         S::SequenceMap {
@@ -1420,6 +1428,15 @@ fn expression_kind(
                 return Err("count requires an ordered sequence");
             }
             K::Number.into()
+        }
+        E::SequenceRange(end) => {
+            require(end, &K::Number.into())?;
+            T::Sequence(Box::new(K::Number.into()))
+        }
+        E::SequenceAt(value, index) => {
+            require(index, &K::Number.into())?;
+            let T::Sequence(element) = recur(value)? else { return Err("at requires an ordered sequence"); };
+            *element
         }
         E::SequenceJoin(value, separator) => {
             require(value, &T::Sequence(Box::new(K::Text.into())))?;

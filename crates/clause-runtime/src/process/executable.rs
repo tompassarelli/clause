@@ -873,6 +873,8 @@ pub enum ExecutableExpressionV1 {
     Dictionary(Box<Self>, Box<Self>),
     SequenceDrop(Box<Self>, Box<Self>),
     SequenceCount(Box<Self>),
+    SequenceRange(Box<Self>),
+    SequenceAt(Box<Self>, Box<Self>),
     TextCharacters(Box<Self>),
     TextSplit(Box<Self>, Box<Self>),
     ParseIntegerPrefix(Box<Self>),
@@ -1315,6 +1317,8 @@ fn lower_canonical_expression(
         CanonicalExecutableExpressionV1::TextSplit(value, delimiter) => ExecutableExpressionV1::TextSplit(Box::new(lower_canonical_expression(value, slots, depth + 1)?), Box::new(lower_canonical_expression(delimiter, slots, depth + 1)?)),
         CanonicalExecutableExpressionV1::ParseIntegerPrefix(value) => ExecutableExpressionV1::ParseIntegerPrefix(Box::new(lower_canonical_expression(value, slots, depth + 1)?)),
         CanonicalExecutableExpressionV1::SequenceCount(value) => ExecutableExpressionV1::SequenceCount(Box::new(lower_canonical_expression(value, slots, depth + 1)?)),
+        CanonicalExecutableExpressionV1::SequenceRange(value) => ExecutableExpressionV1::SequenceRange(Box::new(lower_canonical_expression(value, slots, depth + 1)?)),
+        CanonicalExecutableExpressionV1::SequenceAt(a, b) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::SequenceAt(a, b) }
         CanonicalExecutableExpressionV1::ScalarText(value) => ExecutableExpressionV1::ScalarText(Box::new(lower_canonical_expression(value, slots, depth + 1)?)),
         CanonicalExecutableExpressionV1::SequenceJoin(a, b) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::SequenceJoin(a, b) }
         CanonicalExecutableExpressionV1::SequenceDrop(a, b) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::SequenceDrop(a, b) }
@@ -1912,7 +1916,7 @@ fn lower_scalar_expression(
         ))
     };
     Ok(match expression {
-        CanonicalScalarExpressionV1::TextCharacters(_) | CanonicalScalarExpressionV1::TextSplit(..) | CanonicalScalarExpressionV1::ParseIntegerPrefix(_) | CanonicalScalarExpressionV1::Match { .. } | CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceMap { .. } | CanonicalScalarExpressionV1::SequenceFold { .. } | CanonicalScalarExpressionV1::SequenceAppend(..) | CanonicalScalarExpressionV1::SequenceSort(_) | CanonicalScalarExpressionV1::SequenceCount(_) | CanonicalScalarExpressionV1::ScalarText(_) | CanonicalScalarExpressionV1::SequenceJoin(..) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
+        CanonicalScalarExpressionV1::TextCharacters(_) | CanonicalScalarExpressionV1::TextSplit(..) | CanonicalScalarExpressionV1::ParseIntegerPrefix(_) | CanonicalScalarExpressionV1::Match { .. } | CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceMap { .. } | CanonicalScalarExpressionV1::SequenceFold { .. } | CanonicalScalarExpressionV1::SequenceAppend(..) | CanonicalScalarExpressionV1::SequenceSort(_) | CanonicalScalarExpressionV1::SequenceRange(_) | CanonicalScalarExpressionV1::SequenceAt(..) | CanonicalScalarExpressionV1::SequenceCount(_) | CanonicalScalarExpressionV1::ScalarText(_) | CanonicalScalarExpressionV1::SequenceJoin(..) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Call { .. }
         | CanonicalScalarExpressionV1::Lambda { .. }
         | CanonicalScalarExpressionV1::Apply(..)
@@ -6031,14 +6035,14 @@ fn validate_value_expression(
         E::Sequence(values) => values.iter().collect(),
         E::Record(fields) => fields.values().collect(),
         E::Field(value,_) => vec![value],
-        E::Dictionary(a,b) | E::SequenceJoin(a,b) | E::SequenceAppend(a,b) | E::SequenceDrop(a,b) => vec![a,b],
+        E::Dictionary(a,b) | E::SequenceJoin(a,b) | E::SequenceAppend(a,b) | E::SequenceAt(a,b) | E::SequenceDrop(a,b) => vec![a,b],
         E::Match { value, cases } => {
             for (kind, _, _) in cases { kind.check().map_err(|_| ExecutableErrorV1::MalformedProgram)?; }
             std::iter::once(value.as_ref()).chain(cases.iter().map(|(_, _, body)| body)).collect()
         }
         E::SequenceFold { source, initial, body, .. } => vec![source, initial, body],
         E::SequenceSort(value) => vec![value],
-        E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceCount(value) | E::ScalarText(value) => vec![value],
+        E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceRange(value) | E::SequenceCount(value) | E::ScalarText(value) => vec![value],
         E::Require(a,b,c) => vec![a,b,c],
         E::Foreign { .. } => return Err(ExecutableErrorV1::MalformedProgram),
         E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => vec![value, body],
@@ -6638,6 +6642,19 @@ fn evaluate_uncached(
         E::SequenceCount(value) => {
             let ExecutableValueV1::Sequence(values) = evaluate(value, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
             ExecutableValueV1::number(values.len() as f64)
+        }
+        E::SequenceRange(end) => {
+            let end = evaluate(end, slots, arguments, context)?.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
+            if !end.is_finite() || end < 0.0 || end.fract() != 0.0 { return Err(ExecutableErrorV1::NumericDomain); }
+            // Portable sequence values encode their element count as u16.
+            if end > u16::MAX as f64 { return Err(ExecutableErrorV1::ResourceLimit); }
+            Ok(ExecutableValueV1::Sequence((0..end as u16).map(|value| ExecutableValueV1::Number((value as f64).to_bits())).collect()))
+        }
+        E::SequenceAt(value, index) => {
+            let ExecutableValueV1::Sequence(values) = evaluate(value, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
+            let index = evaluate(index, slots, arguments, context)?.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
+            if !index.is_finite() || index < 0.0 || index.fract() != 0.0 || index >= values.len() as f64 { return Err(ExecutableErrorV1::NumericDomain); }
+            Ok(values[index as usize].clone())
         }
         E::SequenceJoin(value, separator) => {
             let ExecutableValueV1::Sequence(values) = evaluate(value, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
@@ -7305,6 +7322,8 @@ fn encode_expression(
         E::TextSplit(a,b) => encode_binary(bytes,51,a,b)?,
         E::ParseIntegerPrefix(value) => { bytes.push(52); encode_expression(bytes,value)?; }
         E::SequenceCount(value) => { bytes.push(42); encode_expression(bytes,value)?; }
+        E::SequenceRange(value) => { bytes.push(53); encode_expression(bytes,value)?; }
+        E::SequenceAt(a,b) => encode_binary(bytes,54,a,b)?,
         E::SequenceJoin(a,b) => encode_binary(bytes,43,a,b)?,
         E::ScalarText(value) => { bytes.push(44); encode_expression(bytes,value)?; }
         E::SequenceMap { binding, source, body } => {
@@ -7661,6 +7680,8 @@ impl<'a> Decoder<'a> {
             51 => E::TextSplit(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
             52 => E::ParseIntegerPrefix(Box::new(self.expression(next)?)),
             42 => E::SequenceCount(Box::new(self.expression(next)?)),
+            53 => E::SequenceRange(Box::new(self.expression(next)?)),
+            54 => E::SequenceAt(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
             43 => E::SequenceJoin(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
             44 => E::ScalarText(Box::new(self.expression(next)?)),
             46 => E::SequenceFold { accumulator: self.u16()?, item: self.u16()?, source: Box::new(self.expression(next)?), initial: Box::new(self.expression(next)?), body: Box::new(self.expression(next)?) },

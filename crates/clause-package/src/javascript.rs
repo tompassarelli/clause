@@ -109,9 +109,9 @@ fn foreign_modules(expression: &CanonicalExecutableExpressionV1, modules: &mut B
         E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => { foreign_modules(value, modules); foreign_modules(body, modules); }
         E::Sequence(values) => { for value in values { foreign_modules(value, modules); } }
         E::Record(fields) => { for value in fields.values() { foreign_modules(value, modules); } }
-        E::TextSplit(a,b) | E::Dictionary(a,b) | E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::Apply(a,b) | E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
+        E::TextSplit(a,b) | E::Dictionary(a,b) | E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::Apply(a,b) | E::SequenceAt(a,b) | E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
         E::Require(a,b,c) | E::Conditional(a,b,c) => { foreign_modules(a,modules); foreign_modules(b,modules); foreign_modules(c,modules); }
-        E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceSort(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
+        E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceSort(value) | E::SequenceRange(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
         _ => {}
     }
 }
@@ -310,6 +310,15 @@ impl Lowerer<'_> {
                 if !matches!(kind, ValueType::Sequence(_)) { return unsupported("drop requires a sequence"); }
                 let (count,_) = self.expression(count,Some(ValueType::Number))?;
                 (format!("drop({value},{count})"),kind)
+            }
+            E::SequenceRange(end) => {
+                let (end, _) = self.expression(end, Some(ValueType::Number))?;
+                (format!("integerRange({end})"), ValueType::Sequence(Box::new(ValueType::Number)))
+            }
+            E::SequenceAt(value,index) => {
+                let (value,ValueType::Sequence(element)) = self.expression(value,None)? else { return unsupported("at requires an ordered sequence"); };
+                let (index,_) = self.expression(index,Some(ValueType::Number))?;
+                (format!("sequenceAt({value},{index})"),*element)
             }
             E::Field(value,field) => {
                 let (value,ValueType::Record(fields)) = self.expression(value,None)? else { return unsupported("field requires a record"); };
@@ -941,6 +950,8 @@ function remainingWords(value){value=value.replace(/^\p{White_Space}+/u,'');cons
 function lowercaseText(value){return text(value.toLowerCase());}
 function parseIntegerPrefix(value){const parsed=Number.parseInt(value,10);return Number.isFinite(parsed)?(parsed===0?0:parsed):value;}
 function drop(value,count){if(!Number.isFinite(count)||!Number.isInteger(count)||count<0)fail('NumericDomain');return Object.freeze(value.slice(count));}
+function integerRange(end){if(!Number.isFinite(end)||!Number.isInteger(end)||end<0)fail('NumericDomain');if(end>65535)fail('ResourceLimit');return Object.freeze(Array.from({length:end},(_,index)=>index));}
+function sequenceAt(value,index){if(!Number.isFinite(index)||!Number.isInteger(index)||index<0||index>=value.length)fail('NumericDomain');return value[index];}
 function facet(value,domain,members){if(value===null||typeof value!=='object')return undefined;if(value.domain===domain)return value;if(members.includes(value.identity))return Object.freeze({domain,identity:value.identity});return undefined;}
 function requireFacet(value,domain,members){const result=facet(value,domain,members);if(result===undefined)fail('TypeMismatch');return result;}
 function concatenate(a,b){return text(text(a)+text(b));}

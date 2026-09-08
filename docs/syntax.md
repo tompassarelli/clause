@@ -408,6 +408,17 @@ produces and consumes both execution requests and diagnostics through this rule.
 
 `?reply.message` projects the declared `message` field. `drop(sequence, count)`
 returns the ordered suffix after a nonnegative integer count.
+
+`range(end)` constructs `Sequence<F64>` containing the integers from zero to
+the exclusive end. The end must be finite, nonnegative and integral; invalid
+ends reject with `NumericDomain`. Ends greater than 65535 reject with
+`ResourceLimit` before allocation, matching the portable sequence count wire
+capacity. `at(sequence, index)` returns the exact element type at a zero-based
+index. Fractional, nonfinite, negative and out-of-range indices reject with
+`NumericDomain`. Both operations evaluate their arguments once, in source
+order. Existing folds over these finite collections express dynamic padding
+and Levenshtein rows without recursive callable expansion; the complete example
+is `clause:test-vectors/authoring/finite-iteration/window-text.clause`.
 `require(condition, value, message)` evaluates the Bool condition first; success
 evaluates and returns the value, while rejection evaluates the Text message and
 fails. Both alternatives are checked.

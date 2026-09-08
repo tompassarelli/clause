@@ -1,0 +1,20 @@
+foreign end(): F64
+  call: "end"
+  from: "./effects.mjs"
+  failure: throw
+
+foreign values(): Sequence<Text>
+  call: "values"
+  from: "./effects.mjs"
+  failure: throw
+
+foreign index(): F64
+  call: "index"
+  from: "./effects.mjs"
+  failure: throw
+
+export procedure counted(): Sequence<F64>
+  range(end())
+
+export procedure selected(): Text
+  at(values(), index())

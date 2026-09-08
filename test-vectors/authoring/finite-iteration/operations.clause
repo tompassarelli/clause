@@ -1,0 +1,17 @@
+export integers(?end: F64): Sequence<F64>
+  range(?end)
+
+export indexed(?values: Sequence<Text>, ?index: F64): Text
+  at(?values, ?index)
+
+Entry:
+  label: Text
+
+export entry(?values: Sequence<Entry>, ?index: F64): Entry
+  at(?values, ?index)
+
+export strict-range(): Sequence<F64>
+  range(require(false, 2, "range end evaluated"))
+
+export strict-index(): Text
+  at(require(false, ["x"], "sequence evaluated first"), require(false, 0, "index evaluated second"))

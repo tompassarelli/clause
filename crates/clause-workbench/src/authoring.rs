@@ -28,6 +28,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/pure-callable.clause"),
     },
     AuthoringExampleV1 {
+        slug: "finite-iteration",
+        title: "Finite integer ranges and checked indexing",
+        summary: "range(end) constructs ordered F64 integers from zero up to the exclusive end. The end must be finite, nonnegative and integral; the portable sequence count limit rejects oversized allocation. at(sequence, index) preserves the exact element contract and rejects invalid or out-of-range indices. Arguments evaluate once in source order. Existing folds express dynamic padding and row-by-row title distance in this complete source.",
+        source: include_str!("../../../test-vectors/authoring/finite-iteration/window-text.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "local-denotation",
         title: "Strict local denotations",
         summary: "Inside a callable body, `?name: expression` binds one value with its exact inferred type for subsequent lines. Evaluation is strict, once and in source order, including unused bindings. A final expression supplies the result. Duplicate, self-referential and unresolved names reject; procedure effects still require a procedure.",

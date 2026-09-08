@@ -88,8 +88,8 @@ fn dependencies(expression: &ExecutableExpressionV1, reads: &mut BTreeSet<u16>) 
     match expression {
         E::Sequence(values) => values.iter().fold(true, |pure,value| dependencies(value,reads) & pure),
         E::Record(fields) => fields.values().fold(true, |pure,value| dependencies(value,reads) & pure),
-        E::SequenceSort(value) | E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) => dependencies(value,reads),
-        E::Dictionary(a,b) | E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::SequenceDrop(a,b) => dependencies(a,reads) & dependencies(b,reads),
+        E::SequenceSort(value) | E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceRange(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) => dependencies(value,reads),
+        E::Dictionary(a,b) | E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::SequenceAt(a,b) | E::SequenceDrop(a,b) => dependencies(a,reads) & dependencies(b,reads),
         E::Require(a,b,c) => dependencies(a,reads) & dependencies(b,reads) & dependencies(c,reads),
         E::Foreign { .. } => false,
         E::Match { value, cases } => {
