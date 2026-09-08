@@ -34,6 +34,25 @@ The wire format is unchanged, including the encoding of existing checkpoints.
 
 ## Explicit edit
 
+`ResidentSourceWorkbenchV1::append_source_items(captured_handle, items)` appends
+complete top-level items to the exact existing source, separated by two newlines.
+Its constructor retains every copied source allocation; it never matches an
+independently supplied replacement program by name or text. The complete result
+must read, elaborate, lower and open. Old contracts and initial state cannot be
+redefined. Every old live slot is carried through its allocated identity map;
+new slots receive checked authored initial values. Existing relation tables can
+gain initial rows only for newly allocated subjects: all old initial rows must
+remain identical, and actual live rows are carried unchanged before the new rows
+are added. New inputs and fixed-tick handlers are checked against the complete
+new source. Physical carrier projection Roles may grow with the state layout.
+
+This operation uses a CET5 witness under the same aggregate bound as other source
+edits. A stale handle, pending candidate, empty addition, invalid source, changed
+old state or conflicting row rejects without replacing the source or live world.
+Persist `exact_source()` with the admitted checkpoint; reopening retains the
+extension and subsequent scalar-effect editing remains available. Append is an
+additive operation, not a state-schema migration or arbitrary text reload.
+
 `ResidentSourceWorkbenchV1::scalar_effects()` offers exact artifact-scoped
 handler/effect identities and display origins for scalar effect expressions,
 including leaves inside structured products. A leaf's `field_path` contains

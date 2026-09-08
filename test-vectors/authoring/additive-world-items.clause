@@ -1,0 +1,23 @@
+potions
+  domain: Player
+  range: F64
+  cardinality: one
+
+player
+  potions: 2.0
+apothecary
+  place-name: "Apothecary"
+
+bind keyboard Drink down to drink
+
+on drink ?player
+  when
+    ?player health ?health
+    ?player potions ?potions
+    ?potions > 0.0
+  withdraw
+    ?player health ?health
+    ?player potions ?potions
+  include
+    ?player health ?health + 10.0
+    ?player potions ?potions - 1.0

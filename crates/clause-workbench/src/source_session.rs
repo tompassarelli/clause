@@ -481,6 +481,38 @@ impl ResidentSourceWorkbenchV1 {
         Ok(self.generation.clone())
     }
 
+    /// Append checked complete source items, retaining the admitted world.
+    /// Stale handles, pending candidates, redefinitions and changed old state
+    /// reject atomically. Only new source state receives authored initial values.
+    pub fn append_source_items(
+        &mut self,
+        captured_handle: WasmSessionHandleV1,
+        appended: &[u8],
+    ) -> Result<ResidentSourceGenerationV1, ResidentSourceWorkbenchErrorV1> {
+        if captured_handle != self.generation.handle {
+            return Err(ResidentSourceWorkbenchErrorV1("stale additive source operation".into()));
+        }
+        if self.pending.is_some() {
+            return Err(ResidentSourceWorkbenchErrorV1("settle hidden candidate before changed source edit".into()));
+        }
+        let old_root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change));
+        let new_root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change.checked_add(1)
+            .ok_or_else(|| ResidentSourceWorkbenchErrorV1("source sequence exhausted".into()))?));
+        let analysis = self.source_snapshot.as_ref().expect("an installed workbench retains its source snapshot");
+        let edit = clause_package::append_canonical_source_items_v1(analysis.source(), analysis.plan(), appended, new_root)
+            .map_err(|error| debug_error("additive source edit", error))?;
+        let next_analysis = analysis.advance(&edit).map_err(|error| debug_error("additive source elaboration", error))?;
+        let witness = clause_runtime::ExecutableSourceEditV1 {
+            old_source: self.exact_source.clone(), declared_frontend: self.declared_frontend.exact_source().to_vec(),
+            imports: self.imports.clone(), old_root, new_root,
+            operation: clause_runtime::ExecutableSourceOperationV1::AppendItems(appended.to_vec()),
+            old_cpp1: self.generation.cpp1.clone(), new_cpp1: vec![],
+        };
+        self.install_source_inner(edit.source().exact_source(), Some(witness), None,
+            Some(std::sync::Arc::new(next_analysis)), None)?;
+        Ok(self.generation.clone())
+    }
+
     /// Compiler witness only: the external browser must apply it to its own
     /// captured live Wasm generation. It contains no native runtime state.
     pub fn last_source_edit(&self) -> Option<&[u8]> { self.last_source_edit.as_deref() }

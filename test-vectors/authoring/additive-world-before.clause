@@ -1,0 +1,49 @@
+F64
+Text
+Player
+Place
+
+health
+  domain: Player
+  range: F64
+  cardinality: one
+stock
+  domain: Player
+  range: F64
+  cardinality: one
+position
+  domain: Player
+  range: F64
+  cardinality: one
+home
+  domain: Player
+  range: Place
+  cardinality: one
+place-name
+  domain: Place
+  range: Text
+  cardinality: one
+
+hearth
+  place-name: "Hearth"
+player
+  health: 100.0
+  stock: 20.0
+  position: 0.0
+  home: hearth
+
+bind keyboard Travel down to travel
+
+on travel ?player
+  when
+    ?player health ?health
+    ?player stock ?stock
+    ?player position ?position
+  withdraw
+    ?player health ?health
+    ?player stock ?stock
+    ?player position ?position
+  include
+    ?player health ?health - 7.125
+    ?player stock ?stock + 1.0
+    ?player position ?position + 0.3

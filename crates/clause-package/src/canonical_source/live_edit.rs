@@ -1,6 +1,71 @@
 //! Explicit source operations, not a text-diff identity heuristic.
 use super::*;
 
+/// Append complete items to the exact old tree. All old allocations continue
+/// by construction; new requests are fresh. Runtime checking still decides
+/// whether old state and contracts survive this extension unchanged.
+pub fn append_canonical_source_items_v1(
+    cst: &CanonicalSourceCstV1,
+    old_plan: &CanonicalSourceAllocationPlanV1,
+    appended: &[u8],
+    new_root: ProgramChangeOccurrenceId,
+) -> Result<CanonicalSourceEditV1, CanonicalSourceErrorV1> {
+    let reject = || CanonicalSourceErrorV1::RecordedPlanMismatch;
+    rematerialize_canonical_source_allocation_plan_v1(cst, old_plan)?;
+    if appended.is_empty() || new_root == old_plan.root { return Err(reject()); }
+    let mut exact = cst.exact_source.to_vec();
+    exact.extend_from_slice(b"\n\n");
+    let boundary = exact.len() as u64;
+    exact.extend_from_slice(appended);
+    let source = read_canonical_source_with_imports_and_frontend_v1(
+        &exact, &cst.parsed.imports, &cst.declared_frontend)?;
+    // These coordinates locate a constructor-owned copied prefix, never a
+    // correspondence inferred between independently supplied source texts.
+    let copied = source.items.iter().filter(|item|
+        item.origin.artifact != source.artifact || item.origin.start < boundary).collect::<Vec<_>>();
+    if copied.len() != cst.items.len() { return Err(reject()); }
+    for (old, new) in cst.items.iter().zip(copied) {
+        let mut expected = old.origin;
+        if expected.artifact == cst.artifact { expected.artifact = source.artifact; }
+        if new.origin != expected { return Err(reject()); }
+    }
+    let declaration = |kind: &CstKind| -> Option<(u8, Vec<u8>)> {
+        match kind {
+            CstKind::ForeignType { designation, .. } => Some((0, designation.clone())),
+            CstKind::Referent { designation, declaration: true } => Some((1, designation.clone())),
+            CstKind::Shape { designation, .. } => Some((2, designation.clone())),
+            CstKind::Relation(relation) => Some((3, relation.designation.clone())),
+            CstKind::Capability { designation } => Some((4, designation.clone())),
+            CstKind::Denotation(value) => Some((5, value.name.clone())),
+            _ => None,
+        }
+    };
+    let old_declarations = cst.items.iter().filter_map(|item| declaration(&item.kind)).collect::<BTreeSet<_>>();
+    let appended_items = source.items.iter().filter(|item|
+        item.origin.artifact == source.artifact && item.origin.start >= boundary).collect::<Vec<_>>();
+    if appended_items.is_empty() || appended_items.iter().filter_map(|item| declaration(&item.kind))
+        .any(|key| old_declarations.contains(&key)) { return Err(reject()); }
+    // Contract facts are ordinary applications. Repeated equal facts are
+    // coalesced by the reader, so inspect the appended occurrences before
+    // that coalescing can hide a second declaration of an existing contract.
+    if appended_items.iter().any(|item| matches!(&item.kind,
+        CstKind::Application(application)
+            if matches!(application.role.as_slice(), b"domain" | b"range" | b"cardinality")
+            && old_declarations.contains(&(3, application.subject.clone())))) { return Err(reject()); }
+    let plan = build_independent_plan(&source, new_root)?;
+    let requests = allocation_requests(&source)?;
+    let mut retained = BTreeMap::new();
+    for request in allocation_requests(cst)? {
+        if requests.binary_search(request).is_err() { return Err(reject()); }
+        let old = old_plan.identity(&request.producer, &request.slot, request.domain).ok_or_else(reject)?;
+        let new = plan.identity(&request.producer, &request.slot, request.domain).ok_or_else(reject)?;
+        retained.insert(old, new);
+    }
+    if retained.values().collect::<BTreeSet<_>>().len() != retained.len() { return Err(reject()); }
+    Ok(CanonicalSourceEditV1 { old_artifact: cst.artifact(), old_root: old_plan.root(), scalar_change: None,
+        source, plan, retained, retained_index: std::sync::OnceLock::new() })
+}
+
 /// A snapshot-scoped scalar expression in a handler effect. Origins locate
 /// source for display and replay; allocated identities select the occurrence.
 #[derive(Clone, Debug, Eq, PartialEq)]

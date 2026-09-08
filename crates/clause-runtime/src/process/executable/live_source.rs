@@ -1,6 +1,8 @@
 //! Compiler-checked source transitions applied to runtime-owned live state.
 use super::*;
 mod metadata;
+mod extension;
+use extension::check_prepared_source_extension;
 pub(super) use metadata::{SourceMetadataGraph, SourceMetadataBuilder};
 use clause_package::{
     CheckedCanonicalSourceAnalysisV1, CanonicalAllocatedIdentityV1, CanonicalDeclaredFrontendV1, CanonicalSourceEditV1, CanonicalSourceContextV1,
@@ -36,6 +38,7 @@ pub enum ExecutableSourceOperationV1 {
         expression: Vec<u8>,
     },
     ReplaceItems(Vec<ExecutableSourceItemReplacementV1>),
+    AppendItems(Vec<u8>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -68,6 +71,7 @@ pub struct CheckedExecutableSourceEditV1 {
     edit: CanonicalSourceEditV1,
     continuity: ExecutableSourceContinuityV1,
     pub(crate) preparation: Arc<CheckedExecutableSourcePreparationV1>,
+    added_rows: BTreeMap<u16, ExecutableRelationTableV1>,
 }
 
 impl CheckedExecutableSourceEditV1 {
@@ -492,10 +496,12 @@ pub fn encode_executable_source_edit_v1(
     let mut bytes = match edit.operation {
         ExecutableSourceOperationV1::ScalarEffect { .. } => b"CET3".to_vec(),
         ExecutableSourceOperationV1::ReplaceItems(_) => b"CET4".to_vec(),
+        ExecutableSourceOperationV1::AppendItems(_) => b"CET5".to_vec(),
     };
     bytes.extend_from_slice(edit.old_root.as_bytes());
     bytes.extend_from_slice(edit.new_root.as_bytes());
     let expression = match &edit.operation {
+        ExecutableSourceOperationV1::AppendItems(source) => Some(source),
         ExecutableSourceOperationV1::ScalarEffect {
             handler,
             effect,
@@ -575,7 +581,7 @@ pub fn decode_executable_source_edit_v1(
     }
     let mut d = Decoder::new(bytes);
     let magic = d.take(4)?;
-    if magic != b"CET3" && magic != b"CET4" {
+    if magic != b"CET3" && magic != b"CET4" && magic != b"CET5" {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
     let old_root = ProgramChangeOccurrenceId::from_bytes(d.identity()?);
@@ -596,6 +602,8 @@ pub fn decode_executable_source_edit_v1(
             field_path,
             expression: vec![],
         }
+    } else if magic == b"CET5" {
+        ExecutableSourceOperationV1::AppendItems(vec![])
     } else {
         let count = d.u32()? as usize;
         if count > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 / 9 {
@@ -627,8 +635,9 @@ pub fn decode_executable_source_edit_v1(
     };
     let old_source = blob()?;
     let declared_frontend = blob()?;
-    if let ExecutableSourceOperationV1::ScalarEffect { expression, .. } = &mut operation {
-        *expression = blob()?;
+    match &mut operation {
+        ExecutableSourceOperationV1::ScalarEffect { expression, .. } | ExecutableSourceOperationV1::AppendItems(expression) => *expression = blob()?,
+        _ => {}
     }
     let result = ExecutableSourceEditV1 {
         old_root,
@@ -767,7 +776,9 @@ pub fn check_prepared_executable_source_edit_v1(
     if preparation.analysis.source().imports() != &witness.imports {
         return Err(ExecutableErrorV1::SourceContinuityRejected("stale source imports"));
     }
-    let derived = derive_prepared_source_edit(preparation, &witness.operation, witness.new_root)?;
+    let derived = if let ExecutableSourceOperationV1::AppendItems(appended) = &witness.operation {
+        check_prepared_source_extension(preparation, appended, witness.new_root, &witness.new_cpp1)?
+    } else { derive_prepared_source_edit(preparation, &witness.operation, witness.new_root)? };
     if derived.preparation.exact_cpp1 != witness.new_cpp1 {
         return Err(ExecutableErrorV1::SourceContinuityRejected("edited source does not realize exact replacement CPP1"));
     }
@@ -793,6 +804,7 @@ fn derive_prepared_source_edit(
     let old_allocations = preparation.analysis.plan();
     let phase = source_profile_scope_v1(SourceProfilePhaseV1::OfferedEdit);
     let edit = match operation {
+        ExecutableSourceOperationV1::AppendItems(_) => return Err(ExecutableErrorV1::MalformedProgram),
         ExecutableSourceOperationV1::ScalarEffect {
             handler,
             effect,
@@ -978,6 +990,7 @@ fn derive_prepared_source_edit(
     Ok(CheckedExecutableSourceEditV1 {
         old_plan: preparation.identity,
         new_plan,
+        added_rows: BTreeMap::new(),
         continuity: ExecutableSourceContinuityV1 {
             old_snapshot: old.checked_package.constitution().snapshot(),
             new_snapshot: new.checked_package.constitution().snapshot(),
@@ -1334,7 +1347,7 @@ impl ExecutableProcessRuntimeV1 {
         }
         let mut next = self.configuration.clone();
         if previous.configuration.len() != checked.continuity.slots.len()
-            || next.len() != checked.continuity.slots.len()
+            || next.len() != checked.preparation.lowered.states.len()
         {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
@@ -1353,6 +1366,16 @@ impl ExecutableProcessRuntimeV1 {
                 ExecutableSlotV1::Absent(kind) => ExecutableSlotV1::Absent(*kind),
                 ExecutableSlotV1::Present(value) => migrate_value(value, &checked.edit)?.into(),
             };
+        }
+        for (slot, additions) in &checked.added_rows {
+            let Some(ExecutableSlotV1::Present(ExecutableValueV1::RelationTable(table))) = next.get_mut(usize::from(*slot)) else {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            };
+            let rows = Arc::make_mut(&mut table.rows);
+            for (subject, values) in additions.rows.iter() {
+                if rows.contains_key(subject) { return Err(ExecutableErrorV1::SourceContinuityRejected("new source row collides with live state")); }
+                rows.insert(subject.clone(), values.clone());
+            }
         }
         // This fresh execution generation has not entered its Activation yet.
         // The first real carrier ingress will assert this checked carried
