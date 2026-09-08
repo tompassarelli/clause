@@ -964,6 +964,18 @@ pub fn lower_canonical_executable_program_v1(
     handlers: &[CanonicalExecutableHandlerV1],
     projection_roles: &[LocalRoleRefV2],
 ) -> Result<ExecutableCanonicalProgramV1, ExecutableErrorV1> {
+    lower_canonical_executable_program_with_layout(scope, state_cells, handlers, projection_roles, None, None, None)
+}
+
+fn lower_canonical_executable_program_with_layout(
+    scope: TermScope,
+    state_cells: &[CanonicalStateCellV1],
+    handlers: &[CanonicalExecutableHandlerV1],
+    projection_roles: &[LocalRoleRefV2],
+    retained_slots: Option<&BTreeMap<CanonicalStateRefV1, u16>>,
+    retained_entries: Option<&BTreeMap<FormationLocalId, u16>>,
+    mut retained_rules: Option<BTreeMap<(FormationLocalId, usize), ExecutableRuleV1>>,
+) -> Result<ExecutableCanonicalProgramV1, ExecutableErrorV1> {
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::Lowering);
     if state_cells.len() > MAX_PROGRAM_ITEMS
         || handlers.len() > MAX_PROGRAM_ITEMS
@@ -984,6 +996,19 @@ pub fn lower_canonical_executable_program_v1(
             .cmp(&canonical_cell_initially_present(left))
             .then_with(|| left.state.cmp(&right.state))
     });
+    if let Some(layout) = retained_slots {
+        if layout.len() != ordered_states.len()
+            || ordered_states.iter().any(|cell| !layout.contains_key(&cell.state))
+            || layout.values().copied().collect::<BTreeSet<_>>().into_iter().map(usize::from)
+                .ne(0..ordered_states.len()) {
+            return Err(ExecutableErrorV1::PhysicalShapeMismatch);
+        }
+        ordered_states.sort_by_key(|cell| layout[&cell.state]);
+        if ordered_states.windows(2).any(|pair|
+            !canonical_cell_initially_present(&pair[0]) && canonical_cell_initially_present(&pair[1])) {
+            return Err(ExecutableErrorV1::PhysicalShapeMismatch);
+        }
+    }
     let mut roles = projection_roles.to_vec();
     roles.sort();
     roles.dedup();
@@ -1025,8 +1050,14 @@ pub fn lower_canonical_executable_program_v1(
     let mut rules = Vec::new();
     let mut handler_bindings = Vec::with_capacity(ordered_handlers.len());
     let mut event_entries = BTreeMap::new();
+    if retained_entries.is_some_and(|entries| entries.len() != ordered_handlers.len()) {
+        return Err(ExecutableErrorV1::PhysicalShapeMismatch);
+    }
     for (ordinal, handler) in ordered_handlers.iter().enumerate() {
-        let mut entry = u16::try_from(ordinal).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
+        let mut entry = match retained_entries {
+            Some(entries) => *entries.get(&handler.id).ok_or(ExecutableErrorV1::PhysicalShapeMismatch)?,
+            None => u16::try_from(ordinal).map_err(|_| ExecutableErrorV1::ResourceLimit)?,
+        };
         // A named event selects all its rules with the same input in one Step, while
         // each source handler retains its own identity for edits and diagnostics.
         if matches!(handler.trigger, CanonicalHandlerTriggerV1::External | CanonicalHandlerTriggerV1::FixedTickRoot) {
@@ -1044,7 +1075,12 @@ pub fn lower_canonical_executable_program_v1(
             entry,
             invocation_entry: entry,
         });
-        for source_rule in &handler.rules {
+        for (rule_index, source_rule) in handler.rules.iter().enumerate() {
+            if let Some(mut rule) = retained_rules.as_mut().and_then(|rules| rules.remove(&(handler.id, rule_index))) {
+                rule.entry = entry;
+                rules.push(rule);
+                continue;
+            }
             let predicates = source_rule
                 .predicates
                 .iter()

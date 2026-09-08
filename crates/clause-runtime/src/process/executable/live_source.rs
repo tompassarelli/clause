@@ -197,72 +197,8 @@ fn source_metadata(
             ));
         }
     }
-    let states = states
-        .iter()
-        .map(|binding| {
-            let state = &binding.state;
-            let mut fields = vec![
-                (
-                    b"slot".to_vec(),
-                    diagnostic_number(scope, binding.slot as f64)?,
-                ),
-                (
-                    b"subject".to_vec(),
-                    diagnostic_text(scope, &String::from_utf8_lossy(&state.subject))?,
-                ),
-                (
-                    b"relation".to_vec(),
-                    diagnostic_text(scope, &String::from_utf8_lossy(&state.relation_designation))?,
-                ),
-                (
-                    b"assertion".to_vec(),
-                    diagnostic_number(scope, state.assertion.get() as f64)?,
-                ),
-                (
-                    b"schema".to_vec(),
-                    diagnostic_number(scope, state.relation.get() as f64)?,
-                ),
-                (
-                    b"subject-role".to_vec(),
-                    diagnostic_number(scope, state.subject_role.role.get() as f64)?,
-                ),
-                (
-                    b"value-role".to_vec(),
-                    diagnostic_number(scope, state.value_role.role.get() as f64)?,
-                ),
-            ];
-            if let Some(referent) = state.subject_identity {
-                fields.push((
-                    b"referent".to_vec(),
-                    projected_scalar_value_term(
-                        scope,
-                        &ExecutableValueV1::Referent(ExecutableReferentV1::declared(
-                            referent.domain.get(),
-                            referent.identity.get(),
-                        )),
-                    )?,
-                ));
-            }
-            if let clause_package::CanonicalStatePathV1::Field {
-                formation,
-                designation,
-            } = &state.path
-            {
-                fields.push((
-                    b"field".to_vec(),
-                    diagnostic_text(scope, &String::from_utf8_lossy(designation))?,
-                ));
-                fields.push((
-                    b"field-formation".to_vec(),
-                    diagnostic_number(scope, formation.get() as f64)?,
-                ));
-            }
-            Ok((
-                binding.slot.to_string().into_bytes(),
-                projection_object(scope, fields)?,
-            ))
-        })
-        .collect::<Result<_, ExecutableErrorV1>>()?;
+    let states = states.iter().map(|binding| Ok((binding.slot.to_string().into_bytes(),
+        source_state_metadata(scope, binding)?))).collect::<Result<_, ExecutableErrorV1>>()?;
     projection_object(
         scope,
         vec![
@@ -281,6 +217,67 @@ fn source_metadata(
             (b"states".to_vec(), diagnostic_index(scope, states)?),
         ],
     )
+}
+
+fn source_state_metadata(scope: TermScope, binding: &ExecutableCanonicalStateBindingV1) -> Result<Term, ExecutableErrorV1> {
+    let state = &binding.state;
+    let mut fields = vec![
+        (
+            b"slot".to_vec(),
+            diagnostic_number(scope, binding.slot as f64)?,
+        ),
+        (
+            b"subject".to_vec(),
+            diagnostic_text(scope, &String::from_utf8_lossy(&state.subject))?,
+        ),
+        (
+            b"relation".to_vec(),
+            diagnostic_text(scope, &String::from_utf8_lossy(&state.relation_designation))?,
+        ),
+        (
+            b"assertion".to_vec(),
+            diagnostic_number(scope, state.assertion.get() as f64)?,
+        ),
+        (
+            b"schema".to_vec(),
+            diagnostic_number(scope, state.relation.get() as f64)?,
+        ),
+        (
+            b"subject-role".to_vec(),
+            diagnostic_number(scope, state.subject_role.role.get() as f64)?,
+        ),
+        (
+            b"value-role".to_vec(),
+            diagnostic_number(scope, state.value_role.role.get() as f64)?,
+        ),
+    ];
+    if let Some(referent) = state.subject_identity {
+        fields.push((
+            b"referent".to_vec(),
+            projected_scalar_value_term(
+                scope,
+                &ExecutableValueV1::Referent(ExecutableReferentV1::declared(
+                    referent.domain.get(),
+                    referent.identity.get(),
+                )),
+            )?,
+        ));
+    }
+    if let clause_package::CanonicalStatePathV1::Field {
+        formation,
+        designation,
+    } = &state.path
+    {
+        fields.push((
+            b"field".to_vec(),
+            diagnostic_text(scope, &String::from_utf8_lossy(designation))?,
+        ));
+        fields.push((
+            b"field-formation".to_vec(),
+            diagnostic_number(scope, formation.get() as f64)?,
+        ));
+    }
+    projection_object(scope, fields)
 }
 
 pub(super) fn origin_term(
@@ -379,6 +376,30 @@ pub fn replay_canonical_executable_entry_layout_v1(
 ) -> Result<(), ExecutableErrorV1> {
     let rejected =
         || ExecutableErrorV1::SourceContinuityRejected("recorded source dispatch layout");
+    let recorded_states = recorded.source_metadata.as_ref()
+        .and_then(|metadata| diagnostic_field(metadata, b"states")).ok_or_else(rejected)?;
+    let mut by_state = BTreeMap::new();
+    for slot in 0..lowered.states.len() {
+        let slot = u16::try_from(slot).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
+        let record = diagnostic_index_field(recorded_states, slot).ok_or_else(rejected)?;
+        let [key, value, state] = record.as_triple().ok_or_else(rejected)?.slots();
+        if key.as_atom().is_none_or(|key| key.kind() != b"clause/js-field-v1" || key.canonical_payload() != b"slot")
+            || *value != diagnostic_number(scope, f64::from(slot))?
+            || by_state.insert(state.clone(), slot).is_some() {
+            return Err(rejected());
+        }
+    }
+    let mut slots = BTreeMap::new();
+    for binding in &lowered.states {
+        let record = source_state_metadata(scope, binding)?;
+        let key = record.as_triple().ok_or_else(rejected)?.slots()[2];
+        slots.insert(binding.state.clone(), *by_state.get(key).ok_or_else(rejected)?);
+    }
+    if lowered.states.iter().any(|binding| slots[&binding.state] != binding.slot) {
+        let roles = lowered.states.iter().map(|binding| binding.projection_role).collect::<Vec<_>>();
+        *lowered = lower_canonical_executable_program_with_layout(scope, &package.state_cells,
+            &package.executable_handlers, &roles, Some(&slots), None, None)?;
+    }
     if recorded.source_metadata.as_ref()
         != Some(&source_metadata(
             scope,
@@ -776,14 +797,37 @@ fn derive_prepared_source_edit(
     let roles = old_plan.program.projection.as_ref().ok_or(ExecutableErrorV1::MalformedProgram)?
         .bindings.iter().map(|binding| binding.role).collect::<Vec<_>>();
     let old_lowered = &preparation.lowered;
-    let new_lowered = lower_canonical_executable_program_v1(
+    let retained_layout = matches!(operation, ExecutableSourceOperationV1::ScalarEffect { .. });
+    let retained_slots = if retained_layout {
+        Some(old_lowered.states.iter().map(|binding|
+            edit.state(&binding.state).map(|state| (state, binding.slot)).map_err(rejected))
+            .collect::<Result<BTreeMap<_, _>, _>>()?)
+    } else { None };
+    let retained_entries = if retained_layout {
+        Some(old_lowered.handlers.iter().map(|binding|
+            edit.formation(binding.handler).map(|handler| (handler, binding.entry)).map_err(rejected))
+            .collect::<Result<BTreeMap<_, _>, _>>()?)
+    } else { None };
+    let retained_rules = retained_slots.as_ref().map(|slots|
+        retain_lowered_source_rules(preparation, &next_analysis, &edit, slots)).transpose()?;
+    let new_lowered = lower_canonical_executable_program_with_layout(
         scope,
         &new.state_cells,
         &new.executable_handlers,
         &roles,
+        retained_slots.as_ref(),
+        retained_entries.as_ref(),
+        retained_rules,
     )?;
-    let mut expected_new = old_plan.clone();
-    expected_new.program = new_lowered.program.clone();
+    let mut expected_new = ExecutablePhysicalPlanV1 {
+        application_shape: old_plan.application_shape,
+        mode: old_plan.mode,
+        refinement: old_plan.refinement.clone(),
+        target: old_plan.target,
+        input: old_plan.input.clone(),
+        program: new_lowered.program.clone(),
+        source_metadata: None,
+    };
     let mut entries = BTreeMap::new();
     for binding in &old_lowered.handlers {
         let new_id = edit.formation(binding.handler).map_err(rejected)?;
@@ -959,6 +1003,84 @@ pub(crate) fn physical_plan_identity(bytes: &[u8]) -> ExecutablePhysicalPlanIdV1
         "clause/executable-physical-plan/v1",
         &[bytes],
     ))
+}
+
+fn retain_lowered_source_rules(
+    preparation: &CheckedExecutableSourcePreparationV1,
+    next: &CheckedCanonicalSourceAnalysisV1,
+    edit: &CanonicalSourceEditV1,
+    slots: &BTreeMap<CanonicalStateRefV1, u16>,
+) -> Result<BTreeMap<(FormationLocalId, usize), ExecutableRuleV1>, ExecutableErrorV1> {
+    let mut handlers = preparation.analysis.package().executable_handlers.iter().collect::<Vec<_>>();
+    handlers.sort_by_key(|handler| handler.id);
+    let mut offsets = BTreeMap::new();
+    let mut offset = 0;
+    for handler in handlers {
+        offsets.insert(handler.id, offset);
+        offset += handler.rules.len();
+    }
+    let slot = |state: &CanonicalStateRefV1| slots.get(state).copied()
+        .ok_or(ExecutableErrorV1::CanonicalLoweringUnknownState);
+    let mut retained = BTreeMap::new();
+    for handler in &next.package().executable_handlers {
+        for (index, source_rule) in handler.rules.iter().enumerate() {
+            let Some((old_handler, old_index)) = next.retained_rule(preparation.analysis.plan().root(), handler.id, index) else { continue; };
+            let old_offset = offsets.get(&old_handler).ok_or(ExecutableErrorV1::MalformedProgram)?;
+            let mut rule = preparation.lowered.program.rules.get(old_offset + old_index)
+                .ok_or(ExecutableErrorV1::MalformedProgram)?.clone();
+            for predicate in &mut rule.predicates { rebind_lowered_expression(predicate, edit)?; }
+            for (_, value) in &mut rule.assignments { rebind_lowered_expression(value, edit)?; }
+            let mut assignments = rule.assignments.into_iter().collect::<BTreeMap<_, _>>();
+            rule.assignments = source_rule.assignments.iter().map(|assignment| {
+                let target = slot(&assignment.target)?;
+                Ok((target, assignments.remove(&target).ok_or(ExecutableErrorV1::MalformedProgram)?))
+            }).collect::<Result<_, ExecutableErrorV1>>()?;
+            if !assignments.is_empty() { return Err(ExecutableErrorV1::MalformedProgram); }
+            rule.required_present = source_rule.required_present.iter().map(slot).collect::<Result<_, _>>()?;
+            rule.required_absent = source_rule.required_absent.iter().map(slot).collect::<Result<_, _>>()?;
+            rule.removals = source_rule.removals.iter().map(slot).collect::<Result<_, _>>()?;
+            retained.insert((handler.id, index), rule);
+        }
+    }
+    Ok(retained)
+}
+
+// Physical slots remain fixed, while semantic constants still belong to the
+// newly checked allocation root. Reuse never preserves an old semantic address.
+fn rebind_lowered_expression(value: &mut ExecutableExpressionV1, edit: &CanonicalSourceEditV1) -> Result<(), ExecutableErrorV1> {
+    use ExecutableExpressionV1 as E;
+    let formation = |old| edit.formation(FormationLocalId::new(old)).map(|new| new.get())
+        .map_err(|_| ExecutableErrorV1::MalformedProgram);
+    match value {
+        E::Constant(value) => *value = migrate_value(value, edit)?,
+        E::Slot(_) | E::Argument(_) | E::Binding(_) => {},
+        E::FreshReferent { domain, .. } => *domain = formation(*domain)?,
+        E::ReferentFacet { value, domain, members } => {
+            rebind_lowered_expression(value, edit)?;
+            *domain = formation(*domain)?;
+            for member in members.iter_mut() { *member = formation(*member)?; }
+            members.sort();
+        }
+        E::Sum { inputs, predicates, value } => {
+            for input in inputs.iter_mut().chain(predicates) { rebind_lowered_expression(input, edit)?; }
+            rebind_lowered_expression(value, edit)?;
+        }
+        E::RelationEffects(effects) | E::DerivedRelation(effects) => for effect in effects {
+            use ExecutableRelationEffectV1 as R;
+            let (a, b) = match effect { R::Put(a,b) | R::Insert(a,b) | R::Remove(a,b) | R::Accumulate(a,b) => (a,b) };
+            rebind_lowered_expression(a, edit)?; rebind_lowered_expression(b, edit)?;
+        },
+        E::TextTransform(_, a) | E::SquareRoot(a) | E::Accumulate(a) | E::Not(a) => rebind_lowered_expression(a, edit)?,
+        E::Conditional(a,b,c) | E::RelationPut(a,b,c) | E::RelationInsert(a,b,c) | E::RelationRemoveValue(a,b,c) | E::Clamp(a,b,c) => {
+            rebind_lowered_expression(a, edit)?; rebind_lowered_expression(b, edit)?; rebind_lowered_expression(c, edit)?;
+        }
+        E::ContainsText(a,b) | E::StartsWith(a,b) | E::RelationMatch(_,a,b) | E::RelationRead(a,b) | E::RelationPresent(a,b)
+        | E::RelationRemoveRow(a,b) | E::Concatenate(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b)
+        | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Equal(a,b) | E::And(a,b) | E::SetInsert(a,b) | E::SetContains(a,b) | E::SetRemove(a,b) => {
+            rebind_lowered_expression(a, edit)?; rebind_lowered_expression(b, edit)?;
+        }
+    }
+    Ok(())
 }
 
 fn migrate_value(
