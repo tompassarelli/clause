@@ -216,6 +216,7 @@ struct EffectPlans {
 struct SumPrefix {
     predicates: Vec<ExecutableExpressionV1>,
     matches: MatchState,
+    complete: Option<Arc<[(Matched, bool)]>>,
     visits: usize,
     reads: Vec<ExecutableReadV1>,
     captured_reads: bool,
@@ -281,14 +282,15 @@ pub(super) fn sum_with_shape(
     let memo = plan.as_ref().map(|plan| plan.memo());
     let mut visits = 0;
     let mut total = 0.0;
-    for (matched, accepted) in match_sum(predicates, configuration, &inputs,
-        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits)? {
+    let matches = match_sum(predicates, configuration, &inputs,
+        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits)?;
+    for (matched, accepted) in matches.iter() {
         if let Some(reads) = query_context.reads {
             for predicate in &matched.predicates {
                 reads.borrow_mut().extend(predicate.reads.iter().cloned());
             }
         }
-        if accepted {
+        if *accepted {
             let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
             let contribution = evaluate(plan.as_ref().map_or(value, |plan| plan.expression.as_ref()), configuration, &inputs,
                 EvaluationContextV1 { bindings: Some(&matched.bindings), scalar_memo: memo.as_ref(), ..query_context })?;
@@ -361,7 +363,7 @@ fn match_sum(
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
     visits: &mut usize,
-) -> Result<Vec<(Matched, bool)>, ExecutableErrorV1> {
+) -> Result<Arc<[(Matched, bool)]>, ExecutableErrorV1> {
     fn independent_pattern(pattern: &ExecutableExpressionV1) -> bool {
         match pattern {
             ExecutableExpressionV1::Constant(_) | ExecutableExpressionV1::Binding(_) => true,
@@ -374,9 +376,18 @@ fn match_sum(
         ExecutableExpressionV1::RelationMatch(_, subject, value)
             if independent_pattern(subject) && independent_pattern(value))).count();
     let Some(queries) = context.sum_queries.filter(|_| prefix_len > 0) else {
-        return match_rule(predicates, configuration, arguments, context, visits, capture);
+        return match_rule(predicates, configuration, arguments, context, visits, capture).map(Into::into);
     };
     let (prefix, rest) = predicates.split_at(prefix_len);
+    if rest.is_empty() {
+        let mut queries = queries.borrow_mut();
+        if let Some(previous) = queries.prefixes.iter_mut().find(|previous|
+            previous.captured_reads == capture && previous.predicates == prefix) {
+            *visits = previous.visits;
+            if let Some(reads) = context.reads { reads.borrow_mut().extend(previous.reads.iter().cloned()); }
+            return Ok(previous.complete.get_or_insert_with(|| previous.matches.clone().finish().into()).clone());
+        }
+    }
     let cached = queries.borrow().prefixes.iter().find(|previous|
         previous.captured_reads == capture && previous.predicates == prefix)
         .map(|previous| {
@@ -399,12 +410,12 @@ fn match_sum(
         // immutable pre-state as sum results. Retain their logical work counts
         // and ordered rejection/read evidence so reuse cannot change limits.
         queries.borrow_mut().prefixes.push(SumPrefix {
-            predicates: prefix.to_vec(), matches: state.clone(), visits: *visits,
+            predicates: prefix.to_vec(), matches: state.clone(), complete: None, visits: *visits,
             reads, captured_reads: capture,
         });
         state
     };
-    Ok(match_rule_from(rest, configuration, arguments, context, visits, capture, state)?.finish())
+    Ok(match_rule_from(rest, configuration, arguments, context, visits, capture, state)?.finish().into())
 }
 
 fn unify(
