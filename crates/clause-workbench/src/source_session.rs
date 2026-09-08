@@ -957,8 +957,8 @@ impl ResidentSourceWorkbenchV1 {
                 // An event-only source still needs a physical checkpoint at
                 // which to emit a hidden candidate. This rule has no source
                 // effects; it does not execute an arbitrary input handler.
-                let entry = physical_plan
-                    .program
+                let program = if prepared.is_some() { &lowered.program } else { &physical_plan.program };
+                let entry = program
                     .rules
                     .iter()
                     .map(|rule| rule.entry)
