@@ -4,6 +4,37 @@ use clause_workbench::ResidentSourceWorkbenchV1;
 const SOURCE: &[u8] = include_bytes!("../../../test-vectors/authoring/foreign-construction.clause");
 
 #[test]
+fn lexical_builtins_are_not_required_module_arguments() {
+    let source = r#"
+foreign text(?value: Text): Text
+  construction: "nix"
+  call: "toString"
+  from: "builtins"
+  failure: throw
+
+foreign configured(): Text
+  construction: "nix"
+  get: "name"
+  from: "config"
+  failure: throw
+
+export global-only()
+  text("kept")
+
+export with-module()
+  {label: text("kept"), configured: configured()}
+"#;
+    let opened = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let checked = opened.checked_source_package().unwrap();
+    let global = checked.callables.iter().find(|c| c.designation == b"global-only").unwrap();
+    assert_eq!(render_nix_callable_v1(global).unwrap(), "{ ... }:\n(builtins.\"toString\" (\"kept\"))\n");
+    let module = checked.callables.iter().find(|c| c.designation == b"with-module").unwrap();
+    let rendered = render_nix_callable_v1(module).unwrap();
+    assert!(rendered.starts_with("{ config, ... }:\n"));
+    assert!(rendered.contains("builtins.\"toString\""));
+}
+
+#[test]
 fn quoted_record_fields_preserve_exact_static_names_and_nix_escaping() {
     use clause_runtime::ExecutableValueV1 as V;
     let source = include_str!("../../../test-vectors/authoring/quoted-record-fields.clause");

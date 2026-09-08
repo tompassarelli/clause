@@ -25,7 +25,7 @@ enum NixExpr {
 
 /// Constructs the target expression without performing its foreign accesses.
 /// Strict Clause bindings are evaluated here, before target syntax is printed.
-/// The Nix module arguments are the exact reached foreign roots.
+/// Reached foreign roots are module arguments, except Nix's lexical builtins.
 pub fn render_nix_callable_v1(callable: &CanonicalCallableV1) -> Result<String, String> {
     check_canonical_callable_v1(callable).map_err(|e| e.to_string())?;
     if !callable.arguments.is_empty() {
@@ -36,7 +36,9 @@ pub fn render_nix_callable_v1(callable: &CanonicalCallableV1) -> Result<String, 
     }
     let mut roots = BTreeSet::new();
     let expression = construct(&callable.expression, &BTreeMap::new(), &mut roots, 0)?;
-    Ok(format!("{{ {}, ... }}:\n{}\n", roots.iter().cloned().collect::<Vec<_>>().join(", "), render(&expression, &roots)?))
+    let arguments = roots.iter().map(String::as_str).filter(|root| *root != "builtins")
+        .chain(std::iter::once("...")).collect::<Vec<_>>().join(", ");
+    Ok(format!("{{ {arguments} }}:\n{}\n", render(&expression, &roots)?))
 }
 
 fn construct(e: &E, bindings: &BTreeMap<u16, NixExpr>, roots: &mut BTreeSet<String>, depth: usize) -> Result<NixExpr, String> {
