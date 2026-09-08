@@ -88,10 +88,11 @@ fn dependencies(expression: &ExecutableExpressionV1, reads: &mut BTreeSet<u16>) 
     match expression {
         E::Sequence(values) => values.iter().fold(true, |pure,value| dependencies(value,reads) & pure),
         E::Record(fields) => fields.values().fold(true, |pure,value| dependencies(value,reads) & pure),
-        E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) => dependencies(value,reads),
-        E::SequenceJoin(a,b) | E::SequenceDrop(a,b) => dependencies(a,reads) & dependencies(b,reads),
+        E::SequenceSort(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) => dependencies(value,reads),
+        E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::SequenceDrop(a,b) => dependencies(a,reads) & dependencies(b,reads),
         E::Require(a,b,c) => dependencies(a,reads) & dependencies(b,reads) & dependencies(c,reads),
         E::Foreign { .. } => false,
+        E::SequenceFold { source, initial, body, .. } => dependencies(source, reads) & dependencies(initial, reads) & dependencies(body, reads),
         E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => dependencies(value, reads) & dependencies(body, reads),
         E::Constant(_) | E::Binding(_) | E::Argument(_) => true,
         E::FreshReferent { .. } => false,

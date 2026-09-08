@@ -95,12 +95,13 @@ fn foreign_modules(expression: &CanonicalExecutableExpressionV1, modules: &mut B
             modules.insert(binding.module.clone());
             for value in arguments { foreign_modules(value, modules); }
         }
+        E::SequenceFold { source, initial, body, .. } => { foreign_modules(source, modules); foreign_modules(initial, modules); foreign_modules(body, modules); }
         E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => { foreign_modules(value, modules); foreign_modules(body, modules); }
         E::Sequence(values) => { for value in values { foreign_modules(value, modules); } }
         E::Record(fields) => { for value in fields.values() { foreign_modules(value, modules); } }
-        E::SequenceJoin(a,b) | E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
+        E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
         E::Require(a,b,c) | E::Conditional(a,b,c) => { foreign_modules(a,modules); foreign_modules(b,modules); foreign_modules(c,modules); }
-        E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
+        E::SequenceSort(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
         _ => {}
     }
 }
@@ -197,6 +198,29 @@ impl Lowerer<'_> {
                     emitted.push(format!("[{},{}]", quote(name(key)?), value));
                 }
                 (format!("Object.freeze(Object.fromEntries([{}]))", emitted.join(",")), ValueType::Record(kinds))
+            }
+            E::EmptySequence(element) => ("Object.freeze([])".into(), ValueType::Sequence(Box::new(callable_type(element)?))),
+            E::SequenceAppend(sequence,item) => {
+                let (sequence, ValueType::Sequence(element)) = self.expression(sequence, expected.clone())? else { return unsupported("append requires a sequence"); };
+                let (item,_) = self.expression(item,Some(*element.clone()))?;
+                (format!("Object.freeze([...({sequence}),({item})])"), ValueType::Sequence(element))
+            }
+            E::SequenceSort(sequence) => {
+                let kind = ValueType::Sequence(Box::new(ValueType::Text));
+                let (sequence,_) = self.expression(sequence,Some(kind.clone()))?;
+                (format!("Object.freeze([...({sequence})].sort())"), kind)
+            }
+            E::SequenceFold { accumulator, item, source, initial, body } => {
+                let (source, ValueType::Sequence(element)) = self.expression(source,None)? else { return unsupported("fold requires a sequence"); };
+                let (initial,kind) = self.expression(initial,expected.clone())?;
+                let prior_accumulator = self.bindings.insert(*accumulator,kind.clone());
+                let prior_item = self.bindings.insert(*item,*element);
+                let result = self.expression(body,Some(kind.clone()));
+                for (binding,previous) in [(*accumulator,prior_accumulator),(*item,prior_item)] {
+                    if let Some(previous) = previous { self.bindings.insert(binding,previous); } else { self.bindings.remove(&binding); }
+                }
+                let (body,_) = result?;
+                (format!("((xs,initial)=>{{let b{accumulator}=initial;for(const b{item} of xs){{b{accumulator}=({body});}}return b{accumulator};}})(({source}),({initial}))"),kind)
             }
             E::SequenceMap { binding, source, body } => {
                 let (source, ValueType::Sequence(element)) = self.expression(source, None)? else { return unsupported("mapping requires a sequence"); };

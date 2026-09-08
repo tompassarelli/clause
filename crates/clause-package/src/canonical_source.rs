@@ -345,6 +345,10 @@ pub enum CanonicalExecutableExpressionV1 {
     /// Evaluate the ordered source once and the body once per element, in order.
     /// The fresh binding is lexical to the body; an empty source skips the body.
     SequenceMap { binding: u16, source: Box<Self>, body: Box<Self> },
+    SequenceFold { accumulator: u16, item: u16, source: Box<Self>, initial: Box<Self>, body: Box<Self> },
+    SequenceAppend(Box<Self>, Box<Self>),
+    SequenceSort(Box<Self>),
+    EmptySequence(CanonicalValueTypeV1),
     Record(BTreeMap<Vec<u8>, Self>),
     Field(Box<Self>, Vec<u8>),
     Require(Box<Self>, Box<Self>, Box<Self>),
@@ -546,6 +550,9 @@ pub enum CanonicalScalarExpressionV1 {
     SequenceJoin(Box<Self>, Box<Self>),
     ScalarText(Box<Self>),
     SequenceMap { binding: Vec<u8>, source: Box<Self>, body: Box<Self> },
+    SequenceFold { accumulator: Vec<u8>, item: Vec<u8>, source: Box<Self>, initial: Box<Self>, body: Box<Self> },
+    SequenceAppend(Box<Self>, Box<Self>),
+    SequenceSort(Box<Self>),
     Record(BTreeMap<Vec<u8>, Self>),
     Field(Box<Self>, Vec<u8>),
     Require(Box<Self>, Box<Self>, Box<Self>),
@@ -4589,6 +4596,9 @@ fn canonical_scalar_executable_expression(
         | CanonicalScalarExpressionV1::SequenceJoin(_, _)
         | CanonicalScalarExpressionV1::ScalarText(_)
         | CanonicalScalarExpressionV1::SequenceMap { .. }
+        | CanonicalScalarExpressionV1::SequenceFold { .. }
+        | CanonicalScalarExpressionV1::SequenceAppend(..)
+        | CanonicalScalarExpressionV1::SequenceSort(_)
         | CanonicalScalarExpressionV1::Record(_)
         | CanonicalScalarExpressionV1::Field(_, _)
         | CanonicalScalarExpressionV1::Require(_, _, _) => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
@@ -4984,6 +4994,9 @@ fn relational_scalar_expression(
         | CanonicalScalarExpressionV1::SequenceJoin(_, _)
         | CanonicalScalarExpressionV1::ScalarText(_)
         | CanonicalScalarExpressionV1::SequenceMap { .. }
+        | CanonicalScalarExpressionV1::SequenceFold { .. }
+        | CanonicalScalarExpressionV1::SequenceAppend(..)
+        | CanonicalScalarExpressionV1::SequenceSort(_)
         | CanonicalScalarExpressionV1::Record(_)
         | CanonicalScalarExpressionV1::Field(_, _)
         | CanonicalScalarExpressionV1::Require(_, _, _) => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
@@ -9090,18 +9103,43 @@ impl ScalarExpressionParser<'_> {
             }
             return Some(E::Record(fields));
         }
+        if self.take_exact(b"fold(") {
+            let source = Box::new(self.comparison()?);
+            self.skip_spaces(); self.take_exact(b",").then_some(())?;
+            let initial = Box::new(self.comparison()?);
+            let mut bindings = Vec::new();
+            for _ in 0..2 {
+                self.skip_spaces(); self.take_exact(b",").then_some(())?;
+                self.skip_spaces();
+                let start = self.cursor;
+                self.take_exact(b"?").then_some(())?;
+                while self.source.get(self.cursor).is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_')) { self.cursor += 1; }
+                (self.cursor > start + 1).then_some(())?;
+                bindings.push(self.source[start..self.cursor].to_vec());
+            }
+            self.skip_spaces(); self.take_exact(b",").then_some(())?;
+            let body = Box::new(self.comparison()?);
+            self.skip_spaces(); self.take_exact(b")").then_some(())?;
+            return Some(E::SequenceFold { accumulator: bindings.remove(0), item: bindings.remove(0), source, initial, body });
+        }
+        if self.take_exact(b"sort(") {
+            let value = self.comparison()?;
+            self.skip_spaces(); self.take_exact(b")").then_some(())?;
+            return Some(E::SequenceSort(Box::new(value)));
+        }
         if self.take_exact(b"count(") {
             let value = self.comparison()?;
             self.skip_spaces(); self.take_exact(b")").then_some(())?;
             return Some(E::SequenceCount(Box::new(value)));
         }
-        for builtin in [b"drop(".as_slice(), b"require(", b"join("] {
+        for builtin in [b"drop(".as_slice(), b"require(", b"join(", b"append("] {
             if self.take_exact(builtin) {
                 let a = Box::new(self.comparison()?);
                 self.skip_spaces(); self.take_exact(b",").then_some(())?;
                 let b = Box::new(self.comparison()?);
                 let value = match builtin {
                     b"drop(" => E::SequenceDrop(a, b),
+                    b"append(" => E::SequenceAppend(a, b),
                     b"join(" => E::SequenceJoin(a, b),
                     _ => {
                         self.skip_spaces(); self.take_exact(b",").then_some(())?;
@@ -9312,6 +9350,18 @@ fn collect_scalar_expression_parameters(
             for value in fields.values() { collect_scalar_expression_parameters(value, parameters); }
         }
         CanonicalScalarExpressionV1::Field(value, _) => collect_scalar_expression_parameters(value, parameters),
+        CanonicalScalarExpressionV1::SequenceFold { accumulator, item, source, initial, body } => {
+            collect_scalar_expression_parameters(source, parameters);
+            collect_scalar_expression_parameters(initial, parameters);
+            let mut nested = BTreeSet::new();
+            collect_scalar_expression_parameters(body, &mut nested);
+            nested.remove(accumulator); nested.remove(item);
+            parameters.extend(nested);
+        }
+        CanonicalScalarExpressionV1::SequenceSort(value) => collect_scalar_expression_parameters(value, parameters),
+        CanonicalScalarExpressionV1::SequenceAppend(a,b) => {
+            collect_scalar_expression_parameters(a, parameters); collect_scalar_expression_parameters(b, parameters);
+        }
         CanonicalScalarExpressionV1::SequenceMap { binding, source, body } => {
             collect_scalar_expression_parameters(source, parameters);
             let mut nested = BTreeSet::new();
@@ -10835,6 +10885,9 @@ fn scalar_expression_matches_kind(
         | CanonicalScalarExpressionV1::SequenceJoin(_, _)
         | CanonicalScalarExpressionV1::ScalarText(_)
         | CanonicalScalarExpressionV1::SequenceMap { .. }
+        | CanonicalScalarExpressionV1::SequenceFold { .. }
+        | CanonicalScalarExpressionV1::SequenceAppend(..)
+        | CanonicalScalarExpressionV1::SequenceSort(_)
         | CanonicalScalarExpressionV1::Record(_)
         | CanonicalScalarExpressionV1::Field(_, _)
         | CanonicalScalarExpressionV1::Require(_, _, _) => false,

@@ -70,6 +70,9 @@ pub(super) fn foreign_accesses(
                 collect(value, contracts);
                 collect(body, contracts);
             }
+            E::SequenceFold { source, initial, body, .. } => {
+                collect(source, contracts); collect(initial, contracts); collect(body, contracts);
+            }
             E::Sequence(values) => {
                 for value in values {
                     collect(value, contracts);
@@ -81,6 +84,7 @@ pub(super) fn foreign_accesses(
                 }
             }
             E::SequenceJoin(a, b)
+            | E::SequenceAppend(a, b)
             | E::SequenceDrop(a, b)
             | E::Concatenate(a, b)
             | E::Equal(a, b)
@@ -100,7 +104,8 @@ pub(super) fn foreign_accesses(
                 collect(b, contracts);
                 collect(c, contracts);
             }
-            E::SequenceCount(value)
+            E::SequenceSort(value)
+            | E::SequenceCount(value)
             | E::ScalarText(value)
             | E::Field(value, _)
             | E::SquareRoot(value)
@@ -582,7 +587,10 @@ impl Expansion<'_> {
             CallableBodyCst::Expressions(expressions) => {
                 let mut expressions = expressions
                     .iter()
-                    .map(|expression| {
+                    .enumerate()
+                    .map(|(position, expression)| {
+                        let expected = if position + 1 == expressions.len() { definition.result_kind.as_ref().map(|kind| kind.instantiate(&BTreeMap::new())).transpose()
+                            .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })? } else { None };
                         lower(
                             expression,
                             &arguments,
@@ -591,6 +599,7 @@ impl Expansion<'_> {
                             self,
                             0,
                             definition.mode,
+                            expected.as_ref(),
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
@@ -658,6 +667,19 @@ fn bind_body(
                 .map(|(k, v)| Ok((k.clone(), *recur(v)?)))
                 .collect::<Result<_, CanonicalSourceErrorV1>>()?,
         ),
+        E::EmptySequence(kind) => E::EmptySequence(kind.clone()),
+        E::SequenceSort(a) => E::SequenceSort(recur(a)?),
+        E::SequenceAppend(a,b) => E::SequenceAppend(recur(a)?, recur(b)?),
+        E::SequenceFold { accumulator, item, source, initial, body } => {
+            let source = recur(source)?;
+            let initial = recur(initial)?;
+            let fresh_accumulator = expansion.binding(origin)?;
+            let fresh_item = expansion.binding(origin)?;
+            let mut nested = locals.clone();
+            nested.insert(*accumulator, fresh_accumulator); nested.insert(*item, fresh_item);
+            let body = Box::new(bind_body(body, actual, &nested, expansion, origin, depth + 1)?);
+            E::SequenceFold { accumulator: fresh_accumulator, item: fresh_item, source, initial, body }
+        }
         E::SequenceCount(a) => E::SequenceCount(recur(a)?),
         E::ScalarText(a) => E::ScalarText(recur(a)?),
         E::SequenceJoin(a, b) => E::SequenceJoin(recur(a)?, recur(b)?),
@@ -760,6 +782,7 @@ fn lower(
     expansion: &mut Expansion<'_>,
     depth: usize,
     mode: CanonicalCallableModeV1,
+    expected: Option<&CanonicalValueTypeV1>,
 ) -> Result<CanonicalExecutableExpressionV1, CanonicalSourceErrorV1> {
     use CanonicalExecutableExpressionV1 as E;
     use CanonicalScalarExpressionV1 as S;
@@ -769,20 +792,54 @@ fn lower(
     };
     expansion.consume(origin, depth)?;
     let mut recur =
-        |e| lower(e, arguments, locals, origin, expansion, depth + 1, mode).map(Box::new);
+        |e| lower(e, arguments, locals, origin, expansion, depth + 1, mode, None).map(Box::new);
     Ok(match expression {
-        S::Sequence(values) => E::Sequence(
-            values
-                .iter()
-                .map(|v| recur(v).map(|v| *v))
-                .collect::<Result<_, _>>()?,
-        ),
+        S::Sequence(values) => {
+            let element = match expected { Some(CanonicalValueTypeV1::Sequence(element)) => Some(element.as_ref()), _ => None };
+            if values.is_empty() {
+                E::EmptySequence(element.ok_or(CanonicalSourceErrorV1::InvalidCallable { origin, reason: "empty sequence literal needs an element contract" })?.clone())
+            } else {
+                E::Sequence(values.iter().map(|v| lower(v, arguments, locals, origin, expansion, depth + 1, mode, element)).collect::<Result<_, _>>()?)
+            }
+        },
         S::Record(fields) => E::Record(
             fields
                 .iter()
-                .map(|(k, v)| Ok((k.clone(), *recur(v)?)))
+                .map(|(k, v)| {
+                    let wanted = match expected { Some(CanonicalValueTypeV1::Record(fields)) => fields.get(k), _ => None };
+                    Ok((k.clone(), lower(v, arguments, locals, origin, expansion, depth + 1, mode, wanted)?))
+                })
                 .collect::<Result<_, CanonicalSourceErrorV1>>()?,
         ),
+        S::SequenceSort(a) => E::SequenceSort(Box::new(lower(a, arguments, locals, origin, expansion, depth + 1, mode,
+            Some(&CanonicalValueTypeV1::Sequence(Box::new(CanonicalScalarValueKindV1::Text.into()))))?)),
+        S::SequenceAppend(a,b) => {
+            let a = Box::new(lower(a, arguments, locals, origin, expansion, depth + 1, mode, expected)?);
+            let types = arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>();
+            let bindings = locals.values().cloned().collect();
+            let CanonicalValueTypeV1::Sequence(element) = expression_kind(&a, &types, &bindings, 0, mode)
+                .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })? else { return Err(error()); };
+            let b = Box::new(lower(b, arguments, locals, origin, expansion, depth + 1, mode, Some(&element))?);
+            E::SequenceAppend(a,b)
+        }
+        S::SequenceFold { accumulator, item, source, initial, body } => {
+            if accumulator == item { return Err(CanonicalSourceErrorV1::InvalidCallable { origin, reason: "duplicate fold binding" }); }
+            let source = recur(source)?;
+            let initial = Box::new(lower(initial, arguments, locals, origin, expansion, depth + 1, mode, expected)?);
+            let types = arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>();
+            let bindings = locals.values().cloned().collect();
+            let kind = |e| expression_kind(e, &types, &bindings, 0, mode)
+                .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason });
+            let CanonicalValueTypeV1::Sequence(element) = kind(&source)? else { return Err(error()); };
+            let accumulator_kind = kind(&initial)?;
+            let fresh_accumulator = expansion.binding(origin)?;
+            let fresh_item = expansion.binding(origin)?;
+            let mut nested = locals.clone();
+            nested.insert(accumulator.clone(), (fresh_accumulator, accumulator_kind.clone()));
+            nested.insert(item.clone(), (fresh_item, *element));
+            let body = Box::new(lower(body, arguments, &nested, origin, expansion, depth + 1, mode, Some(&accumulator_kind))?);
+            E::SequenceFold { accumulator: fresh_accumulator, item: fresh_item, source, initial, body }
+        }
         S::SequenceCount(a) => E::SequenceCount(recur(a)?),
         S::ScalarText(a) => E::ScalarText(recur(a)?),
         S::SequenceJoin(a, b) => E::SequenceJoin(recur(a)?, recur(b)?),
@@ -816,7 +873,8 @@ fn lower(
                 origin,
                 expansion,
                 depth + 1,
-                mode,
+                CanonicalCallableModeV1::Function,
+                match expected { Some(CanonicalValueTypeV1::Sequence(element)) => Some(element.as_ref()), _ => None },
             )?);
             E::SequenceMap {
                 binding: fresh,
@@ -831,10 +889,6 @@ fn lower(
             designation,
             arguments: actual,
         } => {
-            let values = actual
-                .iter()
-                .map(|a| lower(a, arguments, locals, origin, expansion, depth + 1, mode))
-                .collect::<Result<Vec<_>, _>>()?;
             let index = *expansion.indices.get(designation).ok_or(
                 CanonicalSourceErrorV1::InvalidCallable {
                     origin,
@@ -842,6 +896,9 @@ fn lower(
                 },
             )?;
             let definition = &expansion.definitions[index];
+            let wanted = definition.arguments.iter().map(|a| a.value_kind.instantiate(&BTreeMap::new()).ok()).collect::<Vec<_>>();
+            let values = actual.iter().enumerate().map(|(i,a)| lower(a, arguments, locals, origin, expansion, depth + 1, mode,
+                wanted.get(i).and_then(Option::as_ref))).collect::<Result<Vec<_>, _>>()?;
             if !definition.type_parameters.is_empty() {
                 let argument_types = arguments.iter().map(|a| a.value_kind.clone()).collect::<Vec<_>>();
                 let binding_types = locals.values().cloned().collect();
@@ -940,7 +997,9 @@ fn lower(
         S::Divide(a, b) => E::Divide(recur(a)?, recur(b)?),
         S::SquareRoot(a) => E::SquareRoot(recur(a)?),
         S::TextTransform(op, a) => E::TextTransform(*op, recur(a)?),
-        S::Conditional(a, b, c) => E::Conditional(recur(a)?, recur(b)?, recur(c)?),
+        S::Conditional(a, b, c) => E::Conditional(recur(a)?,
+            Box::new(lower(b, arguments, locals, origin, expansion, depth + 1, mode, expected)?),
+            Box::new(lower(c, arguments, locals, origin, expansion, depth + 1, mode, expected)?)),
         S::Current | S::Symbol(_) => return Err(error()),
     })
 }
@@ -1036,6 +1095,23 @@ fn expression_kind(
         }
         E::Constant(CanonicalScalarValueV1::Boolean(_)) => K::Boolean.into(),
         E::Constant(CanonicalScalarValueV1::Text(_)) => K::Text.into(),
+        E::EmptySequence(element) => { element.check()?; T::Sequence(Box::new(element.clone())) }
+        E::SequenceSort(value) => {
+            let kind = T::Sequence(Box::new(K::Text.into())); require(value, &kind)?; kind
+        }
+        E::SequenceAppend(sequence, item) => {
+            let kind = recur(sequence)?;
+            let T::Sequence(element) = &kind else { return Err("append requires an ordered sequence"); };
+            require(item, element)?; kind
+        }
+        E::SequenceFold { accumulator, item, source, initial, body } => {
+            let T::Sequence(element) = recur(source)? else { return Err("fold requires an ordered sequence"); };
+            let kind = recur(initial)?;
+            let mut nested = bindings.clone();
+            if nested.insert(*accumulator, kind.clone()).is_some() || nested.insert(*item, *element).is_some() { return Err("duplicate lexical binding"); }
+            if expression_kind(body, arguments, &nested, depth + 1, mode)? != kind { return Err("fold body must preserve accumulator contract"); }
+            kind
+        }
         E::Sequence(values) => {
             let first = values
                 .first()
@@ -1080,7 +1156,7 @@ fn expression_kind(
                 arguments,
                 &nested,
                 depth + 1,
-                mode,
+                CanonicalCallableModeV1::Function,
             )?))
         }
         E::SequenceCount(value) => {

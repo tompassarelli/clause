@@ -1,0 +1,61 @@
+Collected:
+  names: Sequence<Text>
+  error: Text
+
+empty(): Collected
+  {names: [], error: ""}
+
+export collect(?names: Sequence<Text>): Collected
+  fold(?names, empty(), ?prior, ?name,
+    if(?name = "skip", ?prior, {names: append(?prior.names, ?name), error: ""}))
+
+export ordered(?names: Sequence<Text>): Sequence<Text>
+  sort(?names)
+
+export empty-result(): Sequence<Text>
+  []
+
+identity(?names: Sequence<Text>): Sequence<Text>
+  ?names
+
+export empty-argument(): Sequence<Text>
+  identity([])
+
+export empty-branch(?yes: Bool): Sequence<Text>
+  if(?yes, [], ["value"])
+
+export scope(?item: Text, ?names: Sequence<Text>): Text
+  "{fold(?names, "", ?acc, ?item, ?acc ++ fold([?item], "", ?acc, ?item, ?acc ++ ?item))}:{?item}"
+
+export empty-initial(?names: Sequence<Text>): Sequence<Text>
+  fold(?names, [], ?acc, ?item, append(?acc, ?item))
+
+export body-failure(?names: Sequence<Text>): F64
+  fold(?names, 7, ?acc, ?item, 1 / 0)
+
+export initial-failure(?names: Sequence<Text>): F64
+  fold(?names, 1 / 0, ?acc, ?item, ?acc)
+
+foreign source(): Sequence<Text>
+  call: "source"
+  from: "./fold-effects.mjs"
+  failure: throw
+
+foreign initial(): Collected
+  call: "initial"
+  from: "./fold-effects.mjs"
+  failure: throw
+
+foreign inspect(?name: Text): Text
+  call: "inspect"
+  from: "./fold-effects.mjs"
+  failure: throw
+
+updated(?prior: Collected, ?name: Text, ?error: Text): Collected
+  if(?error = "", {names: append(?prior.names, ?name), error: ""}, {names: ?prior.names, error: ?error})
+
+procedure step(?prior: Collected, ?name: Text): Collected
+  if(?prior.error = "", updated(?prior, ?name, inspect(?name)), ?prior)
+
+export procedure effects(): Collected
+  fold(source(), initial(), ?prior, ?name, step(?prior, ?name))

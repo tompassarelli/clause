@@ -872,6 +872,9 @@ pub enum ExecutableExpressionV1 {
     SequenceJoin(Box<Self>, Box<Self>),
     ScalarText(Box<Self>),
     SequenceMap { binding: u16, source: Box<Self>, body: Box<Self> },
+    SequenceFold { accumulator: u16, item: u16, source: Box<Self>, initial: Box<Self>, body: Box<Self> },
+    SequenceAppend(Box<Self>, Box<Self>),
+    SequenceSort(Box<Self>),
     Record(BTreeMap<Vec<u8>, Self>),
     Field(Box<Self>, Vec<u8>),
     Require(Box<Self>, Box<Self>, Box<Self>),
@@ -1240,6 +1243,15 @@ fn lower_canonical_expression(
         CanonicalExecutableExpressionV1::Let { binding, value, body } => ExecutableExpressionV1::Let {
             binding: *binding,
             value: Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+            body: Box::new(lower_canonical_expression(body, slots, depth + 1)?),
+        },
+        CanonicalExecutableExpressionV1::EmptySequence(_) => ExecutableExpressionV1::Sequence(Vec::new()),
+        CanonicalExecutableExpressionV1::SequenceAppend(a,b) => { let (a,b) = pair(a,b)?; ExecutableExpressionV1::SequenceAppend(a,b) }
+        CanonicalExecutableExpressionV1::SequenceSort(a) => ExecutableExpressionV1::SequenceSort(Box::new(lower_canonical_expression(a, slots, depth + 1)?)),
+        CanonicalExecutableExpressionV1::SequenceFold { accumulator, item, source, initial, body } => ExecutableExpressionV1::SequenceFold {
+            accumulator: *accumulator, item: *item,
+            source: Box::new(lower_canonical_expression(source, slots, depth + 1)?),
+            initial: Box::new(lower_canonical_expression(initial, slots, depth + 1)?),
             body: Box::new(lower_canonical_expression(body, slots, depth + 1)?),
         },
         CanonicalExecutableExpressionV1::Sequence(values) => ExecutableExpressionV1::Sequence(values.iter().map(|v| lower_canonical_expression(v, slots, depth + 1)).collect::<Result<_, _>>()?),
@@ -1846,7 +1858,7 @@ fn lower_scalar_expression(
         ))
     };
     Ok(match expression {
-        CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceMap { .. } | CanonicalScalarExpressionV1::SequenceCount(_) | CanonicalScalarExpressionV1::ScalarText(_) | CanonicalScalarExpressionV1::SequenceJoin(..) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
+        CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceMap { .. } | CanonicalScalarExpressionV1::SequenceFold { .. } | CanonicalScalarExpressionV1::SequenceAppend(..) | CanonicalScalarExpressionV1::SequenceSort(_) | CanonicalScalarExpressionV1::SequenceCount(_) | CanonicalScalarExpressionV1::ScalarText(_) | CanonicalScalarExpressionV1::SequenceJoin(..) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Call { .. } => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
             let (yes, no) = pair(yes, no)?;
@@ -5911,7 +5923,9 @@ fn validate_value_expression(
         E::Sequence(values) => values.iter().collect(),
         E::Record(fields) => fields.values().collect(),
         E::Field(value,_) => vec![value],
-        E::SequenceJoin(a,b) | E::SequenceDrop(a,b) => vec![a,b],
+        E::SequenceJoin(a,b) | E::SequenceAppend(a,b) | E::SequenceDrop(a,b) => vec![a,b],
+        E::SequenceFold { source, initial, body, .. } => vec![source, initial, body],
+        E::SequenceSort(value) => vec![value],
         E::SequenceCount(value) | E::ScalarText(value) => vec![value],
         E::Require(a,b,c) => vec![a,b,c],
         E::Foreign { .. } => return Err(ExecutableErrorV1::MalformedProgram),
@@ -6507,6 +6521,31 @@ fn evaluate(
         },
         E::Sequence(values) => Ok(ExecutableValueV1::Sequence(values.iter().map(|v| evaluate(v, slots, arguments, context)).collect::<Result<_, _>>()?)),
         E::Record(fields) => Ok(ExecutableValueV1::Record(fields.iter().map(|(k, v)| Ok((k.clone(), evaluate(v, slots, arguments, context)?))).collect::<Result<_, ExecutableErrorV1>>()?)),
+        E::SequenceFold { accumulator, item, source, initial, body } => {
+            let ExecutableValueV1::Sequence(values) = evaluate(source, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
+            let mut result = evaluate(initial, slots, arguments, context)?;
+            let mut bindings = context.bindings.cloned().unwrap_or_default();
+            for value in values {
+                bindings.insert(*accumulator, result);
+                bindings.insert(*item, value);
+                result = evaluate(body, slots, arguments, EvaluationContextV1 { bindings: Some(&bindings), ..context })?;
+            }
+            Ok(result)
+        }
+        E::SequenceAppend(sequence, item) => {
+            let ExecutableValueV1::Sequence(mut values) = evaluate(sequence, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
+            values.push(evaluate(item, slots, arguments, context)?);
+            Ok(ExecutableValueV1::Sequence(values))
+        }
+        E::SequenceSort(sequence) => {
+            let ExecutableValueV1::Sequence(values) = evaluate(sequence, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
+            let mut values = values.into_iter().map(|value| match value {
+                ExecutableValueV1::Text(value) => Ok(value), _ => Err(ExecutableErrorV1::TypeMismatch),
+            }).collect::<Result<Vec<_>, _>>()?;
+            // Match the existing JavaScript string order, including supplementary characters.
+            values.sort_by(|a,b| a.as_str().encode_utf16().cmp(b.as_str().encode_utf16()));
+            Ok(ExecutableValueV1::Sequence(values.into_iter().map(ExecutableValueV1::Text).collect()))
+        }
         E::SequenceMap { binding, source, body } => {
             let ExecutableValueV1::Sequence(values) = evaluate(source, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
             let mut bindings = context.bindings.cloned().unwrap_or_default();
@@ -7175,6 +7214,12 @@ fn encode_expression(
     match expression {
         E::Sequence(values) => { bytes.push(37); encode_count(bytes,values.len())?; for value in values { encode_expression(bytes,value)?; } }
         E::Record(fields) => { bytes.push(38); encode_count(bytes,fields.len())?; for (name,value) in fields { encode_count(bytes,name.len())?; bytes.extend_from_slice(name); encode_expression(bytes,value)?; } }
+        E::SequenceAppend(a,b) => encode_binary(bytes,47,a,b)?,
+        E::SequenceSort(value) => { bytes.push(48); encode_expression(bytes,value)?; }
+        E::SequenceFold { accumulator, item, source, initial, body } => {
+            bytes.push(46); bytes.extend_from_slice(&accumulator.to_le_bytes()); bytes.extend_from_slice(&item.to_le_bytes());
+            encode_expression(bytes,source)?; encode_expression(bytes,initial)?; encode_expression(bytes,body)?;
+        }
         E::SequenceDrop(a,b) => encode_binary(bytes,39,a,b)?,
         E::SequenceCount(value) => { bytes.push(42); encode_expression(bytes,value)?; }
         E::SequenceJoin(a,b) => encode_binary(bytes,43,a,b)?,
@@ -7532,6 +7577,9 @@ impl<'a> Decoder<'a> {
             42 => E::SequenceCount(Box::new(self.expression(next)?)),
             43 => E::SequenceJoin(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
             44 => E::ScalarText(Box::new(self.expression(next)?)),
+            46 => E::SequenceFold { accumulator: self.u16()?, item: self.u16()?, source: Box::new(self.expression(next)?), initial: Box::new(self.expression(next)?), body: Box::new(self.expression(next)?) },
+            47 => E::SequenceAppend(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
+            48 => E::SequenceSort(Box::new(self.expression(next)?)),
             45 => E::SequenceMap { binding: self.u16()?, source: Box::new(self.expression(next)?), body: Box::new(self.expression(next)?) },
             39 => E::SequenceDrop(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
             40 => { let value=Box::new(self.expression(next)?); let length=self.count()?; E::Field(value,self.take(length)?.to_vec()) }
