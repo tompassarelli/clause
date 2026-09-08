@@ -300,7 +300,7 @@ pub(super) fn replace_bound_scalar_effect(
     exact.extend_from_slice(&cst.exact_source[..start]);
     exact.extend_from_slice(replacement);
     exact.extend_from_slice(&cst.exact_source[end..]);
-    let source = read_canonical_source_with_declared_frontend_v1(&exact, &cst.declared_frontend)?;
+    let source = incremental_read::replace_scalar_leaf(cst, selected, &exact, replacement.len())?;
     let plan = build_independent_plan(&source, new_root)?;
     let old_requests = allocation_requests(cst)?;
     let new_requests = allocation_requests(&source)?;
@@ -564,7 +564,7 @@ pub fn replace_canonical_source_items_v1(
             .items
             .iter()
             .find(|item| item.origin == origin)
-            .and_then(editable_item_producer)
+            .and_then(|item| editable_item_producer(item))
             .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
         if old_producer.production != new.production {
             return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);

@@ -22,7 +22,15 @@ fn incremental_scalar_analysis_matches_full_check_and_rejects_stale_or_invalid_e
             assert_eq!(edit.plan(), full_edit.plan());
             assert_eq!(edit.retained(), full_edit.retained());
             let next = checked.advance(&edit).unwrap();
-            let full = elaborate_canonical_source_package_v1(edit.source(), context, edit.plan()).unwrap();
+            let full_source = read_canonical_source_v1(edit.source().exact_source()).unwrap();
+            let full_plan = plan_independent_canonical_source_allocations_v1(&full_source, root).unwrap();
+            assert_eq!(edit.plan(), &full_plan);
+            assert_eq!(next.scalar_effects().unwrap(), canonical_scalar_effects_v1(&full_source, &full_plan).unwrap());
+            assert_eq!(next.source().vocabularies(), full_source.vocabularies());
+            assert_eq!(next.source().subject_focuses(), full_source.subject_focuses());
+            assert_eq!(next.source().denotations(), full_source.denotations());
+            assert_eq!(next.source().applications(), full_source.applications());
+            let full = elaborate_canonical_source_package_v1(&full_source, context, &full_plan).unwrap();
             let incremental = next.package();
             assert_eq!(incremental.checked_package.exact_bytes(), full.checked_package.exact_bytes());
             assert_eq!(incremental.executable_handlers.len(), full.executable_handlers.len());
@@ -40,6 +48,8 @@ fn incremental_scalar_analysis_matches_full_check_and_rejects_stale_or_invalid_e
             assert_eq!(incremental.keyboard_bindings, full.keyboard_bindings);
             assert_eq!(incremental.scalar_input_bindings, full.scalar_input_bindings);
             assert_eq!(incremental.referent_input_bindings, full.referent_input_bindings);
+            assert_eq!(incremental.input_handler, full.input_handler);
+            assert_eq!(incremental.scalar_handlers, full.scalar_handlers);
             assert!(next.advance(&edit).is_err());
             assert!(next.replace_scalar_effect(selected.handler, selected.effect, &selected.field_path, after.as_bytes(), root).is_err());
             checked = next;

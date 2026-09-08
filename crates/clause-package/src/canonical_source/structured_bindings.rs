@@ -156,7 +156,7 @@ pub(super) fn expand<'a>(
         rewritten.relational_handlers.take();
         rewritten.relational_relations.take();
         rewritten.allocation_requests.take();
-        rewritten.items[index].kind = CstKind::GeneralHandler(expanded);
+        std::sync::Arc::make_mut(&mut rewritten.items[index]).kind = CstKind::GeneralHandler(expanded);
     }
     Ok(result)
 }

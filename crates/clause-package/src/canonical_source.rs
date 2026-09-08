@@ -22,6 +22,7 @@ use crate::term::{EqualityContract, Term, TermError, TermScope};
 mod scalar_laws;
 use scalar_laws::*;
 mod live_edit;
+mod incremental_read;
 mod source_analysis;
 pub use source_analysis::CheckedCanonicalSourceAnalysisV1;
 mod relational;
@@ -557,7 +558,8 @@ pub struct CanonicalScalarHandlerV1 {
 pub struct CanonicalSourceCstV1 {
     artifact: CanonicalSourceArtifactIdV1,
     exact_source: Box<[u8]>,
-    items: Vec<CstItem>,
+    parsed: std::sync::Arc<incremental_read::ParsedSource>,
+    items: Vec<std::sync::Arc<CstItem>>,
     denotations: Vec<CanonicalSourceDenotationV1>,
     applications: Vec<CanonicalSourceApplicationV1>,
     vocabularies: Vec<CanonicalSourceVocabularyV1>,
@@ -1543,8 +1545,23 @@ pub fn read_canonical_source_with_declared_frontend_v1(
         }
         items.extend(parse_items(artifact, block, origin, &scalar_laws, frontend)?);
     }
+    finish_canonical_source(exact_source, artifact, &lines, frontend,
+        incremental_read::ParsedSource { items: items.into_iter().map(std::sync::Arc::new).collect(), scalar_laws }, vocabularies, subject_focuses)
+}
+
+fn finish_canonical_source(
+    exact_source: &[u8],
+    artifact: CanonicalSourceArtifactIdV1,
+    lines: &[SourceLine<'_>],
+    frontend: &CanonicalDeclaredFrontendV1,
+    parsed: incremental_read::ParsedSource,
+    vocabularies: Vec<CanonicalSourceVocabularyV1>,
+    subject_focuses: Vec<CanonicalSubjectFocusV1>,
+) -> Result<CanonicalSourceCstV1, CanonicalSourceErrorV1> {
+    let mut items = parsed.items.clone();
+    let scalar_laws = &parsed.scalar_laws;
     items.extend(scalar_laws.relations.iter().filter_map(|relation|
-        relation.contract_origin.map(|origin| CstItem { origin, kind: CstKind::Relation(relation.clone()) })));
+        relation.contract_origin.map(|origin| std::sync::Arc::new(CstItem { origin, kind: CstKind::Relation(relation.clone()) }))));
     retain_supported_boolean_derive_pairs(&mut items);
     // Scalar syntax is a front-end convenience, not a separate state system.
     // Promote only handlers connected to created relation rows into the same
@@ -1573,7 +1590,7 @@ pub fn read_canonical_source_with_declared_frontend_v1(
             if connected.len() == before { break; }
         }
         for (index, handler) in alternatives {
-            if general_handler_relation_designations(&handler, &items).iter().any(|relation| connected.contains(relation)) { items[index].kind = CstKind::GeneralHandler(handler); }
+            if general_handler_relation_designations(&handler, &items).iter().any(|relation| connected.contains(relation)) { std::sync::Arc::make_mut(&mut items[index]).kind = CstKind::GeneralHandler(handler); }
         }
     }
     validate_unique_designations(&items)?;
@@ -1603,6 +1620,7 @@ pub fn read_canonical_source_with_declared_frontend_v1(
     let mut cst = CanonicalSourceCstV1 {
         artifact,
         exact_source: exact_source.into(),
+        parsed: std::sync::Arc::new(parsed),
         items,
         denotations,
         applications,
@@ -1631,12 +1649,13 @@ fn normalize_focused_state_assertions(cst: &mut CanonicalSourceCstV1) {
             && x.name == b"x" && y.name == b"y" && z.name == b"z"
             && let (CanonicalScalarValueV1::Number(x), CanonicalScalarValueV1::Number(y), CanonicalScalarValueV1::Number(z)) = (&x.value, &y.value, &z.value)
         {
-            item.kind = CstKind::VectorAssertion(VectorAssertionCst {
+            let replacement = CstKind::VectorAssertion(VectorAssertionCst {
                 origin: assertion.origin,
                 subject: assertion.subject.clone(),
                 relation: assertion.relation.clone(),
                 x: *x, y: *y, z: *z,
             });
+            std::sync::Arc::make_mut(item).kind = replacement;
         }
         let CstKind::Application(application) = &item.kind else { continue };
         if !state_relations.contains(&application.role) { continue; }
@@ -1645,7 +1664,7 @@ fn normalize_focused_state_assertions(cst: &mut CanonicalSourceCstV1) {
         let origin = item.origin;
         let subject = application.subject.clone();
         let relation = application.role.clone();
-        item.kind = match &application.object {
+        let replacement = match &application.object {
             CanonicalScalarValueV1::Number(value) => CstKind::NumberAssertion(NumberAssertionCst {
                 origin, subject, relation, value: *value,
             }),
@@ -1660,6 +1679,7 @@ fn normalize_focused_state_assertions(cst: &mut CanonicalSourceCstV1) {
             }),
             _ => unreachable!("source applications contain literal scalar values"),
         };
+        std::sync::Arc::make_mut(item).kind = replacement;
     }
 }
 
@@ -2261,7 +2281,7 @@ fn declared_state_cardinality(
 
 fn general_handler_relation_designations(
     handler: &GeneralHandlerCst,
-    items: &[CstItem],
+    items: &[std::sync::Arc<CstItem>],
 ) -> BTreeSet<Vec<u8>> {
     handler
         .parameter_sources
@@ -10710,7 +10730,7 @@ fn require_leaf(
     Ok(())
 }
 
-fn retain_supported_boolean_derive_pairs(items: &mut [CstItem]) {
+fn retain_supported_boolean_derive_pairs(items: &mut [std::sync::Arc<CstItem>]) {
     let mut counts = BTreeMap::<Vec<u8>, (usize, usize)>::new();
     for item in items.iter() {
         match &item.kind {
@@ -10738,7 +10758,7 @@ fn retain_supported_boolean_derive_pairs(items: &mut [CstItem]) {
             _ => None,
         };
         if let Some(production) = unsupported {
-            item.kind = CstKind::Unsupported(CanonicalUnsupportedProductionV1 {
+            std::sync::Arc::make_mut(item).kind = CstKind::Unsupported(CanonicalUnsupportedProductionV1 {
                 production,
                 origin: item.origin,
                 emissions: vec![],
@@ -10759,7 +10779,7 @@ fn assertion_subject(kind: &CstKind) -> Option<&Vec<u8>> {
     }
 }
 
-fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSourceErrorV1> {
+fn validate_unique_designations(items: &[std::sync::Arc<CstItem>]) -> Result<(), CanonicalSourceErrorV1> {
     let mut seen = BTreeMap::<Vec<u8>, (bool, bool)>::new();
     for (designation, declaration, referent_use) in
         items.iter().filter_map(|item| {
