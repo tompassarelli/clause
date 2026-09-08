@@ -162,6 +162,22 @@ impl Emitter<'_> {
         self.failure(code);
         self.op(W::End);
     }
+    fn finite(&mut self, local: u32) {
+        self.op(W::LocalTee(local));
+        self.op(W::F64Abs);
+        self.op(W::F64Const(f64::MAX.into()));
+        self.op(W::F64Le);
+        self.op(W::I32Eqz);
+        self.guard(1);
+        self.op(W::LocalGet(local));
+        self.op(W::F64Const(0.0.into()));
+        self.op(W::F64Eq);
+        self.op(W::If(BlockType::Result(ValType::F64)));
+        self.op(W::F64Const(0.0.into()));
+        self.op(W::Else);
+        self.op(W::LocalGet(local));
+        self.op(W::End);
+    }
     fn number(&mut self, node: usize) {
         self.node(node);
     }
@@ -229,7 +245,7 @@ impl Emitter<'_> {
                     Node::Subtract(..) => W::F64Sub,
                     _ => W::F64Mul,
                 });
-                self.op(W::Call(0));
+                self.finite(self.value(node));
             }
             Node::Divide(a, b) => {
                 self.number(b);
@@ -241,7 +257,7 @@ impl Emitter<'_> {
                 self.number(a);
                 self.op(W::LocalGet(self.value(b)));
                 self.op(W::F64Div);
-                self.op(W::Call(0));
+                self.finite(self.value(node));
             }
             Node::GreaterThan(a, b) | Node::LessThanOrEqual(a, b) => {
                 self.number(a);
@@ -266,7 +282,7 @@ impl Emitter<'_> {
                 self.op(match self.kinds[a] {
                     Kind::Number => W::I64Eq,
                     Kind::Boolean => W::I32Eq,
-                    Kind::EncodedValue => W::Call(2),
+                    Kind::EncodedValue => W::Call(1),
                 });
             }
             Node::Conditional(a, b, c) => {
@@ -298,7 +314,7 @@ impl Emitter<'_> {
                 self.guard(1);
                 self.op(W::LocalGet(self.value(a)));
                 self.op(W::F64Sqrt);
-                self.op(W::Call(0));
+                self.finite(self.value(node));
             }
             Node::Clamp(a, b, c) => {
                 self.number(a);
@@ -328,7 +344,7 @@ impl Emitter<'_> {
                 self.op(W::Else);
                 self.op(W::LocalGet(self.value(node)));
                 self.op(W::End);
-                self.op(W::Call(0));
+                self.finite(self.value(node));
             }
             _ => unreachable!("only fully typed pure numeric plans are emitted"),
         }
@@ -465,7 +481,7 @@ impl NumericQuery {
         emitter.op(W::LocalGet(3));
         emitter.node(plan.root);
         emitter.op(W::F64Add);
-        emitter.op(W::Call(0));
+        emitter.finite(3);
         emitter.op(W::LocalSet(3));
         emitter.op(W::LocalGet(1));
         emitter.op(W::I32Const(1));
@@ -476,40 +492,15 @@ impl NumericQuery {
         emitter.op(W::End);
         emitter.op(W::LocalGet(3));
         emitter.op(W::End);
-        let mut finite = Function::new([]);
-        for op in [
-            W::LocalGet(0),
-            W::F64Abs,
-            W::F64Const(f64::MAX.into()),
-            W::F64Le,
-            W::I32Eqz,
-            W::If(BlockType::Empty),
-            W::I32Const(1),
-            W::GlobalSet(0),
-            W::Unreachable,
-            W::End,
-            W::LocalGet(0),
-            W::F64Const(0.0.into()),
-            W::F64Eq,
-            W::If(BlockType::Result(ValType::F64)),
-            W::F64Const(0.0.into()),
-            W::Else,
-            W::LocalGet(0),
-            W::End,
-            W::End,
-        ] {
-            finite.instruction(&op);
-        }
         let mut module = Module::new();
         let mut types = TypeSection::new();
-        types.ty().function([ValType::F64], [ValType::F64]);
         types.ty().function([ValType::I32], [ValType::F64]);
         types
             .ty()
             .function([ValType::I64, ValType::I64], [ValType::I32]);
         module.section(&types);
         let mut functions = FunctionSection::new();
-        functions.function(0).function(1).function(2);
+        functions.function(0).function(1);
         module.section(&functions);
         let mut memory = MemorySection::new();
         memory.memory(MemoryType {
@@ -535,13 +526,12 @@ impl NumericQuery {
         let mut exports = ExportSection::new();
         exports
             .export("memory", ExportKind::Memory, 0)
-            .export("sum", ExportKind::Func, 1)
+            .export("sum", ExportKind::Func, 0)
             .export("error", ExportKind::Global, 0)
             .export("leaf", ExportKind::Global, 1);
         module.section(&exports);
         let mut code = CodeSection::new();
-        code.function(&finite)
-            .function(&emitter.function)
+        code.function(&emitter.function)
             .function(&encoded_equality());
         module.section(&code);
         Some(Arc::new(Self {
@@ -989,6 +979,46 @@ mod tests {
         }
         rows[0].1 = false;
         assert_eq!(plan.compiled_sum(&[], &[], &rows).unwrap(), Ok(0.0));
+    }
+
+    #[test]
+    fn compiled_arithmetic_preserves_overflow_and_canonical_zero_checks() {
+        let rows = [(relational::Matched::default(), true)];
+        for overflow in [
+            E::Add(Box::new(number(f64::MAX)), Box::new(number(f64::MAX))),
+            E::Subtract(Box::new(number(-f64::MAX)), Box::new(number(f64::MAX))),
+            E::Multiply(Box::new(number(f64::MAX)), Box::new(number(2.0))),
+            E::Divide(Box::new(number(f64::MAX)), Box::new(number(0.5))),
+        ] {
+            check(overflow.clone(), &[], &rows);
+            check(
+                E::Conditional(
+                    Box::new(boolean(false)),
+                    Box::new(overflow),
+                    Box::new(number(7.0)),
+                ),
+                &[],
+                &rows,
+            );
+        }
+        check(number(f64::MAX), &[], &[
+            (relational::Matched::default(), true),
+            (relational::Matched::default(), true),
+        ]);
+        let negative_zero = || E::Constant(ExecutableValueV1::Number((-0.0f64).to_bits()));
+        for zero in [
+            E::Multiply(Box::new(number(0.0)), Box::new(number(-1.0))),
+            E::SquareRoot(Box::new(negative_zero())),
+            E::Clamp(Box::new(negative_zero()), Box::new(number(-1.0)), Box::new(number(1.0))),
+        ] {
+            let expression = E::Conditional(
+                Box::new(E::Equal(Box::new(zero), Box::new(number(0.0)))),
+                Box::new(number(1.0)),
+                Box::new(number(0.0)),
+            );
+            check(expression.clone(), &[], &rows);
+            assert_eq!(ScalarPlan::new(&expression).unwrap().compiled_sum(&[], &[], &rows).unwrap(), Ok(1.0));
+        }
     }
 
     #[test]
