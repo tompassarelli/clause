@@ -162,8 +162,8 @@ pub(super) fn read(
         .split_once('(')
         .ok_or_else(|| error("expected a named typed callable"))?;
     let (name, type_parameters) = if let Some((name, parameters)) = name.trim().split_once('<') {
-        if !foreign || exported {
-            return Err(error("record type parameters require a private foreign declaration"));
+        if foreign && exported {
+            return Err(error("foreign record type parameters must remain private"));
         }
         let parameters = parameters.strip_suffix('>').ok_or_else(|| error("invalid type parameters"))?;
         let mut names = BTreeSet::new();
