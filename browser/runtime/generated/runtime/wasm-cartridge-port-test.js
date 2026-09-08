@@ -167,6 +167,34 @@ test.test("cartridge byte custody survives mutation of the producer's array", ()
     expect(actual).toEqual(expected);
     expect(actual).toHaveLength(1);
 });
+test.test("bulk diagnostics preserve complete Terms beyond the buffered event limit", () => {
+    const expected = "x".repeat(1024 * 1024 + 1);
+    const encoded = new Uint8Array(projected_atom("clause/process-projected-text-v1", Array.from(new TextEncoder().encode(expected))));
+    let current = encoded;
+    const module = { ...module_for_bang([opened_event_bang()], []),
+        clause_session_v1_project_bulk: () => current,
+        clause_session_v1_explain_bulk: () => current,
+        clause_session_v1_intervene_bulk: () => current,
+        clause_session_v1_source_continuity_bulk: () => new Uint8Array(),
+    };
+    const port = wasm["create-wasm-cartridge-port"](module, policy());
+    const started = startSession(port, acceptPackage(port, wasm["->ExactProcessRequest"](minimal_cwr1_bang())).acceptedPackage);
+    const reads = [
+        () => wasm.projectSession(module, started.session),
+        () => wasm.explainSession(module, started.session, 0),
+        () => wasm.interveneSession(module, started.session, [0]),
+    ];
+    for (const read of reads)
+        expect(read()).toBe(expected);
+    expect(() => wasm["decode-projected-term-frame"](Array.from(encoded))).toThrow("CSE1 bound");
+    for (const malformed of [encoded.slice(0, -1), new Uint8Array(encoded.length + 1)]) {
+        if (malformed.length > encoded.length)
+            malformed.set(encoded);
+        current = malformed;
+        for (const read of reads)
+            expect(read).toThrow();
+    }
+});
 test.test("source continuity decodes the complete CSC1 map with exact identities and bounds", () => {
     const bytes = [67, 83, 67, 49, ...identity(1), ...identity(2)];
     append_u32_bang(bytes, 2);
