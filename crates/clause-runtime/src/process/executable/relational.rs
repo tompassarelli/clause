@@ -737,6 +737,47 @@ fn match_rule_from(
                         )?)
                     }
                 };
+                // An exact subject and fresh plain value binding need no
+                // search iterator when the selected row has at most one value.
+                if let (Some(subject), ExecutableExpressionV1::Binding(binding)) =
+                    (bound_subject.as_ref(), value_pattern.as_ref())
+                    && (subject_bound == Some(true) || matches!(subject_pattern.as_ref(),
+                        ExecutableExpressionV1::Constant(_) | ExecutableExpressionV1::Argument(_)))
+                    && !incoming.bindings.contains_key(binding)
+                {
+                    let subject = table.subject(subject)?;
+                    let values = table.rows.get(subject);
+                    if values.is_none_or(|values| values.len() <= 1) {
+                        let mut matched = incoming;
+                        if let Some(value) = values.and_then(|values| values.iter().next()) {
+                            *visits = visits.checked_add(1).ok_or(ExecutableErrorV1::ResourceLimit)?;
+                            if *visits > MAX_JOIN_VISITS || matched.bindings.len() == MAX_BINDINGS {
+                                return Err(ExecutableErrorV1::ResourceLimit);
+                            }
+                            Arc::make_mut(&mut matched.bindings).insert(*binding, value.clone());
+                            if capture { matched.predicates.push(EvaluatedValue {
+                                value: ExecutableValueV1::Boolean(true),
+                                reads: vec![ExecutableReadV1::RelationRow(*slot, subject.clone(), value.clone())],
+                            }); }
+                            next.push(matched);
+                            if next.len() > MAX_MATCHES {
+                                normalize_matches(&mut next);
+                                if next.len() > MAX_MATCHES { return Err(ExecutableErrorV1::ResourceLimit); }
+                            }
+                        } else {
+                            rejected_count += 1;
+                            if rejected_count > MAX_MATCHES { return Err(ExecutableErrorV1::ResourceLimit); }
+                            if capture {
+                                matched.predicates.push(EvaluatedValue {
+                                    value: ExecutableValueV1::Boolean(false),
+                                    reads: vec![ExecutableReadV1::RelationSearch(*slot, Some(subject.clone()), 0)],
+                                });
+                                rejected.push((matched, false));
+                            }
+                        }
+                        continue;
+                    }
+                }
                 let mut rows: Box<
                     dyn Iterator<Item = (&ExecutableReferentV1, &ExecutableValuesV1)> + '_,
                 > = if !unbound && bound_subject.is_none() {
