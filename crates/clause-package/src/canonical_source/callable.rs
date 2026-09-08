@@ -241,7 +241,7 @@ pub(super) fn read(
         if !names.insert(name.clone()) {
             return Err(error("duplicate argument binding"));
         }
-        let contract = if domain.trim() == "static FieldPath" {
+        let contract = if domain.trim() == "FieldPath" {
             CallableArgumentContract::StaticFieldPath
         } else {
             CallableArgumentContract::Value(value_type::Pattern::read(domain.trim().as_bytes(), declarations, &type_parameters)
@@ -292,7 +292,7 @@ pub(super) fn read(
                     return Err(error("static foreign field paths require delayed construction"));
                 }
                 if !arguments.iter().any(|argument| argument.designation == *name && argument.value_kind().is_none()) {
-                    return Err(error("foreign member requires a declared static FieldPath argument"));
+                    return Err(error("foreign member requires a declared FieldPath argument"));
                 }
             }
             _ => {}
@@ -841,7 +841,7 @@ fn static_field_path(
         && fields.iter().all(|field| !field.is_empty()
             && field.iter().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))))
         .cloned().ok_or(CanonicalSourceErrorV1::InvalidCallable {
-            origin, reason: "expected a static FieldPath literal or parameter",
+            origin, reason: "expected a FieldPath literal or parameter",
         })
 }
 
@@ -867,7 +867,7 @@ fn lower(
         |e| lower(e, arguments, locals, static_paths, origin, expansion, depth + 1, mode, None).map(Box::new);
     Ok(match expression {
         S::StaticFieldPath(_) => return Err(CanonicalSourceErrorV1::InvalidCallable {
-            origin, reason: "static FieldPath cannot become a runtime value",
+            origin, reason: "FieldPath cannot become a runtime value",
         }),
         S::RecordAt(path, value) => {
             let path = static_field_path(path, static_paths, locals, origin)?;

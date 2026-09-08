@@ -2398,7 +2398,7 @@ export jq-module()
 
 ## Static field paths
 
-`path(details.title)` names fixed field segments. A `?path: static FieldPath` parameter is specialized at each call; it never accepts runtime Text or becomes a runtime value. `record-at(?path, value)` constructs the exact nested record and `field-at(record, ?path)` checks every selected field. Delayed foreign declarations may use `get: ?path` for a declared static path while keeping their target, external root, result and failure contracts explicit. These complete module sources state the option path once and select the package independently; the shared module meaning remains Clause source.
+`path(details.title)` names fixed field segments. A `?path: FieldPath` parameter is specialized at each call; it never accepts runtime Text or becomes a runtime value. `record-at(?path, value)` constructs the exact nested record and `field-at(record, ?path)` checks every selected field. Delayed foreign declarations may use `get: ?path` for a declared static path while keeping their target, external root, result and failure contracts explicit. These complete module sources state the option path once and select the package independently; the shared module meaning remains Clause source.
 
 `clause:test-vectors/authoring/static-modules/nixpkgs.clause`
 
@@ -2427,19 +2427,19 @@ foreign when-enabled<Body: Record>(?condition: Delayed<nix,Bool>, ?body: Body): 
   from: "lib"
   failure: throw
 
-foreign configured(?path: static FieldPath): Bool
+foreign configured(?path: FieldPath): Bool
   construction: "nix"
   get: ?path
   from: "config"
   failure: throw
 
-foreign package(?path: static FieldPath): Package
+foreign package(?path: FieldPath): Package
   construction: "nix"
   get: ?path
   from: "pkgs"
   failure: throw
 
-export module(?enable: static FieldPath, ?description: Text, ?package: Delayed<nix,Package>)
+export module(?enable: FieldPath, ?description: Text, ?package: Delayed<nix,Package>)
   {options: record-at(?enable, enable-option(?description)),
    config: when-enabled(configured(?enable), {environment: {systemPackages: [?package]}})}
 ```

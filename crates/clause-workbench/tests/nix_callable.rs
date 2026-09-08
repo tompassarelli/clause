@@ -12,7 +12,7 @@ fn static_field_paths_construct_and_select_exact_native_records() {
         baseline.checked_source_package().unwrap().callables[0].result_kind);
     assert_eq!(opened.invoke_callable(b"specimen", &[]).unwrap(), baseline.invoke_callable(b"specimen", &[]).unwrap());
 
-    let selection = format!("{source}\nselect<Value: Record>(?record: Value, ?path: static FieldPath)\n  field-at(?record, ?path)\n\nexport selected(): Text\n  select(specimen(), path(details.title))\n");
+    let selection = format!("{source}\nselect<Value: Record>(?record: Value, ?path: FieldPath)\n  field-at(?record, ?path)\n\nexport selected(): Text\n  select(specimen(), path(details.title))\n");
     let opened = ResidentSourceWorkbenchV1::open(selection.as_bytes()).unwrap();
     assert_eq!(opened.invoke_callable(b"selected", &[]).unwrap(), clause_runtime::ExecutableValueV1::text("Clause").unwrap());
     for wrong in [
@@ -121,9 +121,9 @@ fn static_module_paths_retain_exact_contracts_and_independent_package_selection(
     assert!(!rendered.contains("pkgs.\"btop\""));
     for wrong in [
         shared.replace("get: ?path", "get: ?missing"),
-        shared.replace("foreign configured(?path: static FieldPath): Bool", "foreign configured(?path: static FieldPath): Package"),
+        shared.replace("foreign configured(?path: FieldPath): Bool", "foreign configured(?path: FieldPath): Package"),
         shared.replace("?condition: Delayed<nix,Bool>", "?condition: Delayed<other,Bool>"),
-        shared.replace("?path: static FieldPath", "?path: Text"),
+        shared.replace("?path: FieldPath", "?path: Text"),
         shared.replace("  construction: \"nix\"\n  get: ?path", "  get: ?path"),
     ] {
         assert!(ResidentSourceWorkbenchV1::open_with_imports(btop.as_bytes(), imports(&wrong)).is_err(), "accepted invalid foreign path contract: {wrong}");

@@ -418,7 +418,7 @@ two-consumer example is in `clause:test-vectors/authoring/shared-foreign/`.
 A static field path fixes a nonempty sequence of field designations:
 
 ```clause
-at-path(?path: static FieldPath, ?value: Text)
+at-path(?path: FieldPath, ?value: Text)
   record-at(?path, ?value)
 
 export specimen()
@@ -434,7 +434,7 @@ strict and are bound once. Specialization has the same bounded expansion and
 recursion checks as ordinary generic callables.
 
 A delayed foreign declaration can use `get: ?path` (or `call: ?path`) when
-`?path: static FieldPath` is a declared parameter. It specializes the exact
+`?path: FieldPath` is a declared parameter. It specializes the exact
 foreign member path without passing a runtime argument. The declared external
 root, eventual result, target and failure contract still apply at every use.
 The path does not establish that an external member exists or that the foreign

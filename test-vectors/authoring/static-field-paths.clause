@@ -1,4 +1,4 @@
-at-path(?path: static FieldPath, ?value: Text)
+at-path(?path: FieldPath, ?value: Text)
   record-at(?path, ?value)
 
 export specimen()
