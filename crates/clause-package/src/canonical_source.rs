@@ -6196,7 +6196,7 @@ fn checked_canonical_source_execution_v1(
     plan: &CanonicalSourceAllocationPlanV1,
     input_parts: Option<(&InputHandlerCst, &VectorAssertionCst)>,
     scalar_parts: &[ScalarHandlerParts<'_>],
-    reused: Option<(Vec<CanonicalExecutableHandlerV1>, &BTreeSet<FormationLocalId>)>,
+    mut reused: Option<source_analysis::RetainedSourceDerivations<'_>>,
 ) -> Result<CheckedCanonicalSourceExecutionV1, CanonicalSourceErrorV1> {
     let input_handler = input_parts
         .as_ref()
@@ -6238,10 +6238,10 @@ fn checked_canonical_source_execution_v1(
         input_parts,
         scalar_parts,
         &keyboard_bindings,
-        reused.as_ref().map(|(_, selected)| *selected),
+        reused.as_ref().map(|retained| retained.selected),
     )?;
-    if let Some((handlers, _)) = reused {
-        executable_handlers.extend(handlers);
+    if let Some(retained) = &mut reused {
+        executable_handlers.extend(retained.handlers()?);
         executable_handlers.sort_by_key(|handler| handler.id);
     }
     validate_keyboard_handler_targets(cst, &keyboard_bindings, &executable_handlers)?;
@@ -6279,10 +6279,69 @@ fn elaborate_canonical_source_package_inner(
     }
     let expanded = structured_bindings::expand(cst, plan)?;
     let cst = expanded.as_ref();
-    let scope = TermScope {
-        universe: context.universe,
-        semantics: context.semantics,
-    };
+    let input_parts = input_handler_parts(cst)?;
+    let scalar_parts = scalar_handler_parts(cst)?;
+    let declarations = reused.as_ref().map(|retained| (retained.previous, retained.edit));
+    let check_execution = || checked_canonical_source_execution_v1(
+        cst, plan, input_parts, &scalar_parts, reused,
+    );
+    let check_package = || check_canonical_source_declarations(
+        cst, context, plan, input_parts, &scalar_parts, declarations,
+    );
+    // Declaration reconstruction and executable derivation are independent.
+    // Start both before either reconstructs its retained source facts.
+    // Thread availability is physical execution strategy, not source meaning.
+    // Both targets perform the exact same two checks; Wasm cannot spawn a
+    // native scoped thread while replaying a checked source operation.
+    #[cfg(target_arch = "wasm32")]
+    let (checked_package, checked_execution) = { (check_package()?, check_execution()?) };
+    #[cfg(not(target_arch = "wasm32"))]
+    let (checked_package, checked_execution) = std::thread::scope(|parallel| {
+        let execution = parallel.spawn(check_execution);
+        let package = check_package();
+        let execution = match execution.join() {
+            Ok(result) => result,
+            Err(payload) => std::panic::resume_unwind(payload),
+        };
+        Ok::<_, CanonicalSourceErrorV1>((package?, execution?))
+    })?;
+    let (checked_package, emissions, denotations, applications, unsupported) = checked_package;
+    let CheckedCanonicalSourceExecutionV1 {
+        state_cells,
+        executable_handlers,
+        keyboard_bindings,
+        scalar_input_bindings,
+        referent_input_bindings,
+        input_handler,
+        scalar_handlers,
+    } = checked_execution;
+    Ok(CanonicalSourcePackageSliceV1 {
+        callables: cst.callables.clone(),
+        checked_package,
+        emissions,
+        denotations,
+        applications,
+        unsupported,
+        relational_projection: relational::projection_views(cst, plan, &state_cells)?,
+        state_cells,
+        executable_handlers,
+        keyboard_bindings,
+        scalar_input_bindings,
+        referent_input_bindings,
+        input_handler,
+        scalar_handlers,
+    })
+}
+
+fn check_canonical_source_declarations(
+    cst: &CanonicalSourceCstV1,
+    context: CanonicalSourceContextV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    input_parts: Option<(&InputHandlerCst, &VectorAssertionCst)>,
+    scalar_parts: &[ScalarHandlerParts<'_>],
+    declarations: Option<(&CanonicalSourcePackageSliceV1, &CanonicalSourceEditV1)>,
+) -> Result<(CheckedProcessPackage, Vec<CanonicalSourceEmissionV1>, Vec<CanonicalSourceDenotationV1>, Vec<CanonicalSourceApplicationV1>, Vec<CanonicalUnsupportedProductionV1>), CanonicalSourceErrorV1> {
+    let scope = TermScope { universe: context.universe, semantics: context.semantics };
     let mut formations = Vec::new();
     let mut schemas = Vec::new();
     let mut capabilities = Vec::new();
@@ -6293,7 +6352,7 @@ fn elaborate_canonical_source_package_inner(
     let mut unsupported = Vec::new();
     let mut named_formations = BTreeMap::new();
     let mut named_capabilities = BTreeMap::new();
-    if reused.is_none() {
+    if declarations.is_none() {
         for item in &cst.items {
             match &item.kind {
                 CstKind::Referent { designation, .. } => {
@@ -6314,10 +6373,8 @@ fn elaborate_canonical_source_package_inner(
             }
         }
     }
-    let input_parts = input_handler_parts(cst)?;
-    let scalar_parts = scalar_handler_parts(cst)?;
-    if let Some(retained) = &reused {
-        let declarations = source_analysis::rebind_declarations(retained.previous, retained.edit)?;
+    if let Some((previous, edit)) = declarations {
+        let declarations = source_analysis::rebind_declarations(previous, edit)?;
         formations = declarations.formations;
         schemas = declarations.schemas;
         capabilities = declarations.capabilities;
@@ -7016,90 +7073,39 @@ fn elaborate_canonical_source_package_inner(
             }
         }
     }
-    let check_execution = || {
-        checked_canonical_source_execution_v1(
-            cst,
-            plan,
-            input_parts,
-            &scalar_parts,
-            reused.map(|retained| (retained.handlers, retained.selected)),
-        )
-    };
-    let check_package = || {
-        formations.sort_by_key(|formation| formation.id);
-        schemas.sort_by_key(|schema| schema.id);
-        capabilities.sort_by_key(|capability| capability.id);
-        operators.sort_by_key(|operator| operator.id);
-        let checked_package: Result<CheckedProcessPackage, CanonicalSourceErrorV1> = (|| {
-            let snapshot = ProgramSnapshotPreimageV2 {
-                constitution: ProgramConstitutionPreimageV2 {
-                    semantics: context.semantics,
-                    universe: context.universe,
-                    formations,
-                    schemas,
-                    capabilities,
-                    operators,
-                    applications: vec![],
-                },
-                successor_grants: vec![],
-                static_execution_grants: vec![],
-                state_admission_grants: vec![],
-                judgment_authority_grants: vec![],
-            };
-            let claimed_snapshot =
-                derive_program_snapshot_id(&snapshot).map_err(CanonicalSourceErrorV1::Encode)?;
-            let package = ProcessPackageV2 {
-                claimed_snapshot,
-                snapshot,
-                initial_state_views: vec![],
-                records: vec![],
-            };
-            let checked = crate::canonical::check_owned_process_package(package)
-                .map_err(CanonicalSourceErrorV1::Check)?;
-            Ok(checked)
-        })();
-        checked_package
-    };
-    // Thread availability is physical execution strategy, not source meaning.
-    // Both targets perform the exact same two checks; Wasm cannot spawn a
-    // native scoped thread while replaying a checked source operation.
-    #[cfg(target_arch = "wasm32")]
-    let (checked_package, checked_execution) = { (check_package()?, check_execution()?) };
-    #[cfg(not(target_arch = "wasm32"))]
-    let (checked_package, checked_execution) = std::thread::scope(|parallel| {
-        let execution = parallel.spawn(check_execution);
-        let package = check_package();
-        let execution = match execution.join() {
-            Ok(result) => result,
-            Err(payload) => std::panic::resume_unwind(payload),
+    formations.sort_by_key(|formation| formation.id);
+    schemas.sort_by_key(|schema| schema.id);
+    capabilities.sort_by_key(|capability| capability.id);
+    operators.sort_by_key(|operator| operator.id);
+    let checked_package: Result<CheckedProcessPackage, CanonicalSourceErrorV1> = (|| {
+        let snapshot = ProgramSnapshotPreimageV2 {
+            constitution: ProgramConstitutionPreimageV2 {
+                semantics: context.semantics,
+                universe: context.universe,
+                formations,
+                schemas,
+                capabilities,
+                operators,
+                applications: vec![],
+            },
+            successor_grants: vec![],
+            static_execution_grants: vec![],
+            state_admission_grants: vec![],
+            judgment_authority_grants: vec![],
         };
-        Ok::<_, CanonicalSourceErrorV1>((package?, execution?))
-    })?;
-    let CheckedCanonicalSourceExecutionV1 {
-        state_cells,
-        executable_handlers,
-        keyboard_bindings,
-        scalar_input_bindings,
-        referent_input_bindings,
-        input_handler,
-        scalar_handlers,
-    } = checked_execution;
-    Ok(CanonicalSourcePackageSliceV1 {
-        callables: cst.callables.clone(),
-        checked_package,
-        emissions,
-        denotations,
-        applications,
-        unsupported,
-        relational_projection: relational::projection_views(cst, plan, &state_cells)?,
-        state_cells,
-        executable_handlers,
-        keyboard_bindings,
-        scalar_input_bindings,
-        referent_input_bindings,
-        input_handler,
-        scalar_handlers,
-    })
+        let claimed_snapshot =
+            derive_program_snapshot_id(&snapshot).map_err(CanonicalSourceErrorV1::Encode)?;
+        let package = ProcessPackageV2 {
+            claimed_snapshot,
+            snapshot,
+            initial_state_views: vec![],
+            records: vec![],
+        };
+        let checked = crate::canonical::check_owned_process_package(package)
+            .map_err(CanonicalSourceErrorV1::Check)?;
+        Ok(checked)
+    })();
+    Ok::<_, CanonicalSourceErrorV1>((checked_package?, emissions, denotations, applications, unsupported))
 }
 
 fn source_vocabulary_declares_domain(cst: &CanonicalSourceCstV1, domain: &[u8]) -> bool {

@@ -15,7 +15,8 @@ pub struct CheckedCanonicalSourceAnalysisV1 {
 }
 
 pub(super) struct RetainedSourceDerivations<'a> {
-    pub handlers: Vec<CanonicalExecutableHandlerV1>,
+    pub analysis: &'a CheckedCanonicalSourceAnalysisV1,
+    pub retained_rules: &'a mut BTreeMap<(FormationLocalId, usize), (FormationLocalId, usize)>,
     pub selected: &'a BTreeSet<FormationLocalId>,
     pub previous: &'a CanonicalSourcePackageSliceV1,
     pub edit: &'a CanonicalSourceEditV1,
@@ -67,52 +68,62 @@ impl CheckedCanonicalSourceAnalysisV1 {
         let mut retained_rules = BTreeMap::new();
         let package = if let Some((changed, _, _, _)) = edit.scalar_change {
             let selected = BTreeSet::from([edit.formation(changed)?]);
-            let scalar_handlers = self.source.items.iter().filter_map(|item| match &item.kind {
-                CstKind::ScalarHandler(handler) => Some(formation_id(&self.plan, &handler.producer, &head_slot(CanonicalSourceProductionV1::Handler))),
-                _ => None,
-            }).collect::<Result<BTreeSet<_>, _>>()?;
-            let relational_handlers = self.source.items.iter().filter_map(|item| match &item.kind {
-                CstKind::GeneralHandler(handler) if relational_handler_origins(&self.source).contains(&handler.origin) => Some(formation_id(&self.plan, &handler.producer, &head_slot(handler.producer.production))),
-                _ => None,
-            }).collect::<Result<BTreeSet<_>, _>>()?;
-            let mut retained = Vec::new();
-            let mut member_sets = BTreeMap::new();
-            for handler in &self.package.executable_handlers {
-                if handler.id == changed { continue; }
-                let scalar = scalar_handlers.contains(&handler.id);
-                let sorted_assignments = scalar || relational_handlers.contains(&handler.id);
-                let old_handler = handler.id;
-                let mut handler = handler.clone();
-                handler.id = edit.formation(handler.id)?;
-                for rule in &mut handler.rules {
-                    for origin in &mut rule.law_origins { *origin = translate_origin(edit, *origin)?; }
-                    for predicate in &mut rule.predicates { remap_predicate(edit, predicate, &mut member_sets)?; }
-                    for state in rule.required_present.iter_mut().chain(&mut rule.required_absent).chain(&mut rule.removals) {
-                        edit.rebind_state(state)?;
-                    }
-                    rule.required_present.sort();
-                    rule.required_absent.sort();
-                    rule.removals.sort();
-                    for assignment in &mut rule.assignments {
-                        edit.rebind_state(&mut assignment.target)?;
-                        remap_expression(edit, &mut assignment.value, &mut member_sets)?;
-                    }
-                    if sorted_assignments { rule.assignments.sort_by(|a, b| a.target.cmp(&b.target)); }
-                }
-                let mut rules = handler.rules.into_iter().enumerate().collect::<Vec<_>>();
-                if scalar { rules.sort_by(|(_, a), (_, b)| a.assignments.first().map(|a| &a.target).cmp(&b.assignments.first().map(|b| &b.target))); }
-                handler.rules = rules.into_iter().enumerate().map(|(new_index, (old_index, rule))| {
-                    retained_rules.insert((handler.id, new_index), (old_handler, old_index));
-                    rule
-                }).collect();
-                retained.push(handler);
-            }
-            let derivations = RetainedSourceDerivations { handlers: retained, selected: &selected, previous: &self.package, edit };
+            let derivations = RetainedSourceDerivations { analysis: self, retained_rules: &mut retained_rules, selected: &selected, previous: &self.package, edit };
             elaborate_canonical_source_package_inner(edit.source(), self.context, edit.plan(), Some(derivations))?
         } else {
             elaborate_canonical_source_package_v1(edit.source(), self.context, edit.plan())?
         };
         Ok(Self { source: edit.source().clone(), plan: edit.plan().clone(), context: self.context, package, scalar_effects: std::sync::OnceLock::new(), retained_rules: Some((self.plan.root(), retained_rules)) })
+    }
+}
+
+impl RetainedSourceDerivations<'_> {
+    pub(super) fn handlers(&mut self) -> Result<Vec<CanonicalExecutableHandlerV1>, CanonicalSourceErrorV1> {
+        let analysis = self.analysis;
+        let edit = self.edit;
+        let retained_rules = &mut self.retained_rules;
+        let (changed, _, _, _) = edit.scalar_change.ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
+        let scalar_handlers = analysis.source.items.iter().filter_map(|item| match &item.kind {
+            CstKind::ScalarHandler(handler) => Some(formation_id(&analysis.plan, &handler.producer, &head_slot(CanonicalSourceProductionV1::Handler))),
+            _ => None,
+        }).collect::<Result<BTreeSet<_>, _>>()?;
+        let relational_handlers = analysis.source.items.iter().filter_map(|item| match &item.kind {
+            CstKind::GeneralHandler(handler) if relational_handler_origins(&analysis.source).contains(&handler.origin) => Some(formation_id(&analysis.plan, &handler.producer, &head_slot(handler.producer.production))),
+            _ => None,
+        }).collect::<Result<BTreeSet<_>, _>>()?;
+        let mut retained = Vec::new();
+        let mut member_sets = BTreeMap::new();
+        for handler in &analysis.package.executable_handlers {
+            if handler.id == changed { continue; }
+            let scalar = scalar_handlers.contains(&handler.id);
+            let sorted_assignments = scalar || relational_handlers.contains(&handler.id);
+            let old_handler = handler.id;
+            let mut handler = handler.clone();
+            handler.id = edit.formation(handler.id)?;
+            for rule in &mut handler.rules {
+                for origin in &mut rule.law_origins { *origin = translate_origin(edit, *origin)?; }
+                for predicate in &mut rule.predicates { remap_predicate(edit, predicate, &mut member_sets)?; }
+                for state in rule.required_present.iter_mut().chain(&mut rule.required_absent).chain(&mut rule.removals) {
+                    edit.rebind_state(state)?;
+                }
+                rule.required_present.sort();
+                rule.required_absent.sort();
+                rule.removals.sort();
+                for assignment in &mut rule.assignments {
+                    edit.rebind_state(&mut assignment.target)?;
+                    remap_expression(edit, &mut assignment.value, &mut member_sets)?;
+                }
+                if sorted_assignments { rule.assignments.sort_by(|a, b| a.target.cmp(&b.target)); }
+            }
+            let mut rules = handler.rules.into_iter().enumerate().collect::<Vec<_>>();
+            if scalar { rules.sort_by(|(_, a), (_, b)| a.assignments.first().map(|a| &a.target).cmp(&b.assignments.first().map(|b| &b.target))); }
+            handler.rules = rules.into_iter().enumerate().map(|(new_index, (old_index, rule))| {
+                retained_rules.insert((handler.id, new_index), (old_handler, old_index));
+                rule
+            }).collect();
+            retained.push(handler);
+        }
+        Ok(retained)
     }
 }
 
