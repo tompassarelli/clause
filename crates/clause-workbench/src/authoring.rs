@@ -34,6 +34,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/pure-composition.clause"),
     },
     AuthoringExampleV1 {
+        slug: "multiline-callable",
+        title: "Literal multiline Text in callables",
+        summary: "A triple-quoted callable value uses the same indentation margin, escape decoding, and final-newline semantics as other multiline Text. Quotes, comment markers, braces, and dollar syntax remain literal content; no callable interpolation occurs inside triple quotes. Write a doubled backslash for a literal backslash.",
+        source: include_str!("../../../test-vectors/authoring/multiline-callable.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "callable-outcomes",
         title: "Checked alternative outcomes",
         summary: "An explicit alternative contract such as Execution | Diagnostic accepts either exact value shape. match checks each case binding against its declared alternative, requires every alternative exactly once, and evaluates only the selected body. Missing cases, overlapping alternatives, and invalid payload fields reject. Values retain their ordinary record representation in native invocation and JavaScript; no tag or empty filler fields are needed.",

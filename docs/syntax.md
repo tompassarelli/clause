@@ -788,6 +788,12 @@ Triple-quoted Text starts with `"""` as the final token on its line. A later
 line containing only `"""` at least one two-space level deeper closes it; that
 indentation is the content margin removed from every body line.
 
+A triple-quoted callable expression may close at the same indentation as its
+opening delimiter. It uses that same content-margin and escape decoder and
+retains the final newline. Its contents are literal Text: braces, dollar signs,
+quotes, and comment markers do not initiate callable interpolation. A literal
+backslash still requires `\\`.
+
 `#` begins a line comment outside Text or quoted designations. A contiguous
 run of `##` lines at the following construct's indentation attaches
 documentation to that construct; a blank or ordinary comment breaks the
