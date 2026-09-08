@@ -118,6 +118,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/text-operations.clause"),
     },
     AuthoringExampleV1 {
+        slug: "text-decomposition",
+        title: "Exact text fields and checked integer prefixes",
+        summary: "characters(text) exposes Unicode scalar values as Sequence<Text>. split-text(text, delimiter) splits literal occurrences and preserves all empty fields; an empty delimiter selects characters. parse-integer-prefix(text) skips leading ECMAScript whitespace and reads an optional sign and decimal digit prefix, returning a finite F64 or the original rejected Text. Match before arithmetic. Ordinary sequence folds express terminal-field removal, path selection, and CR/LF-only trimming.",
+        source: include_str!("../../../test-vectors/authoring/text-decomposition.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "query-laws",
         title: "Reusable checked laws inside finite queries",
         summary: "Query-local scalar laws compose with typed rows, explicit inputs and predicates. Each matching row contributes once even when equal-result law cases overlap. A missing law result excludes that row; an invalid expression or exhausted search remains an error.",

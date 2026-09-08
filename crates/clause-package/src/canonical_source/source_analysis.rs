@@ -176,7 +176,7 @@ fn remap_expression(edit: &CanonicalSourceEditV1, expression: &mut CanonicalExec
         E::SequenceFold { source, initial, body, .. } => {
             remap_expression(edit, source, member_sets)?; remap_expression(edit, initial, member_sets)?; remap_expression(edit, body, member_sets)?;
         },
-        E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => remap_expression(edit, value, member_sets)?,
+        E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => remap_expression(edit, value, member_sets)?,
         E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::Dictionary(a, b) | E::SequenceAppend(a, b) => {
             remap_expression(edit, a, member_sets)?; remap_expression(edit, b, member_sets)?;
         },
@@ -213,7 +213,7 @@ fn remap_expression(edit: &CanonicalSourceEditV1, expression: &mut CanonicalExec
         E::Conditional(a,b,c) | E::RelationPut(a,b,c) | E::RelationInsert(a,b,c) | E::RelationRemoveValue(a,b,c) => {
             remap_expression(edit, a, member_sets)?; remap_expression(edit, b, member_sets)?; remap_expression(edit, c, member_sets)?;
         }
-        E::ContainsText(a,b) | E::StartsWith(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b)
+        E::TextSplit(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b)
         | E::RelationRead(a,b) | E::RelationPresent(a,b) | E::RelationRemoveRow(a,b) | E::Concatenate(a,b)
         | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::Insert(a,b) | E::Remove(a,b) => {
             remap_expression(edit, a, member_sets)?; remap_expression(edit, b, member_sets)?;

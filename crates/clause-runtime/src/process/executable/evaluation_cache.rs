@@ -88,7 +88,7 @@ fn dependencies(expression: &ExecutableExpressionV1, reads: &mut BTreeSet<u16>) 
     match expression {
         E::Sequence(values) => values.iter().fold(true, |pure,value| dependencies(value,reads) & pure),
         E::Record(fields) => fields.values().fold(true, |pure,value| dependencies(value,reads) & pure),
-        E::SequenceSort(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) => dependencies(value,reads),
+        E::SequenceSort(value) | E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) => dependencies(value,reads),
         E::Dictionary(a,b) | E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::SequenceDrop(a,b) => dependencies(a,reads) & dependencies(b,reads),
         E::Require(a,b,c) => dependencies(a,reads) & dependencies(b,reads) & dependencies(c,reads),
         E::Foreign { .. } => false,
@@ -115,7 +115,7 @@ fn dependencies(expression: &ExecutableExpressionV1, reads: &mut BTreeSet<u16>) 
         E::Not(value) | E::Accumulate(value) | E::SquareRoot(value) | E::TextTransform(_, value)
         | E::ReferentFacet { value, .. } => dependencies(value, reads),
         E::RelationRead(a, b) | E::RelationPresent(a, b) | E::RelationRemoveRow(a, b)
-        | E::Concatenate(a, b) | E::StartsWith(a, b) | E::ContainsText(a, b)
+        | E::Concatenate(a, b) | E::StartsWith(a, b) | E::TextSplit(a, b) | E::ContainsText(a, b)
         | E::Add(a, b) | E::Subtract(a, b) | E::Multiply(a, b) | E::Divide(a, b)
         | E::GreaterThan(a, b) | E::LessThanOrEqual(a, b) | E::Equal(a, b) | E::And(a, b)
         | E::SetInsert(a, b) | E::SetContains(a, b) | E::SetRemove(a, b) =>

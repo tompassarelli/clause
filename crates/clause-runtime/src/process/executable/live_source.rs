@@ -1097,7 +1097,7 @@ fn rebind_lowered_expression(value: &mut ExecutableExpressionV1, edit: &Canonica
             rebind_lowered_expression(initial, edit, member_sets)?;
             rebind_lowered_expression(body, edit, member_sets)?;
         },
-        E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => rebind_lowered_expression(value, edit, member_sets)?,
+        E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => rebind_lowered_expression(value, edit, member_sets)?,
         E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::Dictionary(a, b) | E::SequenceAppend(a, b) => {
             rebind_lowered_expression(a, edit, member_sets)?; rebind_lowered_expression(b, edit, member_sets)?;
         },
@@ -1132,7 +1132,7 @@ fn rebind_lowered_expression(value: &mut ExecutableExpressionV1, edit: &Canonica
         E::Conditional(a,b,c) | E::RelationPut(a,b,c) | E::RelationInsert(a,b,c) | E::RelationRemoveValue(a,b,c) | E::Clamp(a,b,c) => {
             rebind_lowered_expression(a, edit, member_sets)?; rebind_lowered_expression(b, edit, member_sets)?; rebind_lowered_expression(c, edit, member_sets)?;
         }
-        E::ContainsText(a,b) | E::StartsWith(a,b) | E::RelationMatch(_,a,b) | E::RelationRead(a,b) | E::RelationPresent(a,b)
+        E::TextSplit(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) | E::RelationMatch(_,a,b) | E::RelationRead(a,b) | E::RelationPresent(a,b)
         | E::RelationRemoveRow(a,b) | E::Concatenate(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b)
         | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Equal(a,b) | E::And(a,b) | E::SetInsert(a,b) | E::SetContains(a,b) | E::SetRemove(a,b) => {
             rebind_lowered_expression(a, edit, member_sets)?; rebind_lowered_expression(b, edit, member_sets)?;

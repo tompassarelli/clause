@@ -101,6 +101,7 @@ pub(super) fn foreign_accesses(
             | E::Multiply(a, b)
             | E::Divide(a, b)
             | E::ContainsText(a, b)
+            | E::TextSplit(a, b)
             | E::StartsWith(a, b) => {
                 collect(a, contracts);
                 collect(b, contracts);
@@ -111,6 +112,8 @@ pub(super) fn foreign_accesses(
                 collect(c, contracts);
             }
             E::SequenceSort(value)
+            | E::TextCharacters(value)
+            | E::ParseIntegerPrefix(value)
             | E::SequenceCount(value)
             | E::ScalarText(value)
             | E::Field(value, _)
@@ -209,6 +212,9 @@ pub(super) fn read(
         b"match",
         b"sqrt",
         b"trim",
+        b"characters",
+        b"split-text",
+        b"parse-integer-prefix",
         b"lowercase",
         b"first-word",
         b"remaining-words",
@@ -767,6 +773,9 @@ fn bind_body(
             let body = Box::new(bind_body(body, actual, &nested, expansion, origin, depth + 1)?);
             E::SequenceFold { accumulator: fresh_accumulator, item: fresh_item, source, initial, body }
         }
+        E::TextCharacters(a) => E::TextCharacters(recur(a)?),
+        E::ParseIntegerPrefix(a) => E::ParseIntegerPrefix(recur(a)?),
+        E::TextSplit(a, b) => E::TextSplit(recur(a)?, recur(b)?),
         E::SequenceCount(a) => E::SequenceCount(recur(a)?),
         E::ScalarText(a) => E::ScalarText(recur(a)?),
         E::SequenceJoin(a, b) => E::SequenceJoin(recur(a)?, recur(b)?),
@@ -996,6 +1005,9 @@ fn lower(
             let body = Box::new(lower(body, arguments, &nested, static_paths, origin, expansion, depth + 1, mode, Some(&accumulator_kind))?);
             E::SequenceFold { accumulator: fresh_accumulator, item: fresh_item, source, initial, body }
         }
+        S::TextCharacters(a) => E::TextCharacters(recur(a)?),
+        S::ParseIntegerPrefix(a) => E::ParseIntegerPrefix(recur(a)?),
+        S::TextSplit(a, b) => E::TextSplit(recur(a)?, recur(b)?),
         S::SequenceCount(a) => E::SequenceCount(recur(a)?),
         S::ScalarText(a) => E::ScalarText(recur(a)?),
         S::SequenceJoin(a, b) => E::SequenceJoin(recur(a)?, recur(b)?),
@@ -1423,6 +1435,19 @@ fn expression_kind(
             } else {
                 K::Boolean.into()
             }
+        }
+        E::TextCharacters(a) => {
+            require(a, &K::Text.into())?;
+            T::Sequence(Box::new(K::Text.into()))
+        }
+        E::TextSplit(a, b) => {
+            require(a, &K::Text.into())?;
+            require(b, &K::Text.into())?;
+            T::Sequence(Box::new(K::Text.into()))
+        }
+        E::ParseIntegerPrefix(a) => {
+            require(a, &K::Text.into())?;
+            T::Alternatives(BTreeSet::from([K::Number.into(), K::Text.into()]))
         }
         E::TextTransform(_, a) => {
             require(a, &K::Text.into())?;

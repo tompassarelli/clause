@@ -344,6 +344,12 @@ pub enum CanonicalExecutableExpressionV1 {
     Sequence(Vec<Self>),
     SequenceDrop(Box<Self>, Box<Self>),
     SequenceCount(Box<Self>),
+    /// Ordered Unicode scalar values, each retaining its Text representation.
+    TextCharacters(Box<Self>),
+    /// Literal splitting preserves empty fields; an empty delimiter selects characters.
+    TextSplit(Box<Self>, Box<Self>),
+    /// Decimal prefix yields finite F64 or the original rejected Text.
+    ParseIntegerPrefix(Box<Self>),
     SequenceJoin(Box<Self>, Box<Self>),
     /// Checked Text, Bool, or finite F64 rendered as text. Numbers use shortest
     /// decimal notation without an exponent, with both zeros rendered as `0`.
@@ -560,6 +566,9 @@ pub enum CanonicalScalarExpressionV1 {
     Sequence(Vec<Self>),
     SequenceDrop(Box<Self>, Box<Self>),
     SequenceCount(Box<Self>),
+    TextCharacters(Box<Self>),
+    TextSplit(Box<Self>, Box<Self>),
+    ParseIntegerPrefix(Box<Self>),
     SequenceJoin(Box<Self>, Box<Self>),
     ScalarText(Box<Self>),
     SequenceMap { binding: Vec<u8>, source: Box<Self>, body: Box<Self> },
@@ -4645,6 +4654,9 @@ fn canonical_scalar_executable_expression(
         CanonicalScalarExpressionV1::Sequence(_)
         | CanonicalScalarExpressionV1::SequenceDrop(_, _)
         | CanonicalScalarExpressionV1::SequenceCount(_)
+        | CanonicalScalarExpressionV1::TextCharacters(_)
+        | CanonicalScalarExpressionV1::TextSplit(_, _)
+        | CanonicalScalarExpressionV1::ParseIntegerPrefix(_)
         | CanonicalScalarExpressionV1::SequenceJoin(_, _)
         | CanonicalScalarExpressionV1::ScalarText(_)
         | CanonicalScalarExpressionV1::SequenceMap { .. }
@@ -5048,6 +5060,9 @@ fn relational_scalar_expression(
         CanonicalScalarExpressionV1::Sequence(_)
         | CanonicalScalarExpressionV1::SequenceDrop(_, _)
         | CanonicalScalarExpressionV1::SequenceCount(_)
+        | CanonicalScalarExpressionV1::TextCharacters(_)
+        | CanonicalScalarExpressionV1::TextSplit(_, _)
+        | CanonicalScalarExpressionV1::ParseIntegerPrefix(_)
         | CanonicalScalarExpressionV1::SequenceJoin(_, _)
         | CanonicalScalarExpressionV1::ScalarText(_)
         | CanonicalScalarExpressionV1::SequenceMap { .. }
@@ -9345,6 +9360,20 @@ impl ScalarExpressionParser<'_> {
             self.skip_spaces(); self.take_exact(b")").then_some(())?;
             return Some(E::SequenceSort(Box::new(value)));
         }
+        for builtin in [b"characters(".as_slice(), b"parse-integer-prefix("] {
+            if self.take_exact(builtin) {
+                let value = Box::new(self.disjunction()?);
+                self.skip_spaces(); self.take_exact(b")").then_some(())?;
+                return Some(if builtin == b"characters(" { E::TextCharacters(value) } else { E::ParseIntegerPrefix(value) });
+            }
+        }
+        if self.take_exact(b"split-text(") {
+            let value = Box::new(self.disjunction()?);
+            self.skip_spaces(); self.take_exact(b",").then_some(())?;
+            let delimiter = Box::new(self.disjunction()?);
+            self.skip_spaces(); self.take_exact(b")").then_some(())?;
+            return Some(E::TextSplit(value, delimiter));
+        }
         if self.take_exact(b"count(") {
             let value = self.disjunction()?;
             self.skip_spaces(); self.take_exact(b")").then_some(())?;
@@ -9605,7 +9634,7 @@ fn collect_scalar_expression_parameters(
             nested.remove(binding);
             parameters.extend(nested);
         }
-        CanonicalScalarExpressionV1::SequenceCount(value) | CanonicalScalarExpressionV1::ScalarText(value) => collect_scalar_expression_parameters(value, parameters),
+        CanonicalScalarExpressionV1::TextCharacters(value) | CanonicalScalarExpressionV1::ParseIntegerPrefix(value) | CanonicalScalarExpressionV1::SequenceCount(value) | CanonicalScalarExpressionV1::ScalarText(value) => collect_scalar_expression_parameters(value, parameters),
         CanonicalScalarExpressionV1::SequenceJoin(a, b) |
         CanonicalScalarExpressionV1::SequenceDrop(a, b) => {
             collect_scalar_expression_parameters(a, parameters);
@@ -9629,6 +9658,7 @@ fn collect_scalar_expression_parameters(
         CanonicalScalarExpressionV1::Equal(left, right)
         | CanonicalScalarExpressionV1::StartsWith(left, right)
         | CanonicalScalarExpressionV1::ContainsText(left, right)
+        | CanonicalScalarExpressionV1::TextSplit(left, right)
         | CanonicalScalarExpressionV1::GreaterThan(left, right)
         | CanonicalScalarExpressionV1::LessThanOrEqual(left, right)
         | CanonicalScalarExpressionV1::Concatenate(left, right)
@@ -11116,6 +11146,9 @@ fn scalar_expression_matches_kind(
         CanonicalScalarExpressionV1::Sequence(_)
         | CanonicalScalarExpressionV1::SequenceDrop(_, _)
         | CanonicalScalarExpressionV1::SequenceCount(_)
+        | CanonicalScalarExpressionV1::TextCharacters(_)
+        | CanonicalScalarExpressionV1::TextSplit(_, _)
+        | CanonicalScalarExpressionV1::ParseIntegerPrefix(_)
         | CanonicalScalarExpressionV1::SequenceJoin(_, _)
         | CanonicalScalarExpressionV1::ScalarText(_)
         | CanonicalScalarExpressionV1::SequenceMap { .. }

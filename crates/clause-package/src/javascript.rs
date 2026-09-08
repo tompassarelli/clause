@@ -109,9 +109,9 @@ fn foreign_modules(expression: &CanonicalExecutableExpressionV1, modules: &mut B
         E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => { foreign_modules(value, modules); foreign_modules(body, modules); }
         E::Sequence(values) => { for value in values { foreign_modules(value, modules); } }
         E::Record(fields) => { for value in fields.values() { foreign_modules(value, modules); } }
-        E::Dictionary(a,b) | E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
+        E::TextSplit(a,b) | E::Dictionary(a,b) | E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
         E::Require(a,b,c) | E::Conditional(a,b,c) => { foreign_modules(a,modules); foreign_modules(b,modules); foreign_modules(c,modules); }
-        E::SequenceSort(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
+        E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceSort(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
         _ => {}
     }
 }
@@ -266,6 +266,19 @@ impl Lowerer<'_> {
                 else { self.bindings.remove(binding); }
                 let (body, kind) = result?;
                 (format!("Object.freeze(({source}).map((b{binding})=>({body})))"), ValueType::Sequence(Box::new(kind)))
+            }
+            E::TextCharacters(value) => {
+                let (value, _) = self.expression(value, Some(ValueType::Text))?;
+                (format!("Object.freeze(Array.from({value}))"), ValueType::Sequence(Box::new(ValueType::Text)))
+            }
+            E::TextSplit(value, delimiter) => {
+                let (value, _) = self.expression(value, Some(ValueType::Text))?;
+                let (delimiter, _) = self.expression(delimiter, Some(ValueType::Text))?;
+                (format!("splitText({value},{delimiter})"), ValueType::Sequence(Box::new(ValueType::Text)))
+            }
+            E::ParseIntegerPrefix(value) => {
+                let (value, _) = self.expression(value, Some(ValueType::Text))?;
+                (format!("parseIntegerPrefix({value})"), ValueType::Alternatives(vec![ValueType::Number, ValueType::Text]))
             }
             E::SequenceCount(value) => {
                 let (value, kind) = self.expression(value, None)?;
@@ -909,6 +922,8 @@ function crossing(value,kind){
  if(kind[0]==='record')return Object.freeze(Object.fromEntries(kind[1].map(([key,type])=>[key,crossing(value[key],type)])));
  return value;
 }
+function splitText(value,delimiter){return Object.freeze(delimiter===''?Array.from(value):value.split(delimiter));}
+function parseIntegerPrefix(value){const parsed=Number.parseInt(value,10);return Number.isFinite(parsed)?(parsed===0?0:parsed):value;}
 function drop(value,count){if(!Number.isFinite(count)||!Number.isInteger(count)||count<0)fail('NumericDomain');return Object.freeze(value.slice(count));}
 function facet(value,domain,members){if(value===null||typeof value!=='object')return undefined;if(value.domain===domain)return value;if(members.includes(value.identity))return Object.freeze({domain,identity:value.identity});return undefined;}
 function requireFacet(value,domain,members){const result=facet(value,domain,members);if(result===undefined)fail('TypeMismatch');return result;}
