@@ -1048,14 +1048,15 @@ fn retain_lowered_source_rules(
     let slot = |state: &CanonicalStateRefV1| slots.get(state).copied()
         .ok_or(ExecutableErrorV1::CanonicalLoweringUnknownState);
     let mut retained = BTreeMap::new();
+    let mut member_sets = BTreeMap::new();
     for handler in &next.package().executable_handlers {
         for (index, source_rule) in handler.rules.iter().enumerate() {
             let Some((old_handler, old_index)) = next.retained_rule(preparation.analysis.plan().root(), handler.id, index) else { continue; };
             let old_offset = offsets.get(&old_handler).ok_or(ExecutableErrorV1::MalformedProgram)?;
             let mut rule = preparation.lowered.program.rules.get(old_offset + old_index)
                 .ok_or(ExecutableErrorV1::MalformedProgram)?.clone();
-            for predicate in &mut rule.predicates { rebind_lowered_expression(predicate, edit)?; }
-            for (_, value) in &mut rule.assignments { rebind_lowered_expression(value, edit)?; }
+            for predicate in &mut rule.predicates { rebind_lowered_expression(predicate, edit, &mut member_sets)?; }
+            for (_, value) in &mut rule.assignments { rebind_lowered_expression(value, edit, &mut member_sets)?; }
             let mut assignments = rule.assignments.into_iter().collect::<BTreeMap<_, _>>();
             rule.assignments = source_rule.assignments.iter().map(|assignment| {
                 let target = slot(&assignment.target)?;
@@ -1073,60 +1074,68 @@ fn retain_lowered_source_rules(
 
 // Physical slots remain fixed, while semantic constants still belong to the
 // newly checked allocation root. Reuse never preserves an old semantic address.
-fn rebind_lowered_expression(value: &mut ExecutableExpressionV1, edit: &CanonicalSourceEditV1) -> Result<(), ExecutableErrorV1> {
+fn rebind_lowered_expression(value: &mut ExecutableExpressionV1, edit: &CanonicalSourceEditV1, member_sets: &mut BTreeMap<Vec<u32>, Vec<u32>>) -> Result<(), ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
     let formation = |old| edit.formation(FormationLocalId::new(old)).map(|new| new.get())
         .map_err(|_| ExecutableErrorV1::MalformedProgram);
     match value {
         E::Match { value, cases } => {
-            rebind_lowered_expression(value, edit)?;
-            for (_, _, body) in cases { rebind_lowered_expression(body, edit)?; }
+            rebind_lowered_expression(value, edit, member_sets)?;
+            for (_, _, body) in cases { rebind_lowered_expression(body, edit, member_sets)?; }
         }
         E::Constant(value) => *value = migrate_value(value, edit)?,
         E::Slot(_) | E::Argument(_) | E::Binding(_) => {},
         E::Sequence(values) | E::Foreign { arguments: values, .. } => for value in values {
-            rebind_lowered_expression(value, edit)?;
+            rebind_lowered_expression(value, edit, member_sets)?;
         },
-        E::Record(fields) => for value in fields.values_mut() { rebind_lowered_expression(value, edit)?; },
+        E::Record(fields) => for value in fields.values_mut() { rebind_lowered_expression(value, edit, member_sets)?; },
         E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => {
-            rebind_lowered_expression(value, edit)?; rebind_lowered_expression(body, edit)?;
+            rebind_lowered_expression(value, edit, member_sets)?; rebind_lowered_expression(body, edit, member_sets)?;
         },
         E::SequenceFold { source, initial, body, .. } => {
-            rebind_lowered_expression(source, edit)?;
-            rebind_lowered_expression(initial, edit)?;
-            rebind_lowered_expression(body, edit)?;
+            rebind_lowered_expression(source, edit, member_sets)?;
+            rebind_lowered_expression(initial, edit, member_sets)?;
+            rebind_lowered_expression(body, edit, member_sets)?;
         },
-        E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => rebind_lowered_expression(value, edit)?,
+        E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => rebind_lowered_expression(value, edit, member_sets)?,
         E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::SequenceAppend(a, b) => {
-            rebind_lowered_expression(a, edit)?; rebind_lowered_expression(b, edit)?;
+            rebind_lowered_expression(a, edit, member_sets)?; rebind_lowered_expression(b, edit, member_sets)?;
         },
         E::Require(a, b, c) => {
-            rebind_lowered_expression(a, edit)?; rebind_lowered_expression(b, edit)?; rebind_lowered_expression(c, edit)?;
+            rebind_lowered_expression(a, edit, member_sets)?; rebind_lowered_expression(b, edit, member_sets)?; rebind_lowered_expression(c, edit, member_sets)?;
         },
         E::FreshReferent { domain, .. } => *domain = formation(*domain)?,
         E::ReferentFacet { value, domain, members } => {
-            rebind_lowered_expression(value, edit)?;
+            rebind_lowered_expression(value, edit, member_sets)?;
             *domain = formation(*domain)?;
-            for member in members.iter_mut() { *member = formation(*member)?; }
-            members.sort();
+            // Reuse only an exact member vector successfully translated under
+            // this checked edit; equal domains alone do not imply equal facets.
+            if let Some(rebound) = member_sets.get(members.as_slice()) {
+                members.clone_from(rebound);
+            } else {
+                let previous = members.clone();
+                for member in members.iter_mut() { *member = formation(*member)?; }
+                members.sort();
+                member_sets.insert(previous, members.clone());
+            }
         }
         E::Sum { inputs, predicates, value } => {
-            for input in inputs.iter_mut().chain(predicates) { rebind_lowered_expression(input, edit)?; }
-            rebind_lowered_expression(value, edit)?;
+            for input in inputs.iter_mut().chain(predicates) { rebind_lowered_expression(input, edit, member_sets)?; }
+            rebind_lowered_expression(value, edit, member_sets)?;
         }
         E::RelationEffects(effects) | E::DerivedRelation(effects) => for effect in effects {
             use ExecutableRelationEffectV1 as R;
             let (a, b) = match effect { R::Put(a,b) | R::Insert(a,b) | R::Remove(a,b) | R::Accumulate(a,b) => (a,b) };
-            rebind_lowered_expression(a, edit)?; rebind_lowered_expression(b, edit)?;
+            rebind_lowered_expression(a, edit, member_sets)?; rebind_lowered_expression(b, edit, member_sets)?;
         },
-        E::TextTransform(_, a) | E::SquareRoot(a) | E::Accumulate(a) | E::Not(a) => rebind_lowered_expression(a, edit)?,
+        E::TextTransform(_, a) | E::SquareRoot(a) | E::Accumulate(a) | E::Not(a) => rebind_lowered_expression(a, edit, member_sets)?,
         E::Conditional(a,b,c) | E::RelationPut(a,b,c) | E::RelationInsert(a,b,c) | E::RelationRemoveValue(a,b,c) | E::Clamp(a,b,c) => {
-            rebind_lowered_expression(a, edit)?; rebind_lowered_expression(b, edit)?; rebind_lowered_expression(c, edit)?;
+            rebind_lowered_expression(a, edit, member_sets)?; rebind_lowered_expression(b, edit, member_sets)?; rebind_lowered_expression(c, edit, member_sets)?;
         }
         E::ContainsText(a,b) | E::StartsWith(a,b) | E::RelationMatch(_,a,b) | E::RelationRead(a,b) | E::RelationPresent(a,b)
         | E::RelationRemoveRow(a,b) | E::Concatenate(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b)
         | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Equal(a,b) | E::And(a,b) | E::SetInsert(a,b) | E::SetContains(a,b) | E::SetRemove(a,b) => {
-            rebind_lowered_expression(a, edit)?; rebind_lowered_expression(b, edit)?;
+            rebind_lowered_expression(a, edit, member_sets)?; rebind_lowered_expression(b, edit, member_sets)?;
         }
     }
     Ok(())
