@@ -974,6 +974,120 @@ on tokenize ?document ?input
     ?document prefixed starts-with(trim(?input), "/")
 ```
 
+## Exact text fields and checked integer prefixes
+
+characters(text) exposes Unicode scalar values as Sequence<Text>. split-text(text, delimiter) splits literal occurrences and preserves all empty fields; an empty delimiter selects characters. parse-integer-prefix(text) skips leading ECMAScript whitespace and reads an optional sign and decimal digit prefix, returning a finite F64 or the original rejected Text. Match before arithmetic. Ordinary sequence folds express terminal-field removal, path selection, and CR/LF-only trimming.
+
+Catalog ID: `text-decomposition`
+
+```clause
+export letters(?text: Text): Sequence<Text>
+  characters(?text)
+
+export parts(?text: Text, ?delimiter: Text): Sequence<Text>
+  split-text(?text, ?delimiter)
+
+export integer(?text: Text): F64 | Text
+  parse-integer-prefix(?text)
+
+export positive(?text: Text): Bool
+  match(parse-integer-prefix(?text),
+    ?number: F64 => ?number > 0,
+    ?invalid: Text => false)
+
+First:
+  found: Bool
+  text: Text
+
+first-result(?values: Sequence<Text>): First
+  fold(?values, {found: false, text: ""}, ?result, ?value,
+    if(?result.found, ?result, {found: true, text: ?value}))
+
+first(?values: Sequence<Text>): Text
+  first-result(?values).text
+
+export short-host(?host: Text): Text
+  first(split-text(?host, "."))
+
+export layout-main(?checkout: Text): Text
+  if(contains-text(?checkout, "/worktrees/"),
+    first(split-text(?checkout, "/worktrees/")) ++ "/main",
+    if(contains-text(?checkout, "/pins/"),
+      first(split-text(?checkout, "/pins/")) ++ "/main", ""))
+
+Take:
+  index: F64
+  values: Sequence<Text>
+
+take-result(?values: Sequence<Text>, ?count: F64): Take
+  fold(?values, {index: 0, values: []}, ?result, ?value,
+    {index: ?result.index + 1,
+     values: if(?result.index < ?count, append(?result.values, ?value), ?result.values)})
+
+take(?values: Sequence<Text>, ?count: F64): Sequence<Text>
+  take-result(?values, ?count).values
+
+last(?values: Sequence<Text>): Text
+  fold(?values, "", ?previous, ?value, ?value)
+
+split-fields(?parts: Sequence<Text>): Sequence<Text>
+  if(last(?parts) = "", take(?parts, count(?parts) - 1), ?parts)
+
+export delimited(?text: Text, ?delimiter: Text): Sequence<Text>
+  if(?text = "", [], split-fields(split-text(?text, ?delimiter)))
+
+export command-argv(?text: Text): Sequence<Text>
+  if(?text = "", [], delimited(?text, last(characters(?text))))
+
+export common-main(?directory: Text): Text
+  strip-common(split-text(?directory, "/.git"))
+
+strip-common(?parts: Sequence<Text>): Text
+  if(last(?parts) = "" and count(?parts) > 1,
+    join(take(?parts, count(?parts) - 1), "/.git"), "")
+
+contains(?values: Sequence<Text>, ?candidate: Text): Bool
+  fold(?values, false, ?found, ?value, ?found or ?value = ?candidate)
+
+unique(?values: Sequence<Text>, ?candidate: Text): Sequence<Text>
+  if(contains(?values, ?candidate), ?values, append(?values, ?candidate))
+
+candidates(?layout: Text, ?common: Text, ?checkout: Text): Sequence<Text>
+  unique(if(?common = "", if(?layout = "", [], [?layout]),
+    unique(if(?layout = "", [], [?layout]), ?common)), ?checkout)
+
+export main-candidates(?checkout: Text, ?common: Text): Sequence<Text>
+  candidates(layout-main(?checkout), common-main(?common), ?checkout)
+
+Line:
+  kept: Text
+  ending: Text
+
+trimmed-line(?text: Text): Line
+  fold(characters(?text), {kept: "", ending: ""}, ?line, ?character,
+    if(?character = "\r" or ?character = "\n",
+      {kept: ?line.kept, ending: ?line.ending ++ ?character},
+      {kept: ?line.kept ++ ?line.ending ++ ?character, ending: ""}))
+
+export trim-line-ending(?text: Text): Text
+  trimmed-line(?text).kept
+
+export lease-valid(?text: Text): Bool
+  lease-fields-valid(delimited(?text, "\n"))
+
+lease-fields-valid(?fields: Sequence<Text>): Bool
+  count(?fields) = 3 and positive(first(?fields)) and positive(first(drop(?fields, 1))) and last(?fields) != ""
+
+all-zero(?text: Text): Bool
+  ?text != "" and fold(characters(?text), true, ?zero, ?character, ?zero and ?character = "0")
+
+update-fields-main(?fields: Sequence<Text>): Bool
+  count(?fields) = 3 and last(?fields) = "refs/heads/main" and first(?fields) != first(drop(?fields, 1)) and all-zero(first(drop(?fields, 1))) = false
+
+export main-update(?text: Text): Bool
+  update-fields-main(delimited(?text, " "))
+```
+
 ## Reusable checked laws inside finite queries
 
 Query-local scalar laws compose with typed rows, explicit inputs and predicates. Each matching row contributes once even when equal-result law cases overlap. A missing law result excludes that row; an invalid expression or exhausted search remains an error.
