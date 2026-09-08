@@ -1,0 +1,11 @@
+export trimmed(?value: Text): Text
+  trim(?value)
+
+export first(?value: Text): Text
+  first-word(?value)
+
+export remaining(?value: Text): Text
+  remaining-words(?value)
+
+export lower(?value: Text): Text
+  lowercase(?value)

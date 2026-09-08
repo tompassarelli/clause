@@ -1,0 +1,2 @@
+export normalize-letter(?letter: Text): Text
+  lowercase(?letter)

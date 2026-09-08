@@ -1,0 +1,15 @@
+Mark:
+  subject: Text
+  window: F64
+  app-id: Text
+  title: Text
+
+export mark(?letter: Text, ?window: F64, ?app-id: Text, ?title: Text): Mark
+  {subject: "@mark-{lowercase(?letter)}", window: ?window, app-id: ?app-id, title: ?title}
+
+export fold-marks(?history: Sequence<Mark>): Sequence<Mark>
+  fold(?history, [], ?marks, ?mark,
+    if(fold(?marks, false, ?found, ?existing, ?found or ?existing.subject = ?mark.subject),
+      fold(?marks, [], ?updated, ?existing,
+        append(?updated, if(?existing.subject = ?mark.subject, ?mark, ?existing))),
+      append(?marks, ?mark)))

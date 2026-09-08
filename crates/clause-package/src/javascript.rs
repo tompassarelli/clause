@@ -271,6 +271,16 @@ impl Lowerer<'_> {
                 let (value, _) = self.expression(value, Some(ValueType::Text))?;
                 (format!("Object.freeze(Array.from({value}))"), ValueType::Sequence(Box::new(ValueType::Text)))
             }
+            E::TextTransform(operation, value) => {
+                let (value, _) = self.expression(value, Some(ValueType::Text))?;
+                let function = match operation {
+                    CanonicalTextTransformV1::Trim => "trimText",
+                    CanonicalTextTransformV1::FirstWord => "firstWord",
+                    CanonicalTextTransformV1::RemainingWords => "remainingWords",
+                    CanonicalTextTransformV1::Lowercase => "lowercaseText",
+                };
+                (format!("{function}({value})"), ValueType::Text)
+            }
             E::TextSplit(value, delimiter) => {
                 let (value, _) = self.expression(value, Some(ValueType::Text))?;
                 let (delimiter, _) = self.expression(delimiter, Some(ValueType::Text))?;
@@ -924,6 +934,11 @@ function crossing(value,kind){
  return value;
 }
 function splitText(value,delimiter){return Object.freeze(delimiter===''?Array.from(value):value.split(delimiter));}
+// Rust's Unicode White_Space excludes BOM and includes NEXT LINE, unlike JavaScript \s.
+function trimText(value){return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu,'');}
+function firstWord(value){return value.match(/[^\p{White_Space}]+/u)?.[0]??'';}
+function remainingWords(value){value=value.replace(/^\p{White_Space}+/u,'');const end=value.search(/\p{White_Space}/u);return end<0?'':value.slice(end).replace(/^\p{White_Space}+/u,'');}
+function lowercaseText(value){return text(value.toLowerCase());}
 function parseIntegerPrefix(value){const parsed=Number.parseInt(value,10);return Number.isFinite(parsed)?(parsed===0?0:parsed):value;}
 function drop(value,count){if(!Number.isFinite(count)||!Number.isInteger(count)||count<0)fail('NumericDomain');return Object.freeze(value.slice(count));}
 function facet(value,domain,members){if(value===null||typeof value!=='object')return undefined;if(value.domain===domain)return value;if(members.includes(value.identity))return Object.freeze({domain,identity:value.identity});return undefined;}
