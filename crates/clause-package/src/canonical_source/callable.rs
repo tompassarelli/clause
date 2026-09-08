@@ -283,7 +283,7 @@ pub(super) fn read(
         loop {
             expressions.push(
                 parser
-                    .comparison()
+                    .disjunction()
                     .ok_or_else(|| error("unsupported callable expression"))?,
             );
             parser.skip_spaces();
@@ -465,7 +465,7 @@ pub(super) fn text_template(source: &str) -> Option<(CanonicalScalarExpressionV1
                     current: "",
                     interpolate: true,
                 };
-                parts.push(E::ScalarText(Box::new(parser.comparison()?)));
+                parts.push(E::ScalarText(Box::new(parser.disjunction()?)));
                 parser.skip_spaces();
                 if parser.cursor != parser.source.len() {
                     return None;

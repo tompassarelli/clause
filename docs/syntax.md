@@ -293,7 +293,11 @@ length (position of player - position of coin)
 declared relations support them. Multiplication and division bind tighter than
 addition and subtraction, which bind tighter than order comparisons, which
 bind tighter than equality. Arithmetic associates left; comparison and
-equality do not chain. Parentheses resolve any remaining boundary.
+equality do not chain. Boolean `and` binds less tightly than comparisons and
+equality; `or` binds less tightly than `and`. Both require `Bool` operands,
+associate left, and evaluate the left operand once. The right operand is evaluated
+only when the left operand does not determine the result. Parentheses resolve any
+remaining boundary.
 
 `:` introduces denotation or a grammar-owned field. `=` is relational
 equality. `->`, `:=`, `::`, and `~>` are not aliases.

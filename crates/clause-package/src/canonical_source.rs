@@ -8911,7 +8911,7 @@ fn parse_scalar_expression(source: &str, current: &str) -> Option<CanonicalScala
         current,
         interpolate: false,
     };
-    let expression = parser.comparison()?;
+    let expression = parser.disjunction()?;
     parser.skip_spaces();
     (parser.cursor == parser.source.len()).then_some(expression)
 }
@@ -8984,6 +8984,44 @@ struct ScalarExpressionParser<'a> {
 }
 
 impl ScalarExpressionParser<'_> {
+    fn disjunction(&mut self) -> Option<CanonicalScalarExpressionV1> {
+        use CanonicalScalarExpressionV1 as E;
+        let mut value = self.conjunction()?;
+        while self.take_keyword(b"or") {
+            value = E::Conditional(
+                Box::new(value),
+                Box::new(E::Boolean(true)),
+                Box::new(self.conjunction()?),
+            );
+        }
+        Some(value)
+    }
+
+    fn conjunction(&mut self) -> Option<CanonicalScalarExpressionV1> {
+        use CanonicalScalarExpressionV1 as E;
+        let mut value = self.comparison()?;
+        while self.take_keyword(b"and") {
+            value = E::Conditional(
+                Box::new(value),
+                Box::new(self.comparison()?),
+                Box::new(E::Boolean(false)),
+            );
+        }
+        Some(value)
+    }
+
+    fn take_keyword(&mut self, keyword: &[u8]) -> bool {
+        self.skip_spaces();
+        let rest = &self.source[self.cursor..];
+        if !rest.starts_with(keyword)
+            || rest.get(keyword.len()).is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'(')
+        {
+            return false;
+        }
+        self.cursor += keyword.len();
+        true
+    }
+
     fn comparison(&mut self) -> Option<CanonicalScalarExpressionV1> {
         let left = self.additive()?;
         self.skip_spaces();
@@ -9063,7 +9101,7 @@ impl ScalarExpressionParser<'_> {
             self.skip_spaces();
             if !self.take_exact(b"]") {
                 loop {
-                    values.push(self.comparison()?);
+                    values.push(self.disjunction()?);
                     self.skip_spaces();
                     if values.len() == 1 && self.interpolate && self.take_exact(b"for ") {
                         self.skip_spaces();
@@ -9073,7 +9111,7 @@ impl ScalarExpressionParser<'_> {
                         (self.cursor > start + 1).then_some(())?;
                         let binding = self.source[start..self.cursor].to_vec();
                         self.skip_spaces(); self.take_exact(b"in ").then_some(())?;
-                        let source = Box::new(self.comparison()?);
+                        let source = Box::new(self.disjunction()?);
                         self.skip_spaces(); self.take_exact(b"]").then_some(())?;
                         return Some(E::SequenceMap { binding, source, body: Box::new(values.pop()?) });
                     }
@@ -9095,7 +9133,7 @@ impl ScalarExpressionParser<'_> {
                     let name = self.source[start..self.cursor].to_vec();
                     self.skip_spaces();
                     self.take_exact(b":").then_some(())?;
-                    if fields.insert(name, self.comparison()?).is_some() { return None; }
+                    if fields.insert(name, self.disjunction()?).is_some() { return None; }
                     self.skip_spaces();
                     if self.take_exact(b"}") { break; }
                     self.take_exact(b",").then_some(())?;
@@ -9104,9 +9142,9 @@ impl ScalarExpressionParser<'_> {
             return Some(E::Record(fields));
         }
         if self.take_exact(b"fold(") {
-            let source = Box::new(self.comparison()?);
+            let source = Box::new(self.disjunction()?);
             self.skip_spaces(); self.take_exact(b",").then_some(())?;
-            let initial = Box::new(self.comparison()?);
+            let initial = Box::new(self.disjunction()?);
             let mut bindings = Vec::new();
             for _ in 0..2 {
                 self.skip_spaces(); self.take_exact(b",").then_some(())?;
@@ -9118,32 +9156,32 @@ impl ScalarExpressionParser<'_> {
                 bindings.push(self.source[start..self.cursor].to_vec());
             }
             self.skip_spaces(); self.take_exact(b",").then_some(())?;
-            let body = Box::new(self.comparison()?);
+            let body = Box::new(self.disjunction()?);
             self.skip_spaces(); self.take_exact(b")").then_some(())?;
             return Some(E::SequenceFold { accumulator: bindings.remove(0), item: bindings.remove(0), source, initial, body });
         }
         if self.take_exact(b"sort(") {
-            let value = self.comparison()?;
+            let value = self.disjunction()?;
             self.skip_spaces(); self.take_exact(b")").then_some(())?;
             return Some(E::SequenceSort(Box::new(value)));
         }
         if self.take_exact(b"count(") {
-            let value = self.comparison()?;
+            let value = self.disjunction()?;
             self.skip_spaces(); self.take_exact(b")").then_some(())?;
             return Some(E::SequenceCount(Box::new(value)));
         }
         for builtin in [b"drop(".as_slice(), b"require(", b"join(", b"append("] {
             if self.take_exact(builtin) {
-                let a = Box::new(self.comparison()?);
+                let a = Box::new(self.disjunction()?);
                 self.skip_spaces(); self.take_exact(b",").then_some(())?;
-                let b = Box::new(self.comparison()?);
+                let b = Box::new(self.disjunction()?);
                 let value = match builtin {
                     b"drop(" => E::SequenceDrop(a, b),
                     b"append(" => E::SequenceAppend(a, b),
                     b"join(" => E::SequenceJoin(a, b),
                     _ => {
                         self.skip_spaces(); self.take_exact(b",").then_some(())?;
-                        E::Require(a, b, Box::new(self.comparison()?))
+                        E::Require(a, b, Box::new(self.disjunction()?))
                     }
                 };
                 self.skip_spaces(); self.take_exact(b")").then_some(())?;
@@ -9158,38 +9196,38 @@ impl ScalarExpressionParser<'_> {
             (b"remaining-words(".as_slice(), CanonicalTextTransformV1::RemainingWords),
         ] {
             if self.take_exact(prefix) {
-                let value = self.comparison()?;
+                let value = self.disjunction()?;
                 self.skip_spaces();
                 self.take_exact(b")").then_some(())?;
                 return Some(CanonicalScalarExpressionV1::TextTransform(operation, Box::new(value)));
             }
         }
         if self.take_exact(b"contains-text(") {
-            let value = self.comparison()?;
+            let value = self.disjunction()?;
             self.skip_spaces();
             self.take_exact(b",").then_some(())?;
-            let needle = self.comparison()?;
+            let needle = self.disjunction()?;
             self.skip_spaces();
             self.take_exact(b")").then_some(())?;
             return Some(CanonicalScalarExpressionV1::ContainsText(Box::new(value), Box::new(needle)));
         }
         if self.take_exact(b"starts-with(") {
-            let value = self.comparison()?;
+            let value = self.disjunction()?;
             self.skip_spaces();
             self.take_exact(b",").then_some(())?;
-            let prefix = self.comparison()?;
+            let prefix = self.disjunction()?;
             self.skip_spaces();
             self.take_exact(b")").then_some(())?;
             return Some(CanonicalScalarExpressionV1::StartsWith(Box::new(value), Box::new(prefix)));
         }
         if self.take_exact(b"if(") {
-            let condition = self.comparison()?;
+            let condition = self.disjunction()?;
             self.skip_spaces();
             self.take_exact(b",").then_some(())?;
-            let yes = self.comparison()?;
+            let yes = self.disjunction()?;
             self.skip_spaces();
             self.take_exact(b",").then_some(())?;
-            let no = self.comparison()?;
+            let no = self.disjunction()?;
             self.skip_spaces();
             self.take_exact(b")").then_some(())?;
             return Some(CanonicalScalarExpressionV1::Conditional(
@@ -9226,7 +9264,7 @@ impl ScalarExpressionParser<'_> {
         }
         if self.source.get(self.cursor) == Some(&b'(') {
             self.cursor += 1;
-            let value = self.comparison()?;
+            let value = self.disjunction()?;
             self.skip_spaces();
             (self.source.get(self.cursor) == Some(&b')')).then(|| self.cursor += 1)?;
             return Some(value);
@@ -9252,7 +9290,7 @@ impl ScalarExpressionParser<'_> {
                 self.skip_spaces();
                 if !self.take_exact(b")") {
                     loop {
-                        arguments.push(self.comparison()?);
+                        arguments.push(self.disjunction()?);
                         self.skip_spaces();
                         if self.take_exact(b")") { break; }
                         self.take_exact(b",").then_some(())?;

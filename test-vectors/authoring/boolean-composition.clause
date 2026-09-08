@@ -1,0 +1,5 @@
+export either-pressure(?cpu: Bool, ?memory: Bool): Bool
+  ?cpu or ?memory
+
+export exclusive-conflict(?exclusive: Bool, ?peer: Bool): Bool
+  ?exclusive and ?peer
