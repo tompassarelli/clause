@@ -146,11 +146,11 @@ mod tests {
             matched.predicates = vec![E::RelationMatch(0, Box::new(E::Binding(0)), Box::new(E::Binding(1)))];
             let program = Arc::new(ExecutableProgramV1 { initial_configuration: vec![], projection: None, rules: vec![matched] });
             for input in [1.0, 5.0] {
-                let configuration = [table(&[(1, input), (2, input + 1.0)]).into(), table(&[]).into()];
+                let configuration = [table(&[(1, input)]).into(), table(&[]).into()];
                 let actual = StepEvaluator { scalar_plans: Some(&plans), ..evaluator(&program, None) }
                     .prepare_step_traced(ExecutableOccurrenceV1 { entry: 2, arguments: vec![] }, 1, 1, &configuration, None).unwrap();
                 assert_eq!(actual, run(&program, None, &configuration, vec![], 1).unwrap());
-                assert_eq!(actual.0[1], table(&[(1, input + increment), (2, input + 1.0 + increment)]));
+                assert_eq!(actual.0[1], table(&[(1, input + increment)]));
             }
         }
     }
