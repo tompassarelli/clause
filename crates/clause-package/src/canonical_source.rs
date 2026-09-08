@@ -6152,7 +6152,7 @@ fn checked_canonical_source_execution_v1(
     plan: &CanonicalSourceAllocationPlanV1,
     input_parts: Option<(&InputHandlerCst, &VectorAssertionCst)>,
     scalar_parts: &[ScalarHandlerParts<'_>],
-    reused: Option<(&[CanonicalExecutableHandlerV1], &BTreeSet<FormationLocalId>)>,
+    reused: Option<(Vec<CanonicalExecutableHandlerV1>, &BTreeSet<FormationLocalId>)>,
 ) -> Result<CheckedCanonicalSourceExecutionV1, CanonicalSourceErrorV1> {
     let input_handler = input_parts
         .as_ref()
@@ -6194,10 +6194,10 @@ fn checked_canonical_source_execution_v1(
         input_parts,
         scalar_parts,
         &keyboard_bindings,
-        reused.map(|(_, selected)| selected),
+        reused.as_ref().map(|(_, selected)| *selected),
     )?;
     if let Some((handlers, _)) = reused {
-        executable_handlers.extend_from_slice(handlers);
+        executable_handlers.extend(handlers);
         executable_handlers.sort_by_key(|handler| handler.id);
     }
     validate_keyboard_handler_targets(cst, &keyboard_bindings, &executable_handlers)?;
@@ -6228,7 +6228,7 @@ fn elaborate_canonical_source_package_inner(
     cst: &CanonicalSourceCstV1,
     context: CanonicalSourceContextV1,
     plan: &CanonicalSourceAllocationPlanV1,
-    reused: Option<&source_analysis::RetainedSourceDerivations<'_>>,
+    reused: Option<source_analysis::RetainedSourceDerivations<'_>>,
 ) -> Result<CanonicalSourcePackageSliceV1, CanonicalSourceErrorV1> {
     if plan.artifact != cst.artifact {
         return Err(CanonicalSourceErrorV1::AllocationArtifactMismatch);
@@ -6237,7 +6237,7 @@ fn elaborate_canonical_source_package_inner(
     let cst = expanded.as_ref();
     let source_formation = |scope, id, source: &[u8], origin, kind: &str| {
         source_formation(scope, id, source, origin, kind,
-            reused.and_then(|retained| retained.formations.get(&id).copied()))
+            reused.as_ref().and_then(|retained| retained.formations.get(&id).copied()))
     };
     let scope = TermScope {
         universe: context.universe,
@@ -6954,15 +6954,6 @@ fn elaborate_canonical_source_package_inner(
             CstKind::Unsupported(value) => unsupported.push(value.clone()),
         }
     }
-    let check_execution = || {
-        checked_canonical_source_execution_v1(
-            cst,
-            plan,
-            input_parts,
-            &scalar_parts,
-            reused.map(|retained| (retained.handlers, retained.selected)),
-        )
-    };
     for definition in &cst.callables {
         check_canonical_callable_v1(definition)?;
         for production in callable::productions(definition) {
@@ -6974,6 +6965,15 @@ fn elaborate_canonical_source_package_inner(
             emissions.push(emission(plan, producer, slot, definition.origin));
         }
     }
+    let check_execution = || {
+        checked_canonical_source_execution_v1(
+            cst,
+            plan,
+            input_parts,
+            &scalar_parts,
+            reused.map(|retained| (retained.handlers, retained.selected)),
+        )
+    };
     let check_package = || {
         formations.sort_by_key(|formation| formation.id);
         schemas.sort_by_key(|schema| schema.id);

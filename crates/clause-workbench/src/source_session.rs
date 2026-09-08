@@ -830,9 +830,9 @@ impl ResidentSourceWorkbenchV1 {
         let template_input = physical_plan.input.clone();
         phase("template-handlers");
         let mut lowered = match &prepared {
-            Some(prepared) => prepared.lowered().clone(),
-            None => lower_canonical_executable_program_v1(scope, &compiled.state_cells, &compiled.executable_handlers, projection_roles)
-                .map_err(|error| boxed_error("generic canonical lowering", error))?,
+            Some(prepared) => std::borrow::Cow::Borrowed(prepared.lowered()),
+            None => std::borrow::Cow::Owned(lower_canonical_executable_program_v1(scope, &compiled.state_cells, &compiled.executable_handlers, projection_roles)
+                .map_err(|error| boxed_error("generic canonical lowering", error))?),
         };
         if let Some(checkpoint) = checkpoint {
             let recorded = clause_runtime::decode_wasm_session_open_v1(
@@ -841,7 +841,7 @@ impl ResidentSourceWorkbenchV1 {
             let recorded_plan = decode_executable_physical_plan_v1(&recorded.physical_plan_bytes)
                 .map_err(|error| boxed_error("recorded CPP1", error))?;
             clause_runtime::replay_canonical_executable_entry_layout_v1(
-                scope, &compiled, cst.artifact(), &mut lowered, &recorded_plan,
+                scope, &compiled, cst.artifact(), lowered.to_mut(), &recorded_plan,
             ).map_err(|error| boxed_error("recorded source dispatch layout", error))?;
         }
         phase("lowered-clone");
@@ -863,7 +863,9 @@ impl ResidentSourceWorkbenchV1 {
                 .push(binding.clone());
         }
         let declarative_only = lowered.states.is_empty() && lowered.handlers.is_empty();
-        physical_plan.program = lowered.program;
+        if prepared.is_none() {
+            std::mem::swap(&mut physical_plan.program, &mut lowered.to_mut().program);
+        }
 
         let has_tick = lowered.handlers.iter().any(|binding| {
             matches!(
@@ -1071,7 +1073,7 @@ impl ResidentSourceWorkbenchV1 {
         phase("commit-encode");
         self.handlers = handlers;
         self.callables = callables;
-        self.states = lowered.states;
+        self.states = lowered.states.clone();
         self.default_occurrences = default_occurrences;
         self.next_change = next_change;
         self.exact_source = exact_source.to_vec();
