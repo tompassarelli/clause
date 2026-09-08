@@ -535,6 +535,22 @@ supports scalar constants, records, sequences, fields, strict bindings, checked
 foreign construction, equality of ordinary values, concatenation, and static
 conditional/require expressions. Other expressions reject explicitly.
 
+Within delayed target contracts, `Function<Argument, Result>` describes a
+single-argument function value, including functions held in record fields.
+`(?home: Delayed<nix,HomeModuleArguments>) => body` constructs a target lambda:
+the checked argument binding is local to its body, and the result contract is
+inferred. Field selection preserves the target, and `?home.config.lib.file.mkOutOfStoreSymlink(path)`
+checks the selected function's argument and result contracts without invoking it
+during construction. Function arguments may be ordinary values or expressions
+for that same target; mixed targets reject. Function values are currently
+admitted only within delayed contracts, not native or JavaScript execution.
+
+Text interpolation and concatenation preserve delayed Text expressions. They
+do not force the target value or coerce delayed non-Text values. See the complete
+Fastfetch and tealdeer sources and Nix parity fixture in
+`clause:test-vectors/authoring/nested-functions/`; each module retains outer
+username/package references while its user module reads the inner configuration.
+
 A procedure body sequences its expression lines and returns the last value.
 Each preceding expression evaluates exactly once before the next one. A wrapped
 expression continues on more-indented lines:

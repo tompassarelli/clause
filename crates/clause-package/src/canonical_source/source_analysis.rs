@@ -160,7 +160,7 @@ fn remap_predicate(edit: &CanonicalSourceEditV1, predicate: &mut CanonicalExecut
 fn remap_expression(edit: &CanonicalSourceEditV1, expression: &mut CanonicalExecutableExpressionV1, member_sets: &mut BTreeMap<Vec<FormationLocalId>, Vec<FormationLocalId>>) -> Result<(), CanonicalSourceErrorV1> {
     use CanonicalExecutableExpressionV1 as E;
     match expression {
-        E::Widen { value, .. } => remap_expression(edit, value, member_sets)?,
+        E::Lambda { body: value, .. } | E::Widen { value, .. } => remap_expression(edit, value, member_sets)?,
         E::Match { value, cases } => {
             remap_expression(edit, value, member_sets)?;
             for (_, _, body) in cases { remap_expression(edit, body, member_sets)?; }
@@ -177,7 +177,7 @@ fn remap_expression(edit: &CanonicalSourceEditV1, expression: &mut CanonicalExec
             remap_expression(edit, source, member_sets)?; remap_expression(edit, initial, member_sets)?; remap_expression(edit, body, member_sets)?;
         },
         E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceCount(value) | E::SequenceSort(value) | E::ScalarText(value) | E::Field(value, _) => remap_expression(edit, value, member_sets)?,
-        E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::Dictionary(a, b) | E::SequenceAppend(a, b) => {
+        E::Apply(a, b) | E::SequenceDrop(a, b) | E::SequenceJoin(a, b) | E::Dictionary(a, b) | E::SequenceAppend(a, b) => {
             remap_expression(edit, a, member_sets)?; remap_expression(edit, b, member_sets)?;
         },
         E::Require(a, b, c) => {

@@ -17,6 +17,10 @@ enum NixExpr {
     Dictionary(Box<Self>, Box<Self>),
     Reference { root: String, path: Vec<String> },
     Apply(Box<Self>, Vec<Self>),
+    Lambda(u16, Box<Self>),
+    Bound(u16),
+    Field(Box<Self>, String),
+    Concatenate(Box<Self>, Box<Self>),
 }
 
 /// Constructs the target expression without performing its foreign accesses.
@@ -32,12 +36,19 @@ pub fn render_nix_callable_v1(callable: &CanonicalCallableV1) -> Result<String, 
     }
     let mut roots = BTreeSet::new();
     let expression = construct(&callable.expression, &BTreeMap::new(), &mut roots, 0)?;
-    Ok(format!("{{ {}, ... }}:\n{}\n", roots.into_iter().collect::<Vec<_>>().join(", "), render(&expression)?))
+    Ok(format!("{{ {}, ... }}:\n{}\n", roots.iter().cloned().collect::<Vec<_>>().join(", "), render(&expression, &roots)?))
 }
 
 fn construct(e: &E, bindings: &BTreeMap<u16, NixExpr>, roots: &mut BTreeSet<String>, depth: usize) -> Result<NixExpr, String> {
     if depth >= 64 { return Err("Nix construction depth limit".into()); }
     Ok(match e {
+        E::Lambda { binding, kind, body } => {
+            if !matches!(kind, T::Delayed { target, .. } if target == "nix") { return Err("lambda construction target mismatch".into()); }
+            let mut nested = bindings.clone();
+            if nested.insert(*binding, NixExpr::Bound(*binding)).is_some() { return Err("duplicate construction binding".into()); }
+            NixExpr::Lambda(*binding, Box::new(construct(body, &nested, roots, depth + 1)?))
+        }
+        E::Apply(function, argument) => NixExpr::Apply(Box::new(construct(function, bindings, roots, depth + 1)?), vec![construct(argument, bindings, roots, depth + 1)?]),
         E::Let { binding, value, body } => {
             let value = construct(value, bindings, roots, depth + 1)?;
             let mut nested = bindings.clone();
@@ -50,8 +61,10 @@ fn construct(e: &E, bindings: &BTreeMap<u16, NixExpr>, roots: &mut BTreeSet<Stri
         E::Dictionary(key, value) => NixExpr::Dictionary(Box::new(construct(key, bindings, roots, depth + 1)?), Box::new(construct(value, bindings, roots, depth + 1)?)),
         E::Record(fields) => NixExpr::Record(fields.iter().map(|(k,v)| Ok((k.clone(),construct(v,bindings,roots,depth+1)?))).collect::<Result<_,String>>()?),
         E::Field(value, field) => {
-            let NixExpr::Record(fields) = construct(value, bindings, roots, depth + 1)? else { return Err("field requires a constructed record".into()); };
-            fields.get(field).ok_or("unknown constructed field")?.clone()
+            match construct(value, bindings, roots, depth + 1)? {
+                NixExpr::Record(fields) => fields.get(field).ok_or("unknown constructed field")?.clone(),
+                value => NixExpr::Field(Box::new(value), std::str::from_utf8(field).map_err(|_| "non-UTF8 field")?.into()),
+            }
         }
         E::Foreign { binding, arguments } => {
             let CanonicalForeignEvaluationV1::Construct { target } = &binding.evaluation else { return Err("Nix construction cannot perform a runtime foreign attempt".into()); };
@@ -82,9 +95,17 @@ fn construct(e: &E, bindings: &BTreeMap<u16, NixExpr>, roots: &mut BTreeSet<Stri
         }
         E::Equal(a,b) => NixExpr::Constant(V::Boolean(construct(a,bindings,roots,depth+1)? == construct(b,bindings,roots,depth+1)?)),
         E::Concatenate(a,b) => {
-            let (NixExpr::Constant(V::Text(a)), NixExpr::Constant(V::Text(b))) = (construct(a,bindings,roots,depth+1)?,construct(b,bindings,roots,depth+1)?) else { return Err("concatenation requires Text".into()); };
-            NixExpr::Constant(V::Text(a + &b))
+            match (construct(a,bindings,roots,depth+1)?,construct(b,bindings,roots,depth+1)?) {
+                (NixExpr::Constant(V::Text(a)), NixExpr::Constant(V::Text(b))) => NixExpr::Constant(V::Text(a + &b)),
+                (a, b) => NixExpr::Concatenate(Box::new(a), Box::new(b)),
+            }
         }
+        E::ScalarText(value) => match construct(value, bindings, roots, depth + 1)? {
+            value @ NixExpr::Constant(V::Text(_)) => value,
+            NixExpr::Constant(V::Boolean(value)) => NixExpr::Constant(V::Text(value.to_string())),
+            NixExpr::Constant(V::Number(bits)) if f64::from_bits(bits).is_finite() => NixExpr::Constant(V::Text(if f64::from_bits(bits) == 0.0 { "0".into() } else { f64::from_bits(bits).to_string() })),
+            value => value,
+        },
         _ => return Err("expression has no Nix construction refinement".into()),
     })
 }
@@ -114,8 +135,18 @@ fn quote(value: &str) -> String {
     out.push('"');
     out
 }
-fn render(e: &NixExpr) -> Result<String, String> {
+fn render(e: &NixExpr, roots: &BTreeSet<String>) -> Result<String, String> {
+    let render = |value| render(value, roots);
+    let bound = |binding| {
+        let mut name = format!("__clause_argument_{binding}");
+        while roots.contains(&name) { name.push('_'); }
+        name
+    };
     Ok(match e {
+        NixExpr::Lambda(binding, body) => format!("({}: {})", bound(binding), render(body)?),
+        NixExpr::Bound(binding) => bound(binding),
+        NixExpr::Field(value, field) => format!("({}).{}", render(value)?, quote(field)),
+        NixExpr::Concatenate(a, b) => format!("({} + {})", render(a)?, render(b)?),
         NixExpr::Constant(V::Text(value)) => quote(value),
         NixExpr::Constant(V::Boolean(value)) => value.to_string(),
         NixExpr::Constant(V::Number(bits)) if f64::from_bits(*bits).is_finite() => f64::from_bits(*bits).to_string(),

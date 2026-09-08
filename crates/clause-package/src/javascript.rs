@@ -86,7 +86,7 @@ fn scalar_type(kind: CanonicalScalarValueKindV1) -> Result<ValueType> {
 fn callable_type(kind: &CanonicalValueTypeV1) -> Result<ValueType> {
     match kind {
         CanonicalValueTypeV1::Alternatives(types) => Ok(ValueType::Alternatives(types.iter().map(callable_type).collect::<Result<_>>()?)),
-        CanonicalValueTypeV1::Delayed { .. } | CanonicalValueTypeV1::OpaqueForeign { .. } => unsupported("JavaScript does not execute delayed target construction"),
+        CanonicalValueTypeV1::Function { .. } | CanonicalValueTypeV1::Delayed { .. } | CanonicalValueTypeV1::OpaqueForeign { .. } => unsupported("JavaScript does not execute delayed target construction"),
         CanonicalValueTypeV1::Scalar(kind) => scalar_type(*kind),
         CanonicalValueTypeV1::Dictionary(element) => Ok(ValueType::Dictionary(Box::new(callable_type(element)?))),
         CanonicalValueTypeV1::Sequence(element) => Ok(ValueType::Sequence(Box::new(callable_type(element)?))),
@@ -99,7 +99,7 @@ fn foreign_name(module: &str) -> String {
 fn foreign_modules(expression: &CanonicalExecutableExpressionV1, modules: &mut BTreeSet<String>) {
     use CanonicalExecutableExpressionV1 as E;
     match expression {
-        E::Widen { value, .. } => foreign_modules(value, modules),
+        E::Lambda { body: value, .. } | E::Widen { value, .. } => foreign_modules(value, modules),
         E::Match { value, cases } => { foreign_modules(value, modules); for (_, _, body) in cases { foreign_modules(body, modules); } }
         E::Foreign { binding, arguments } => {
             modules.insert(binding.module.clone());
@@ -109,7 +109,7 @@ fn foreign_modules(expression: &CanonicalExecutableExpressionV1, modules: &mut B
         E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => { foreign_modules(value, modules); foreign_modules(body, modules); }
         E::Sequence(values) => { for value in values { foreign_modules(value, modules); } }
         E::Record(fields) => { for value in fields.values() { foreign_modules(value, modules); } }
-        E::TextSplit(a,b) | E::Dictionary(a,b) | E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
+        E::TextSplit(a,b) | E::Dictionary(a,b) | E::SequenceAppend(a,b) | E::SequenceJoin(a,b) | E::Apply(a,b) | E::SequenceDrop(a,b) | E::Concatenate(a,b) | E::Equal(a,b) | E::GreaterThan(a,b) | E::LessThanOrEqual(a,b) | E::Add(a,b) | E::Subtract(a,b) | E::Multiply(a,b) | E::Divide(a,b) | E::ContainsText(a,b) | E::StartsWith(a,b) => { foreign_modules(a,modules); foreign_modules(b,modules); }
         E::Require(a,b,c) | E::Conditional(a,b,c) => { foreign_modules(a,modules); foreign_modules(b,modules); foreign_modules(c,modules); }
         E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceSort(value) | E::SequenceCount(value) | E::ScalarText(value) | E::Field(value,_) | E::SquareRoot(value) | E::TextTransform(_,value) => foreign_modules(value,modules),
         _ => {}

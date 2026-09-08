@@ -1320,6 +1320,7 @@ fn lower_canonical_expression(
         CanonicalExecutableExpressionV1::SequenceDrop(a, b) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::SequenceDrop(a, b) }
         CanonicalExecutableExpressionV1::Field(a, field) => ExecutableExpressionV1::Field(Box::new(lower_canonical_expression(a, slots, depth + 1)?), field.clone()),
         CanonicalExecutableExpressionV1::Require(a, b, c) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::Require(a, b, Box::new(lower_canonical_expression(c, slots, depth + 1)?)) }
+        CanonicalExecutableExpressionV1::Lambda { .. } | CanonicalExecutableExpressionV1::Apply(..) => return Err(ExecutableErrorV1::UnboundForeign),
         CanonicalExecutableExpressionV1::Foreign { binding, arguments } => {
             if binding.evaluation != clause_package::CanonicalForeignEvaluationV1::Attempt { return Err(ExecutableErrorV1::UnboundForeign); }
             ExecutableExpressionV1::Foreign { binding: binding.clone(), arguments: arguments.iter().map(|v| lower_canonical_expression(v, slots, depth + 1)).collect::<Result<_, _>>()? }
@@ -1913,6 +1914,8 @@ fn lower_scalar_expression(
     Ok(match expression {
         CanonicalScalarExpressionV1::TextCharacters(_) | CanonicalScalarExpressionV1::TextSplit(..) | CanonicalScalarExpressionV1::ParseIntegerPrefix(_) | CanonicalScalarExpressionV1::Match { .. } | CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceMap { .. } | CanonicalScalarExpressionV1::SequenceFold { .. } | CanonicalScalarExpressionV1::SequenceAppend(..) | CanonicalScalarExpressionV1::SequenceSort(_) | CanonicalScalarExpressionV1::SequenceCount(_) | CanonicalScalarExpressionV1::ScalarText(_) | CanonicalScalarExpressionV1::SequenceJoin(..) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Call { .. }
+        | CanonicalScalarExpressionV1::Lambda { .. }
+        | CanonicalScalarExpressionV1::Apply(..)
         | CanonicalScalarExpressionV1::StaticFieldPath(_)
         | CanonicalScalarExpressionV1::Dictionary(..)
         | CanonicalScalarExpressionV1::RecordAt(..)

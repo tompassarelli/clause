@@ -342,6 +342,14 @@ Live source tooling offers an explicit checked scalar-effect replacement, not ar
     ] {
         writeln!(card, "`{path}`\n\n```clause\n{source}```\n").expect("writing to a String cannot fail");
     }
+    card.push_str("\n## Delayed typed function values\n\n`Function<Argument, Result>` inside a delayed contract describes a checked function value. `(?home: Delayed<nix,HomeModuleArguments>) => body` binds the target argument only inside its body. Field selection and application retain exact contracts and target identity; mixed targets reject. Delayed Text interpolation remains target construction. These whole modules preserve outer NixOS username and package references while selecting the symlink function and home directory from the inner Home Manager configuration. Native and JavaScript execution do not admit delayed functions.\n\n");
+    for (path, source) in [
+        ("clause:test-vectors/authoring/nested-functions/nixpkgs.clause", include_str!("../../../test-vectors/authoring/nested-functions/nixpkgs.clause")),
+        ("clause:test-vectors/authoring/nested-functions/fastfetch.clause", include_str!("../../../test-vectors/authoring/nested-functions/fastfetch.clause")),
+        ("clause:test-vectors/authoring/nested-functions/tealdeer.clause", include_str!("../../../test-vectors/authoring/nested-functions/tealdeer.clause")),
+    ] {
+        writeln!(card, "`{path}`\n\n```clause\n{source}```\n").expect("writing to a String cannot fail");
+    }
     card.truncate(card.trim_end().len());
     card.push('\n');
     card
