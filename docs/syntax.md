@@ -353,6 +353,22 @@ The same recursive element and field contracts
 check exported arguments, results, and foreign crossings. Equality compares
 sequence elements in order and record fields structurally.
 
+`characters(text)` returns an ordered `Sequence<Text>` containing one Unicode
+scalar value per element, without normalization; empty Text yields an empty
+sequence. `split-text(text, delimiter)` splits at nonoverlapping literal
+occurrences from left to right and preserves every leading, interior, and
+trailing empty field. An empty delimiter selects the same scalar sequence as
+`characters`. Both arguments are Text. `count` continues to require a sequence.
+
+`parse-integer-prefix(text)` returns `F64 | Text`. It skips leading ECMAScript
+WhiteSpace and LineTerminator characters, accepts an optional ASCII sign, and
+consumes the longest ASCII decimal digit prefix. A finite result is rounded to
+F64, with either zero normalized to zero; no digits or a nonfinite result
+returns the original Text. Trailing text is unconsumed and does not invalidate
+the prefix. Match the alternatives before arithmetic or positivity checks.
+The executable composition is in
+[clause:test-vectors/authoring/text-decomposition.clause](../test-vectors/authoring/text-decomposition.clause).
+
 An explicit contract `Execution | Diagnostic` admits either exact structural
 value type. The alternatives are unordered and must be distinct and disjoint:
 a value cannot satisfy two cases. Records with different field sets are disjoint;

@@ -873,6 +873,9 @@ pub enum ExecutableExpressionV1 {
     Dictionary(Box<Self>, Box<Self>),
     SequenceDrop(Box<Self>, Box<Self>),
     SequenceCount(Box<Self>),
+    TextCharacters(Box<Self>),
+    TextSplit(Box<Self>, Box<Self>),
+    ParseIntegerPrefix(Box<Self>),
     SequenceJoin(Box<Self>, Box<Self>),
     ScalarText(Box<Self>),
     SequenceMap { binding: u16, source: Box<Self>, body: Box<Self> },
@@ -1308,6 +1311,9 @@ fn lower_canonical_expression(
             source: Box::new(lower_canonical_expression(source, slots, depth + 1)?),
             body: Box::new(lower_canonical_expression(body, slots, depth + 1)?),
         },
+        CanonicalExecutableExpressionV1::TextCharacters(value) => ExecutableExpressionV1::TextCharacters(Box::new(lower_canonical_expression(value, slots, depth + 1)?)),
+        CanonicalExecutableExpressionV1::TextSplit(value, delimiter) => ExecutableExpressionV1::TextSplit(Box::new(lower_canonical_expression(value, slots, depth + 1)?), Box::new(lower_canonical_expression(delimiter, slots, depth + 1)?)),
+        CanonicalExecutableExpressionV1::ParseIntegerPrefix(value) => ExecutableExpressionV1::ParseIntegerPrefix(Box::new(lower_canonical_expression(value, slots, depth + 1)?)),
         CanonicalExecutableExpressionV1::SequenceCount(value) => ExecutableExpressionV1::SequenceCount(Box::new(lower_canonical_expression(value, slots, depth + 1)?)),
         CanonicalExecutableExpressionV1::ScalarText(value) => ExecutableExpressionV1::ScalarText(Box::new(lower_canonical_expression(value, slots, depth + 1)?)),
         CanonicalExecutableExpressionV1::SequenceJoin(a, b) => { let (a, b) = pair(a, b)?; ExecutableExpressionV1::SequenceJoin(a, b) }
@@ -1905,7 +1911,7 @@ fn lower_scalar_expression(
         ))
     };
     Ok(match expression {
-        CanonicalScalarExpressionV1::Match { .. } | CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceMap { .. } | CanonicalScalarExpressionV1::SequenceFold { .. } | CanonicalScalarExpressionV1::SequenceAppend(..) | CanonicalScalarExpressionV1::SequenceSort(_) | CanonicalScalarExpressionV1::SequenceCount(_) | CanonicalScalarExpressionV1::ScalarText(_) | CanonicalScalarExpressionV1::SequenceJoin(..) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
+        CanonicalScalarExpressionV1::TextCharacters(_) | CanonicalScalarExpressionV1::TextSplit(..) | CanonicalScalarExpressionV1::ParseIntegerPrefix(_) | CanonicalScalarExpressionV1::Match { .. } | CanonicalScalarExpressionV1::Sequence(_) | CanonicalScalarExpressionV1::Record(_) | CanonicalScalarExpressionV1::SequenceMap { .. } | CanonicalScalarExpressionV1::SequenceFold { .. } | CanonicalScalarExpressionV1::SequenceAppend(..) | CanonicalScalarExpressionV1::SequenceSort(_) | CanonicalScalarExpressionV1::SequenceCount(_) | CanonicalScalarExpressionV1::ScalarText(_) | CanonicalScalarExpressionV1::SequenceJoin(..) | CanonicalScalarExpressionV1::SequenceDrop(..) | CanonicalScalarExpressionV1::Field(..) | CanonicalScalarExpressionV1::Require(..) => return Err(ExecutableErrorV1::MalformedProgram),
         CanonicalScalarExpressionV1::Call { .. }
         | CanonicalScalarExpressionV1::StaticFieldPath(_)
         | CanonicalScalarExpressionV1::Dictionary(..)
@@ -6029,7 +6035,7 @@ fn validate_value_expression(
         }
         E::SequenceFold { source, initial, body, .. } => vec![source, initial, body],
         E::SequenceSort(value) => vec![value],
-        E::SequenceCount(value) | E::ScalarText(value) => vec![value],
+        E::TextCharacters(value) | E::ParseIntegerPrefix(value) | E::SequenceCount(value) | E::ScalarText(value) => vec![value],
         E::Require(a,b,c) => vec![a,b,c],
         E::Foreign { .. } => return Err(ExecutableErrorV1::MalformedProgram),
         E::Let { value, body, .. } | E::SequenceMap { source: value, body, .. } => vec![value, body],
@@ -6064,6 +6070,7 @@ fn validate_value_expression(
         E::RelationRead(a, b)
         | E::StartsWith(a, b)
         | E::ContainsText(a, b)
+        | E::TextSplit(a, b)
         | E::RelationPresent(a, b)
         | E::RelationRemoveRow(a, b)
         | E::Concatenate(a, b)
@@ -6528,6 +6535,29 @@ fn evaluate(
     evaluate_uncached(expression, slots, arguments, context)
 }
 
+fn text_characters(value: ExecutableValueV1) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    let source = value.as_text().ok_or(ExecutableErrorV1::TypeMismatch)?;
+    Ok(ExecutableValueV1::Sequence(source.chars().map(|character| {
+        let mut bytes = [0; 4];
+        ExecutableValueV1::text(character.encode_utf8(&mut bytes))
+    }).collect::<Result<_, _>>()?))
+}
+
+fn parse_integer_prefix(value: ExecutableValueV1) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    let source = value.as_text().ok_or(ExecutableErrorV1::TypeMismatch)?;
+    // Decimal prefix parsing uses ECMAScript WhiteSpace and LineTerminator,
+    // which differ from Unicode White_Space at U+0085 and U+FEFF.
+    let source = source.trim_start_matches(|c| matches!(c,
+        '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}' |
+        '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' |
+        '\u{205f}' | '\u{3000}' | '\u{feff}'));
+    let sign = usize::from(source.starts_with(['+', '-']));
+    let end = sign + source.as_bytes()[sign..].iter().take_while(|b| b.is_ascii_digit()).count();
+    if end == sign { return Ok(value); }
+    let parsed = source[..end].parse::<f64>().map_err(|_| ExecutableErrorV1::NumericDomain)?;
+    if parsed.is_finite() { ExecutableValueV1::number(parsed) } else { Ok(value) }
+}
+
 fn evaluate_uncached(
     expression: &ExecutableExpressionV1,
     slots: &[ExecutableSlotV1],
@@ -6591,6 +6621,17 @@ fn evaluate_uncached(
             }
             Ok(ExecutableValueV1::Sequence(result))
         }
+        E::TextCharacters(value) => text_characters(evaluate(value, slots, arguments, context)?),
+        E::TextSplit(value, delimiter) => {
+            let value = evaluate(value, slots, arguments, context)?;
+            let delimiter = evaluate(delimiter, slots, arguments, context)?;
+            let source = value.as_text().ok_or(ExecutableErrorV1::TypeMismatch)?;
+            let delimiter = delimiter.as_text().ok_or(ExecutableErrorV1::TypeMismatch)?;
+            if delimiter.is_empty() { return text_characters(value); }
+            Ok(ExecutableValueV1::Sequence(source.split(delimiter)
+                .map(ExecutableValueV1::text).collect::<Result<_, _>>()?))
+        }
+        E::ParseIntegerPrefix(value) => parse_integer_prefix(evaluate(value, slots, arguments, context)?),
         E::SequenceCount(value) => {
             let ExecutableValueV1::Sequence(values) = evaluate(value, slots, arguments, context)? else { return Err(ExecutableErrorV1::TypeMismatch); };
             ExecutableValueV1::number(values.len() as f64)
@@ -7257,6 +7298,9 @@ fn encode_expression(
             encode_expression(bytes,source)?; encode_expression(bytes,initial)?; encode_expression(bytes,body)?;
         }
         E::SequenceDrop(a,b) => encode_binary(bytes,39,a,b)?,
+        E::TextCharacters(value) => { bytes.push(50); encode_expression(bytes,value)?; }
+        E::TextSplit(a,b) => encode_binary(bytes,51,a,b)?,
+        E::ParseIntegerPrefix(value) => { bytes.push(52); encode_expression(bytes,value)?; }
         E::SequenceCount(value) => { bytes.push(42); encode_expression(bytes,value)?; }
         E::SequenceJoin(a,b) => encode_binary(bytes,43,a,b)?,
         E::ScalarText(value) => { bytes.push(44); encode_expression(bytes,value)?; }
@@ -7610,6 +7654,9 @@ impl<'a> Decoder<'a> {
                 for _ in 0..count { let length=self.count()?; let name=self.take(length)?.to_vec(); let value=self.expression(next)?; if fields.insert(name,value).is_some() { return Err(ExecutableErrorV1::MalformedProgram); } }
                 E::Record(fields)
             }
+            50 => E::TextCharacters(Box::new(self.expression(next)?)),
+            51 => E::TextSplit(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
+            52 => E::ParseIntegerPrefix(Box::new(self.expression(next)?)),
             42 => E::SequenceCount(Box::new(self.expression(next)?)),
             43 => E::SequenceJoin(Box::new(self.expression(next)?),Box::new(self.expression(next)?)),
             44 => E::ScalarText(Box::new(self.expression(next)?)),
