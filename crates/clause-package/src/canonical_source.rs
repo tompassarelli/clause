@@ -7083,10 +7083,53 @@ impl SourceCardinality {
     }
 }
 
+#[derive(Default)]
+struct SourceTextQuotes {
+    quote: Option<u8>,
+    multiline: bool,
+}
+
+impl SourceTextQuotes {
+    fn without_comment<'a>(&mut self, text: &'a str) -> &'a str {
+        if self.multiline {
+            let trimmed = text.trim_start();
+            if let Some(rest) = trimmed.strip_prefix("\"\"\"") {
+                let rest = rest.trim_start();
+                if rest.is_empty() || rest.starts_with('#') {
+                    self.multiline = false;
+                    return &text[..text.len() - trimmed.len() + 3];
+                }
+            }
+            return text;
+        }
+        let bytes = text.as_bytes();
+        let mut cursor = 0;
+        while cursor < bytes.len() {
+            if self.quote.is_some() && bytes[cursor] == b'\\' {
+                cursor += 2;
+                continue;
+            }
+            if self.quote.is_none() && bytes[cursor..].starts_with(b"\"\"\"") {
+                self.multiline = true;
+                return text;
+            }
+            match (self.quote, bytes[cursor]) {
+                (Some(quote), byte) if quote == byte => self.quote = None,
+                (None, quote @ (b'"' | b'`')) => self.quote = Some(quote),
+                (None, b'#') => return text[..cursor].trim_end(),
+                _ => {}
+            }
+            cursor += 1;
+        }
+        text
+    }
+}
+
 fn source_lines(source: &str) -> Result<Vec<SourceLine<'_>>, CanonicalSourceErrorV1> {
     let bytes = source.as_bytes();
     let mut lines = Vec::new();
     let mut start = 0;
+    let mut quotes = SourceTextQuotes::default();
     while start < bytes.len() {
         let newline = bytes[start..]
             .iter()
@@ -7096,7 +7139,7 @@ fn source_lines(source: &str) -> Result<Vec<SourceLine<'_>>, CanonicalSourceErro
         let end = raw_end
             .checked_sub(usize::from(raw_end > start && bytes[raw_end - 1] == b'\r'))
             .expect("line end remains in bounds");
-        let text = &source[start..end];
+        let text = quotes.without_comment(&source[start..end]);
         if let Some(offset) = text.bytes().position(|byte| byte == b'\t') {
             return Err(CanonicalSourceErrorV1::TabIndentation {
                 offset: (start + offset) as u64,
@@ -11560,5 +11603,42 @@ const fn exactly_one() -> CardinalityV2 {
     CardinalityV2 {
         minimum: 1,
         maximum: Some(1),
+    }
+}
+
+#[cfg(test)]
+mod source_comment_tests {
+    use super::*;
+
+    #[test]
+    fn comments_preserve_source_spans_and_quoted_hashes() {
+        let source = "# heading\r\nexport example() # result\r\n  {boot: {\r\n    # π } \" ignored\r\n    enable: true, text: \"a\\\"#b\"}} # tail\r\n";
+        let lines = source_lines(source).unwrap();
+        assert_eq!(lines[0].text, "");
+        assert_eq!(lines[1].text, "export example()");
+        assert_eq!(lines[3].text, "");
+        assert_eq!(lines[4].text, "    enable: true, text: \"a\\\"#b\"}}");
+        for line in &lines {
+            assert_eq!(line.end, source[line.start..].find('\r').unwrap() + line.start);
+        }
+        let cst = read_canonical_source_v1(source.as_bytes()).unwrap();
+        assert_eq!(&*cst.exact_source, source.as_bytes());
+    }
+
+    #[test]
+    fn multiline_text_retains_comment_markers() {
+        let source = "text \"\"\"\n  # literal \"\"\" text\n  \"\"\" # closing\n# comment\n";
+        let lines = source_lines(source).unwrap();
+        assert_eq!(lines[0].text, "text \"\"\"");
+        assert_eq!(lines[1].text, "  # literal \"\"\" text");
+        assert_eq!(lines[2].text, "  \"\"\"");
+        assert_eq!(lines[3].text, "");
+    }
+
+    #[test]
+    fn quoted_designations_retain_comment_markers() {
+        let source = "`a#b` # comment\n";
+        assert_eq!(source_lines(source).unwrap()[0].text, "`a#b`");
+        read_canonical_source_v1(source.as_bytes()).unwrap();
     }
 }
