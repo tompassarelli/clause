@@ -13,9 +13,14 @@ crate-type = ["cdylib", "rlib"]
 clause-package = { path = "../clause-package" }
 getrandom = { version = "=0.3.4", features = ["wasm_js"] }
 sha2 = "=0.10.9"
+wasm-encoder = "=0.254.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+wasmtime = { version = "=48.0.1", default-features = false, features = ["std", "runtime", "winch"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "=0.2.108"
+js-sys = "=0.3.85"
 
 [lints.rust]
 unsafe_code = "forbid"

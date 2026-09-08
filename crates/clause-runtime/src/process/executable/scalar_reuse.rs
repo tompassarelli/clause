@@ -1,11 +1,13 @@
 //! Lazy reuse of equal scalar subexpressions within one fixed substitution.
 use super::*;
+mod compiled_numeric;
 
 pub(super) struct ScalarPlan {
     pub expression: Box<ExecutableExpressionV1>,
     nodes: Vec<(Node, bool, bool)>,
     root: usize,
     instructions: Vec<Instruction>,
+    numeric_query: std::sync::OnceLock<Option<Arc<compiled_numeric::NumericQuery>>>,
 }
 
 enum Node {
@@ -230,7 +232,14 @@ impl ScalarPlan {
         }
         let mut instructions = Vec::new();
         emit_scalar_instructions(root, &nodes, &mut instructions);
-        Ok(Self { expression: Box::new(expression.clone()), nodes, root, instructions })
+        Ok(Self { expression: Box::new(expression.clone()), nodes, root, instructions, numeric_query: std::sync::OnceLock::new() })
+    }
+
+    pub(super) fn compiled_sum(&self, configuration: &[ExecutableSlotV1], arguments: &[ExecutableValueV1],
+        matches: &[(relational::Matched, bool)]) -> Option<Result<f64, ExecutableErrorV1>> {
+        let query = self.numeric_query.get_or_init(|| compiled_numeric::NumericQuery::compile(self)).as_ref()?;
+        let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
+        Some(query.sum(configuration, arguments, matches))
     }
 
     pub fn memo(&self) -> ScalarMemo<'_> {
