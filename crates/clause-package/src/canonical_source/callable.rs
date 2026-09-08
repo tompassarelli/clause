@@ -55,6 +55,8 @@ pub(super) fn foreign_accesses(
     use CanonicalExecutableExpressionV1 as E;
     fn collect(expression: &E, contracts: &mut BTreeSet<CanonicalForeignBindingV1>) {
         match expression {
+            E::Lambda { body, .. } => collect(body, contracts),
+            E::Apply(function, argument) => { collect(function, contracts); collect(argument, contracts); }
             E::Widen { value, .. } => collect(value, contracts),
             E::Match { value, cases } => {
                 collect(value, contracts);
@@ -736,6 +738,12 @@ fn bind_body(
     expansion.consume(origin, depth)?;
     let mut recur = |e| bind_body(e, actual, locals, expansion, origin, depth + 1).map(Box::new);
     Ok(match expression {
+        E::Lambda { binding, kind, body } => {
+            let fresh = expansion.binding(origin)?;
+            let mut nested = locals.clone(); nested.insert(*binding, fresh);
+            E::Lambda { binding: fresh, kind: kind.clone(), body: Box::new(bind_body(body, actual, &nested, expansion, origin, depth + 1)?) }
+        }
+        E::Apply(function, argument) => E::Apply(recur(function)?, recur(argument)?),
         E::Sequence(values) => E::Sequence(
             values
                 .iter()
@@ -917,6 +925,15 @@ fn lower(
     } else { None };
     let record_expected = expected_record.or(expected);
     let lowered = match expression {
+        S::Lambda { binding, kind, body } => {
+            let kind = value_type::resolve(kind, expansion.declarations, &mut BTreeSet::new())
+                .map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
+            kind.check().map_err(|reason| CanonicalSourceErrorV1::InvalidCallable { origin, reason })?;
+            let fresh = expansion.binding(origin)?;
+            let mut nested = locals.clone(); nested.insert(binding.clone(), (fresh, kind.clone()));
+            E::Lambda { binding: fresh, kind, body: Box::new(lower(body, arguments, &nested, static_paths, origin, expansion, depth + 1, mode, None)?) }
+        }
+        S::Apply(function, argument) => E::Apply(recur(function)?, recur(argument)?),
         S::Match { value, cases } => {
             let value = recur(value)?;
             let mut lowered_cases = Vec::new();
@@ -1257,6 +1274,21 @@ fn expression_kind(
         }
     };
     Ok(match expression {
+        E::Lambda { binding, kind, body } => {
+            kind.check()?;
+            let T::Delayed { target, value } = kind else { return Err("target lambda requires a delayed argument contract"); };
+            let mut nested = bindings.clone();
+            if nested.insert(*binding, kind.clone()).is_some() { return Err("duplicate lexical binding"); }
+            let result = expression_kind(body, arguments, &nested, depth + 1, CanonicalCallableModeV1::Function)?;
+            let result = result.constructed_value(target)?;
+            T::Delayed { target: target.clone(), value: Box::new(T::Function { argument: value.clone(), result: Box::new(result) }) }
+        }
+        E::Apply(function, argument) => {
+            let T::Delayed { target, value } = recur(function)? else { return Err("application requires a delayed function"); };
+            let T::Function { argument: expected, result } = *value else { return Err("application requires a function contract"); };
+            if recur(argument)?.constructed_value(&target)? != *expected { return Err("function argument type mismatch"); }
+            T::Delayed { target, value: result }
+        }
         E::Widen { value, kind } => {
             kind.check()?;
             let T::Alternatives(_) = kind else { return Err("inclusion requires an alternative contract"); };
@@ -1387,10 +1419,11 @@ fn expression_kind(
             K::Text.into()
         }
         E::ScalarText(value) => {
-            if !matches!(recur(value)?, T::Scalar(K::Text | K::Boolean | K::Number)) {
-                return Err("interpolation requires Text, Bool or F64");
+            match recur(value)? {
+                T::Scalar(K::Text | K::Boolean | K::Number) => K::Text.into(),
+                T::Delayed { target, value } if *value == T::Scalar(K::Text) => T::Delayed { target, value },
+                _ => return Err("interpolation requires Text, Bool or F64"),
             }
-            K::Text.into()
         }
         E::SequenceDrop(value, count) => {
             require(count, &K::Number.into())?;
@@ -1401,10 +1434,14 @@ fn expression_kind(
             kind
         }
         E::Field(value, field) => {
-            let T::Record(fields) = recur(value)? else {
-                return Err("field requires a record");
-            };
-            fields.get(field).ok_or("unknown record field")?.clone()
+            match recur(value)? {
+                T::Record(fields) => fields.get(field).ok_or("unknown record field")?.clone(),
+                T::Delayed { target, value } => {
+                    let T::Record(fields) = *value else { return Err("field requires a record"); };
+                    T::Delayed { target, value: Box::new(fields.get(field).ok_or("unknown record field")?.clone()) }
+                }
+                _ => return Err("field requires a record"),
+            }
         }
         E::Require(condition, value, message) => {
             require(condition, &K::Boolean.into())?;
@@ -1427,14 +1464,25 @@ fn expression_kind(
             }
             binding.result.clone()
         }
-        E::Concatenate(a, b) | E::ContainsText(a, b) | E::StartsWith(a, b) => {
+        E::Concatenate(a, b) => {
+            let a = recur(a)?;
+            let b = recur(b)?;
+            let target = match (&a, &b) {
+                (T::Delayed { target, .. }, _) | (_, T::Delayed { target, .. }) => Some(target.clone()),
+                _ => None,
+            };
+            if let Some(target) = target {
+                if a.constructed_value(&target)? != T::Scalar(K::Text) || b.constructed_value(&target)? != T::Scalar(K::Text) { return Err("concatenation requires Text"); }
+                T::Delayed { target, value: Box::new(K::Text.into()) }
+            } else {
+                if a != T::Scalar(K::Text) || b != T::Scalar(K::Text) { return Err("concatenation requires Text"); }
+                K::Text.into()
+            }
+        }
+        E::ContainsText(a, b) | E::StartsWith(a, b) => {
             require(a, &K::Text.into())?;
             require(b, &K::Text.into())?;
-            if matches!(expression, E::Concatenate(..)) {
-                K::Text.into()
-            } else {
-                K::Boolean.into()
-            }
+            K::Boolean.into()
         }
         E::TextCharacters(a) => {
             require(a, &K::Text.into())?;

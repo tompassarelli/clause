@@ -1,0 +1,10 @@
+export script(): Text
+  """
+  echo "ready" # retained
+    printf '%s\\n' "${HOME:-}" "{?literal}" "$@"
+
+  case "$1" in *) echo '\\path' ;; esac
+  """
+
+export wrapped()
+  {script: script()}

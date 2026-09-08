@@ -1,0 +1,8 @@
+foreign package-text(): Text
+  construction: "nix"
+  get: "name"
+  from: "pkgs"
+  failure: throw
+
+export interpolate()
+  "Driver = {package-text()}/lib/driver.so\n"

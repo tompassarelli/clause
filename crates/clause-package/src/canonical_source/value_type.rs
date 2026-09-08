@@ -7,6 +7,7 @@ pub enum CanonicalValueTypeV1 {
     Scalar(CanonicalScalarValueKindV1),
     Delayed { target: String, value: Box<Self> },
     OpaqueForeign { module: String, name: String },
+    Function { argument: Box<Self>, result: Box<Self> },
     Sequence(Box<Self>),
     Dictionary(Box<Self>),
     Record(BTreeMap<Vec<u8>, Self>),
@@ -29,6 +30,11 @@ impl CanonicalValueTypeV1 {
             return Err("value type depth limit");
         }
         match self {
+            Self::Function { argument, result } => {
+                if !delayed { return Err("function values require a delayed target contract"); }
+                argument.check_at(depth + 1, true)?;
+                result.check_at(depth + 1, true)
+            }
             CanonicalValueTypeV1::Scalar(
                 CanonicalScalarValueKindV1::Sequence | CanonicalScalarValueKindV1::Record,
             ) => Err("composite value requires its recursive contract"),
@@ -89,6 +95,7 @@ impl CanonicalValueTypeV1 {
     }
     pub fn contains_delayed(&self) -> bool {
         match self {
+            Self::Function { argument, result } => argument.contains_delayed() || result.contains_delayed(),
             Self::Delayed { .. } | Self::OpaqueForeign { .. } => true,
             Self::Sequence(value) | Self::Dictionary(value) => value.contains_delayed(),
             Self::Record(fields) => fields.values().any(Self::contains_delayed),
@@ -98,6 +105,7 @@ impl CanonicalValueTypeV1 {
     }
     pub fn in_target(&self, target: &str) -> bool {
         match self {
+            Self::Function { argument, result } => argument.in_target(target) && result.in_target(target),
             Self::Delayed { target: actual, value } => actual == target && value.in_target(target),
             Self::Sequence(value) | Self::Dictionary(value) => value.in_target(target),
             Self::Record(fields) => fields.values().all(|value| value.in_target(target)),
@@ -293,6 +301,13 @@ pub(super) fn resolve<Item: std::borrow::Borrow<CstItem>>(
     if let Some(kind) = scalar {
         return Ok(kind.into());
     }
+    if let Some(body) = source.strip_prefix("Function<").and_then(|s| s.strip_suffix('>')) {
+        let (argument, result) = function_parts(body).ok_or("function contract needs argument and result")?;
+        return Ok(CanonicalValueTypeV1::Function {
+            argument: Box::new(resolve(argument.trim().as_bytes(), items, active)?),
+            result: Box::new(resolve(result.trim().as_bytes(), items, active)?),
+        });
+    }
     if let Some(body) = name.strip_prefix(b"Delayed<").and_then(|s| s.strip_suffix(b">")) {
         let comma = body.iter().position(|b| *b == b',').ok_or("delayed contract needs target and value")?;
         let target = std::str::from_utf8(&body[..comma]).map_err(|_| "invalid target")?.trim().to_owned();
@@ -345,6 +360,10 @@ pub(super) fn designation(source: &str, origin: CanonicalSourceOriginV1) -> Resu
     let parts = alternatives(source);
     if parts.len() > 1 {
         for part in parts { designation(part.trim(), origin)?; }
+    } else if let Some(inner) = source.strip_prefix("Function<").and_then(|s| s.strip_suffix('>')) {
+        let (argument, result) = function_parts(inner).ok_or(CanonicalSourceErrorV1::InvalidApplication { origin })?;
+        designation(argument.trim(), origin)?;
+        designation(result.trim(), origin)?;
     } else if let Some(inner) = source.strip_prefix("Dictionary<").and_then(|s| s.strip_suffix('>')) {
         designation(inner, origin)?;
     } else if let Some(inner) = source.strip_prefix("Sequence<").and_then(|s| s.strip_suffix('>')) {
@@ -357,6 +376,19 @@ pub(super) fn designation(source: &str, origin: CanonicalSourceOriginV1) -> Resu
         application_designation_bytes(source, origin)?;
     }
     Ok(source.as_bytes().to_vec())
+}
+
+fn function_parts(source: &str) -> Option<(&str, &str)> {
+    let mut depth = 0usize;
+    for (index, byte) in source.bytes().enumerate() {
+        match byte {
+            b'<' => depth += 1,
+            b'>' => depth = depth.checked_sub(1)?,
+            b',' if depth == 0 => return Some((&source[..index], &source[index + 1..])),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn alternatives(source: &str) -> Vec<&str> {

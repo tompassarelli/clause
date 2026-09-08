@@ -334,6 +334,9 @@ pub struct CanonicalStateCellV1 {
 /// declared argument ordinals local to the handler, never physical slots.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalExecutableExpressionV1 {
+    /// A checked target function; its argument is bound only inside its body.
+    Lambda { binding: u16, kind: CanonicalValueTypeV1, body: Box<Self> },
+    Apply(Box<Self>, Box<Self>),
     /// Checked inclusion in one explicitly declared disjoint alternative contract.
     Widen { value: Box<Self>, kind: CanonicalValueTypeV1 },
     /// Exhaustive elimination; each payload binding has its exact case contract.
@@ -554,6 +557,8 @@ pub enum CanonicalTextTransformV1 {
 /// Physical state coordinates are deliberately supplied only by refinement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalScalarExpressionV1 {
+    Lambda { binding: Vec<u8>, kind: Vec<u8>, body: Box<Self> },
+    Apply(Box<Self>, Box<Self>),
     Match { value: Box<Self>, cases: Vec<(Vec<u8>, Vec<u8>, Self)> },
     /// Parsed pure definition application; eliminated by checked callable expansion.
     Call { designation: Vec<u8>, arguments: Vec<Self> },
@@ -4658,6 +4663,8 @@ fn canonical_scalar_executable_expression(
         | CanonicalScalarExpressionV1::ParseIntegerPrefix(_)
         | CanonicalScalarExpressionV1::SequenceJoin(_, _)
         | CanonicalScalarExpressionV1::ScalarText(_)
+        | CanonicalScalarExpressionV1::Lambda { .. }
+        | CanonicalScalarExpressionV1::Apply(..)
         | CanonicalScalarExpressionV1::SequenceMap { .. }
         | CanonicalScalarExpressionV1::Match { .. }
         | CanonicalScalarExpressionV1::SequenceFold { .. }
@@ -5064,6 +5071,8 @@ fn relational_scalar_expression(
         | CanonicalScalarExpressionV1::ParseIntegerPrefix(_)
         | CanonicalScalarExpressionV1::SequenceJoin(_, _)
         | CanonicalScalarExpressionV1::ScalarText(_)
+        | CanonicalScalarExpressionV1::Lambda { .. }
+        | CanonicalScalarExpressionV1::Apply(..)
         | CanonicalScalarExpressionV1::SequenceMap { .. }
         | CanonicalScalarExpressionV1::Match { .. }
         | CanonicalScalarExpressionV1::SequenceFold { .. }
@@ -7225,25 +7234,7 @@ fn logical_source_lines(
             });
         }
 
-        let mut body = String::new();
-        for content in &block[cursor + 1..closing_index] {
-            if content.text.trim().is_empty() {
-                body.push('\n');
-                continue;
-            }
-            if content.indent < closing.indent {
-                return Err(CanonicalSourceErrorV1::InvalidMultilineText {
-                    origin: line_origin(artifact, *content),
-                });
-            }
-            body.push_str(content.text.get(closing.indent..).ok_or(
-                CanonicalSourceErrorV1::InvalidMultilineText {
-                    origin: line_origin(artifact, *content),
-                },
-            )?);
-            body.push('\n');
-        }
-        let value = parse_multiline_text_body(&body).ok_or(
+        let value = multiline_text_value(&block[cursor + 1..closing_index], closing.indent).ok_or(
             CanonicalSourceErrorV1::InvalidMultilineText {
                 origin: CanonicalSourceOriginV1 {
                     artifact,
@@ -9232,7 +9223,15 @@ impl ScalarExpressionParser<'_> {
 
     fn primary(&mut self) -> Option<CanonicalScalarExpressionV1> {
         let mut value=self.primary_value()?;
-        while self.interpolate && self.take_exact(b".") {
+        while self.interpolate {
+            self.skip_spaces();
+            if self.take_exact(b"(") {
+                let argument = self.disjunction()?;
+                self.skip_spaces(); self.take_exact(b")").then_some(())?;
+                value = CanonicalScalarExpressionV1::Apply(Box::new(value), Box::new(argument));
+                continue;
+            }
+            if !self.take_exact(b".") { break; }
             let start=self.cursor;
             while self.source.get(self.cursor).is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c,b'-' | b'_')) { self.cursor+=1; }
             if start==self.cursor { return None; }
@@ -9244,6 +9243,36 @@ impl ScalarExpressionParser<'_> {
     fn primary_value(&mut self) -> Option<CanonicalScalarExpressionV1> {
         use CanonicalScalarExpressionV1 as E;
         self.skip_spaces();
+        if self.interpolate && self.source[self.cursor..].starts_with(b"\"\"\"") {
+            let source = std::str::from_utf8(&self.source[self.cursor..]).ok()?;
+            let lines = source_lines(source).ok()?;
+            if lines.first()?.text.trim() != "\"\"\"" { return None; }
+            let closing = (1..lines.len()).find(|index| lines[*index].text.trim() == "\"\"\"")?;
+            let line_start = self.source[..self.cursor].iter().rposition(|b| *b == b'\n').map_or(0, |index| index + 1);
+            let indent = self.source[line_start..self.cursor].iter().take_while(|b| **b == b' ').count();
+            if lines[closing].indent < indent { return None; }
+            let value = multiline_text_value(&lines[1..closing], lines[closing].indent)?;
+            self.cursor += lines[closing].end;
+            return Some(E::Text(value));
+        }
+        if self.interpolate && self.source.get(self.cursor..self.cursor + 2) == Some(b"(?") {
+            let saved = self.cursor;
+            self.cursor += 1;
+            let start = self.cursor;
+            self.cursor += 1;
+            while self.source.get(self.cursor).is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_')) { self.cursor += 1; }
+            let binding = self.source[start..self.cursor].to_vec();
+            self.skip_spaces();
+            if self.take_exact(b":") {
+                let start = self.cursor;
+                while self.source.get(self.cursor) != Some(&b')') { self.source.get(self.cursor)?; self.cursor += 1; }
+                let kind = std::str::from_utf8(&self.source[start..self.cursor]).ok()?.trim().as_bytes().to_vec();
+                self.cursor += 1;
+                self.skip_spaces(); self.take_exact(b"=>").then_some(())?;
+                return Some(E::Lambda { binding, kind, body: Box::new(self.disjunction()?) });
+            }
+            self.cursor = saved;
+        }
         if self.interpolate && self.take_exact(b"match(") {
             let value = Box::new(self.disjunction()?);
             let mut cases = Vec::new();
@@ -9481,7 +9510,7 @@ impl ScalarExpressionParser<'_> {
         let atom = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
         if self.interpolate {
             self.skip_spaces();
-            if self.take_exact(b"(") {
+            if !atom.starts_with('?') && self.take_exact(b"(") {
                 let mut arguments = Vec::new();
                 self.skip_spaces();
                 if !self.take_exact(b")") {
@@ -9594,6 +9623,15 @@ fn collect_scalar_expression_parameters(
     parameters: &mut BTreeSet<Vec<u8>>,
 ) {
     match expression {
+        CanonicalScalarExpressionV1::Lambda { binding, body, .. } => {
+            let mut nested = BTreeSet::new();
+            collect_scalar_expression_parameters(body, &mut nested);
+            nested.remove(binding); parameters.extend(nested);
+        }
+        CanonicalScalarExpressionV1::Apply(function, argument) => {
+            collect_scalar_expression_parameters(function, parameters);
+            collect_scalar_expression_parameters(argument, parameters);
+        }
         CanonicalScalarExpressionV1::Match { value, cases } => {
             collect_scalar_expression_parameters(value, parameters);
             for (_, binding, body) in cases {
@@ -10044,6 +10082,18 @@ fn parse_text_literal(source: &str) -> Option<String> {
 
 fn parse_multiline_text_body(source: &str) -> Option<String> {
     parse_text_contents(source, true)
+}
+
+fn multiline_text_value(lines: &[SourceLine<'_>], margin: usize) -> Option<String> {
+    let mut body = String::new();
+    for line in lines {
+        if !line.text.trim().is_empty() {
+            if line.indent < margin { return None; }
+            body.push_str(line.text.get(margin..)?);
+        }
+        body.push('\n');
+    }
+    parse_multiline_text_body(&body)
 }
 
 fn parse_text_contents(source: &str, multiline: bool) -> Option<String> {
@@ -11149,6 +11199,8 @@ fn scalar_expression_matches_kind(
         | CanonicalScalarExpressionV1::ParseIntegerPrefix(_)
         | CanonicalScalarExpressionV1::SequenceJoin(_, _)
         | CanonicalScalarExpressionV1::ScalarText(_)
+        | CanonicalScalarExpressionV1::Lambda { .. }
+        | CanonicalScalarExpressionV1::Apply(..)
         | CanonicalScalarExpressionV1::SequenceMap { .. }
         | CanonicalScalarExpressionV1::Match { .. }
         | CanonicalScalarExpressionV1::SequenceFold { .. }

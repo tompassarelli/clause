@@ -34,6 +34,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         source: include_str!("../../../test-vectors/authoring/pure-composition.clause"),
     },
     AuthoringExampleV1 {
+        slug: "multiline-callable",
+        title: "Literal multiline Text in callables",
+        summary: "A triple-quoted callable value uses the same indentation margin, escape decoding, and final-newline semantics as other multiline Text. Quotes, comment markers, braces, and dollar syntax remain literal content; no callable interpolation occurs inside triple quotes. Write a doubled backslash for a literal backslash.",
+        source: include_str!("../../../test-vectors/authoring/multiline-callable.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "callable-outcomes",
         title: "Checked alternative outcomes",
         summary: "An explicit alternative contract such as Execution | Diagnostic accepts either exact value shape. match checks each case binding against its declared alternative, requires every alternative exactly once, and evaluates only the selected body. Missing cases, overlapping alternatives, and invalid payload fields reject. Values retain their ordinary record representation in native invocation and JavaScript; no tag or empty filler fields are needed.",
@@ -339,6 +345,14 @@ Live source tooling offers an explicit checked scalar-effect replacement, not ar
         ("clause:test-vectors/authoring/static-modules/nixpkgs.clause", include_str!("../../../test-vectors/authoring/static-modules/nixpkgs.clause")),
         ("clause:test-vectors/authoring/static-modules/btop.clause", include_str!("../../../test-vectors/authoring/static-modules/btop.clause")),
         ("clause:test-vectors/authoring/static-modules/jq.clause", include_str!("../../../test-vectors/authoring/static-modules/jq.clause")),
+    ] {
+        writeln!(card, "`{path}`\n\n```clause\n{source}```\n").expect("writing to a String cannot fail");
+    }
+    card.push_str("\n## Delayed typed function values\n\n`Function<Argument, Result>` inside a delayed contract describes a checked function value. `(?home: Delayed<nix,HomeModuleArguments>) => body` binds the target argument only inside its body. Field selection and application retain exact contracts and target identity; mixed targets reject. Delayed Text interpolation remains target construction. These whole modules preserve outer NixOS username and package references while selecting the symlink function and home directory from the inner Home Manager configuration. Native and JavaScript execution do not admit delayed functions.\n\n");
+    for (path, source) in [
+        ("clause:test-vectors/authoring/nested-functions/nixpkgs.clause", include_str!("../../../test-vectors/authoring/nested-functions/nixpkgs.clause")),
+        ("clause:test-vectors/authoring/nested-functions/fastfetch.clause", include_str!("../../../test-vectors/authoring/nested-functions/fastfetch.clause")),
+        ("clause:test-vectors/authoring/nested-functions/tealdeer.clause", include_str!("../../../test-vectors/authoring/nested-functions/tealdeer.clause")),
     ] {
         writeln!(card, "`{path}`\n\n```clause\n{source}```\n").expect("writing to a String cannot fail");
     }
