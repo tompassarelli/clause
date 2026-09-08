@@ -1,0 +1,17 @@
+foreign location(): Text
+  construction: "nix"
+  get: root
+  from: "flakeRoot"
+  failure: throw
+
+foreign named-root(): Text
+  construction: "nix"
+  get: "root"
+  from: "config"
+  failure: throw
+
+export root-path()
+  "{location()}/settings.ini"
+
+export member-path()
+  "{named-root()}/settings.ini"

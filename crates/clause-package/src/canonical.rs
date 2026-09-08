@@ -1378,7 +1378,7 @@ impl Wire for CanonicalForeignBindingV1 {
         self.check().map_err(CanonicalEncodeError::InvalidForeignContract)?;
         encoder.blob("foreign module", self.module.as_bytes())?;
         encoder.blob("foreign member", self.member.as_bytes())?;
-        encoder.u8(match self.operation { CanonicalForeignOperationV1::Call => 0, CanonicalForeignOperationV1::Get => 1 });
+        encoder.u8(match self.operation { CanonicalForeignOperationV1::Call => 0, CanonicalForeignOperationV1::Get => 1, CanonicalForeignOperationV1::Root => 2 });
         encoder.u8(match self.failure { CanonicalForeignFailureV1::Throw => 0 });
         match &self.evaluation {
             CanonicalForeignEvaluationV1::Attempt => encoder.u8(0),
@@ -1392,7 +1392,7 @@ impl Wire for CanonicalForeignBindingV1 {
         let invalid=|reason| CanonicalDecodeError::InvalidForeignContract { offset,reason };
         let module=String::from_utf8(cursor.blob()?).map_err(|_| invalid("foreign module must be UTF-8"))?;
         let member=String::from_utf8(cursor.blob()?).map_err(|_| invalid("foreign member must be UTF-8"))?;
-        let operation=match cursor.u8()? { 0 => CanonicalForeignOperationV1::Call, 1 => CanonicalForeignOperationV1::Get, found => return Err(unknown_tag(offset,"foreign operation",found)) };
+        let operation=match cursor.u8()? { 0 => CanonicalForeignOperationV1::Call, 1 => CanonicalForeignOperationV1::Get, 2 => CanonicalForeignOperationV1::Root, found => return Err(unknown_tag(offset,"foreign operation",found)) };
         let failure=match cursor.u8()? { 0 => CanonicalForeignFailureV1::Throw, found => return Err(unknown_tag(offset,"foreign failure",found)) };
         let evaluation=match cursor.u8()? {
             0 => CanonicalForeignEvaluationV1::Attempt,

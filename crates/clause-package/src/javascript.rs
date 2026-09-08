@@ -320,6 +320,7 @@ impl Lowerer<'_> {
                 let values=arguments.iter().zip(&binding.arguments).map(|(value,kind)| self.expression(value,Some(callable_type(kind)?)).map(|v| v.0)).collect::<Result<Vec<_>>>()?;
                 let member=format!("{}[{}]",foreign_name(&binding.module),quote(&binding.member));
                 let value=match binding.operation {
+                    CanonicalForeignOperationV1::Root => return unsupported("JavaScript does not execute delayed root construction"),
                     CanonicalForeignOperationV1::Get => member,
                     CanonicalForeignOperationV1::Call => format!("(0,{member})({})",values.join(",")),
                 };

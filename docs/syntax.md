@@ -509,6 +509,23 @@ boundary. Call, record, sequence, and strict lexical binding syntax are unchange
 A strict binding constructs its value once; it does not force the eventual Nix
 value. The `throw` contract now describes failure at target evaluation.
 
+Bare `get: root` refers to the external root itself, without selecting a member.
+It requires delayed construction and takes no arguments; quoted `get: "root"`
+continues to select an ordinary member named `root`. The declared result is the
+eventual value contract, and the target retains the actual root value, including
+Nix path coercion when interpolated into Text:
+
+```clause
+foreign location(): Text
+  construction: "nix"
+  get: root
+  from: "flakeRoot"
+  failure: throw
+
+export settings-path()
+  "{location()}/settings.ini"
+```
+
 Foreign opaque values identify the external type, rather than pretending it is
 a Clause scalar or structural record:
 

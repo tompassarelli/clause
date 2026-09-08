@@ -301,7 +301,7 @@ pub(super) fn read(
             return Err(error("foreign module and member must be nonempty identifiers"));
         }
         match &member {
-            foreign::MemberCst::Exact(member) if member.is_empty() || member.contains('\0') =>
+            foreign::MemberCst::Exact(member) if (member.is_empty() && operation != CanonicalForeignOperationV1::Root) || member.contains('\0') =>
                 return Err(error("foreign module and member must be nonempty identifiers")),
             foreign::MemberCst::StaticFieldPath(name) => {
                 if !matches!(evaluation, CanonicalForeignEvaluationV1::Construct { .. }) {
@@ -313,7 +313,7 @@ pub(super) fn read(
             }
             _ => {}
         }
-        if operation == CanonicalForeignOperationV1::Get && arguments.iter().any(|a| a.value_kind().is_some()) {
+        if operation != CanonicalForeignOperationV1::Call && arguments.iter().any(|a| a.value_kind().is_some()) {
             return Err(error("foreign property access takes no arguments"));
         }
         CallableBodyCst::Foreign { evaluation, operation, failure, module, member }
