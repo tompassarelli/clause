@@ -246,6 +246,47 @@ test.test("cartridge byte custody survives mutation of the producer's array", ()
   expect(actual).toHaveLength(1);
 });
 
+test.test("source continuity decodes the complete CSC1 map with exact identities and bounds", () => {
+  const bytes = [67, 83, 67, 49, ...identity(1), ...identity(2)];
+  append_u32_bang(bytes, 2); append_u32_bang(bytes, 2);
+  for (const [old, next, first, occurrence] of [[0xffffffff, 19, 23, 3], [17, 0, 0xffffffff, 4]]) {
+    append_u32_bang(bytes, old); append_u32_bang(bytes, next);
+    bytes.push(...identity(5)); append_u32_bang(bytes, first); bytes.push(...identity(occurrence));
+  }
+  bytes.push(0, 0, 255, 255, 255, 255, 0, 0);
+  let current = new Uint8Array(bytes);
+  const module = { ...module_for_bang([opened_event_bang()], []),
+    clause_session_v1_project_bulk: () => new Uint8Array(),
+    clause_session_v1_explain_bulk: () => new Uint8Array(),
+    clause_session_v1_intervene_bulk: () => new Uint8Array(),
+    clause_session_v1_source_continuity_bulk: () => current,
+  };
+  const port = wasm["create-wasm-cartridge-port"](module, policy());
+  const started = startSession(port, acceptPackage(port, wasm["->ExactProcessRequest"](minimal_cwr1_bang())).acceptedPackage);
+  const hex = (tag: number) => identity(tag).map(byte => byte.toString(16).padStart(2, "0")).join("");
+  const expected = { "old-snapshot": hex(1), "new-snapshot": hex(2),
+    formations: { "0": {
+      "0": { old: 0xffffffff, new: 19, "occurrence-snapshot": hex(5), "occurrence-coordinate": 23, occurrence: hex(3) },
+      "1": { old: 17, new: 0, "occurrence-snapshot": hex(5), "occurrence-coordinate": 0xffffffff, occurrence: hex(4) },
+    } }, slots: { "0": { "0": 65535 }, "1023": { "63": 0 } },
+  };
+  const actual = wasm.sourceContinuity(module, started.session);
+  expect(actual).toEqual(expected);
+  expect(Object.isFrozen(actual)).toBe(true);
+  current.fill(0);
+  expect(actual).toEqual(expected);
+  for (const malformed of [bytes.slice(0, 75), bytes.slice(0, -1), [...bytes, 0],
+    [0, ...bytes.slice(1)], [...bytes.slice(0, 68), 255, 255, 255, 255, ...bytes.slice(72)],
+    [...bytes.slice(0, -4), 0, 0, 1, 0]]) {
+    current = new Uint8Array(malformed);
+    expect(() => wasm.sourceContinuity(module, started.session)).toThrow();
+  }
+  current = new Uint8Array([...bytes.slice(0, 68), 0, 0, 0, 0, 0, 0, 0, 0]);
+  expect(wasm.sourceContinuity(module, started.session)).toEqual({
+    "old-snapshot": hex(1), "new-snapshot": hex(2), formations: {}, slots: {},
+  });
+});
+
 test.test("cartridge byte custody rejects malformed octets and skipped-blob bounds", () => {
   const port = wasm["create-wasm-cartridge-port"](module_for_bang([], []), policy());
   const invalid: number[][] = [];
@@ -258,6 +299,18 @@ test.test("cartridge byte custody rejects malformed octets and skipped-blob boun
   for (const source of invalid) {
     port.acceptPackage(wasm["->ExactProcessRequest"](source), result => expect(result._tag).toBe("PackageRejected"));
   }
+});
+
+test.test("byte validation rechecks caller-owned frozen accessors and each length bound", () => {
+  let value = 7;
+  const bytes = [0];
+  Object.defineProperty(bytes, 0, { get: () => value });
+  Object.freeze(bytes);
+  expect(wasm["exact-byte-array?"](bytes, 1)).toBe(true);
+  value = 256;
+  expect(wasm["exact-byte-array?"](bytes, 1)).toBe(false);
+  value = 7;
+  expect(wasm["exact-byte-array?"](bytes, 0)).toBe(false);
 });
 
 function put_identities_bang(bytes: number[], tags: readonly number[]): void {
@@ -297,13 +350,13 @@ function issuance_event_bang(): number[] {
   return bytes;
 }
 
-function admission_event_bang(): number[] {
+function admission_event_bang(frame: readonly number[] = [40, 41, 42]): number[] {
   const bytes = cse_header_bang(4, 5);
   put_identities_bang(bytes, [22, 36, 37, 38, 41, 42, 3]);
   append_u32_bang(bytes, 2);
   bytes.push(1);
   put_identities_bang(bytes, [39]);
-  append_blob_bang(bytes, [40, 41, 42]);
+  append_blob_bang(bytes, frame);
   return bytes;
 }
 
@@ -648,6 +701,9 @@ test["test"]("projected relation contracts retain required participation", () =>
   expect(() => decode(4)).toThrow("invalid projected relation cardinality");
   expect(() => decode(3, [2, 3])).toThrow("invalid projected row cardinality");
   expect(() => decode(3, [])).toThrow("invalid projected row cardinality");
+  for (const value of [-0, NaN, Infinity, -Infinity]) {
+    expect(() => decode(0, [value])).toThrow("CWO1 number is not canonical finite f64");
+  }
 });
 
 test["test"]("projected Text realizes exact UTF-8", () => {
@@ -662,6 +718,26 @@ test["test"]("projected Text realizes exact UTF-8", () => {
       projected_atom("clause/process-projected-text-v1", [255]),
     ),
   ).toThrow("projected Text is not canonical UTF-8");
+});
+
+test["test"]("projected frame reuse requires exact validated Atom bytes", () => {
+  const frame = (value: number) => projected_atom(
+    "clause/process-projected-referent-v1", [1, 0, 0, 0, 0, value, 0, 0, 0],
+  );
+  const text = (bytes: readonly number[]) => bytes.map(byte => String.fromCharCode(byte)).join("");
+  const original = wasm["decode-projected-term-frame"](text(frame(2)));
+  expect(wasm["decode-projected-term-frame"](text(frame(2)))).toBe(original);
+  const changed = wasm["decode-projected-term-frame"](text(frame(3)));
+  expect(changed).toEqual(wasm["decode-projected-term-frame"](frame(3)));
+  expect(changed).not.toEqual(original);
+  expect(Object.isFrozen(changed)).toBe(true);
+  const malformed = projected_atom("clause/process-projected-referent-v1", [1, 0, 0, 0, 2, 3, 0, 0, 0]);
+  expect(() => wasm["decode-projected-term-frame"](text(malformed))).toThrow("projected referent is malformed");
+  expect(() => wasm["decode-projected-term-frame"](text(frame(3)) + "x")).toThrow("trailing bytes");
+  const mutable = frame(4);
+  const before = wasm["decode-projected-term-frame"](mutable);
+  mutable[mutable.length - 5] = 5;
+  expect(wasm["decode-projected-term-frame"](mutable)).not.toEqual(before);
 });
 
 test["test"](
@@ -819,6 +895,22 @@ test["test"](
     );
   },
 );
+
+test.test("admitted bulk snapshot preserves every octet after producer mutation", () => {
+  const bytes = Array.from({ length: 256 }, (_, index) => index);
+  const module = module_for_bang([opened_event_bang(), input_event_bang(), candidate_event_bang(),
+    issuance_event_bang(), admission_event_bang(bytes)], []);
+  let producer = new Uint8Array(0);
+  const port = wasm["create-wasm-cartridge-port"]({ ...module,
+    clause_session_v1_event_bulk: () => (producer = new Uint8Array(module.clause_session_v1_event_bulk())),
+  }, arena_policy());
+  const accepted = acceptPackage(port, wasm["->ExactProcessRequest"](minimal_cwr1_bang()));
+  const started = startSession(port, accepted.acceptedPackage);
+  const candidate = runCandidate(port, started.session, key_configuration(1, 1, "KeyD"));
+  const admitted = admitCandidate(port, started.session, candidate.candidate);
+  producer.fill(0);
+  expect(JSON.parse(JSON.stringify(admitted.frame))).toEqual(bytes);
+});
 
 test["test"](
   "persistent session open and command requests retain distinct byte envelopes",
@@ -1671,3 +1763,103 @@ test["test"](
       return null;
     }),
 );
+
+
+test.test("source preparation uses captured custody without advancing sequence", () => {
+  const requests: number[][] = [];
+  const calls: unknown[][] = [];
+  let status = 0;
+  const module = {
+    ...module_for_bang([opened_event_bang(), cse_header_bang(1, 6)], requests),
+    clause_session_v1_prepare_source(slot: number, generation: number, sequence: bigint, bytes: Uint8Array) {
+      calls.push([slot, generation, sequence, [...bytes]]);
+      bytes.fill(0);
+      return status;
+    },
+  };
+  const port = wasm["create-wasm-cartridge-port"](module, policy());
+  const started = startSession(port, acceptPackage(port, wasm["->ExactProcessRequest"](minimal_cwr1_bang())).acceptedPackage);
+  const bytes = wasm.decodeSourcePreparationHex("43505331ff");
+  wasm.prepareSourceSession(module, started.session, bytes);
+  wasm.prepareSourceSession(module, started.session, bytes);
+  expect(calls).toEqual([[0, 1, 0n, [67, 80, 83, 49, 255]], [0, 1, 0n, [67, 80, 83, 49, 255]]]);
+  expect(bytes).toEqual([67, 80, 83, 49, 255]);
+  status = 3;
+  expect(() => wasm.prepareSourceSession(module, started.session, bytes)).toThrow("checked source preparation rejected: 3");
+  expect(() => wasm.prepareSourceSession(module, started.session, [256])).toThrow("source preparation exceeds bound");
+  port.disposeSession(started.session);
+  expect(() => wasm.prepareSourceSession(module, started.session, bytes)).toThrow("Wasm session is disposed");
+});
+
+
+test.test("compact scalar edits dispatch only the transaction with captured custody", () => {
+  const requests: number[][] = [];
+  const calls: unknown[][] = [];
+  const module = {
+    ...module_for_bang([opened_event_bang(), cse_header_bang(1, 6)], requests),
+    clause_session_v1_scalar_edit_bulk(slot: number, generation: number, sequence: bigint, bytes: Uint8Array) {
+      calls.push([slot, generation, sequence, [...bytes]]);
+      bytes.fill(0);
+      return 3;
+    },
+    clause_session_v1_source_edit_bulk() { throw new Error("scalar edit dispatched as structural edit"); },
+  };
+  const port = wasm["create-wasm-cartridge-port"](module, policy());
+  const request = wasm["->ExactProcessRequest"](minimal_cwr1_bang());
+  const started = startSession(port, acceptPackage(port, request).acceptedPackage);
+  const transaction = wasm["decode-cet1-hex"]("43455831ff");
+  const first = wasm.editSourceSession(module, started.session, 2, request, transaction, policy());
+  expect(first._tag).toBe("SessionFailed");
+  if (first._tag === "SessionFailed") expect(first.reason).toContain("checked source edit rejected: 3");
+  expect(wasm.editSourceSession(module, started.session, 2, request, transaction, policy())._tag).toBe("SessionFailed");
+  expect(calls).toEqual([[0, 1, 0n, [67, 69, 88, 49, 255]], [0, 1, 0n, [67, 69, 88, 49, 255]]]);
+  expect(transaction).toEqual([67, 69, 88, 49, 255]);
+  port.disposeSession(started.session);
+});
+
+
+test.test("direct hex request custody preserves every octet and strict transport checks", () => {
+  const bytes = minimal_cwr1_bang();
+  const hex = bytes.map(byte => byte.toString(16).padStart(2, "0")).join("");
+  const request = wasm.decodeProcessRequestHex(hex);
+  expect(typeof request.bytes).toBe("string");
+  expect(Object.isFrozen(request)).toBe(true);
+  const port = wasm["create-wasm-cartridge-port"](module_for_bang([opened_event_bang(), cse_header_bang(1, 6)], []), policy());
+  const started = startSession(port, acceptPackage(port, request).acceptedPackage);
+  port.disposeSession(started.session);
+  const octets = wasm.decodeProcessRequestHex(Array.from({length: 256}, (_, byte) => byte.toString(16).padStart(2, "0")).join(" "));
+  expect(typeof octets.bytes === "string" && Array.from(octets.bytes, value => value.charCodeAt(0))).toEqual(Array.from({length:256}, (_, byte) => byte));
+  expect(() => wasm.decodeProcessRequestHex("0")).toThrow("incomplete byte");
+  expect(() => wasm.decodeProcessRequestHex("AA")).toThrow("non-hex unit");
+  expect(() => wasm.decodeProcessRequestHex(" ")).toThrow("empty");
+  expect(() => wasm.decodeProcessRequestHex("00".repeat(4 * 1024 * 1024 + 1))).toThrow("byte bound");
+});
+
+
+test.test("projection cursor preserves object field custody and rejects malformed tails", () => {
+  const text = (value: string) => projected_atom_node("clause/process-projected-text-v1", [...new TextEncoder().encode(value)]);
+  const end = projected_atom_node("clause/js-object-end-v1", []);
+  const field = (key: string, value: number[], rest: number[]) => projected_triple_node(
+    projected_atom_node("clause/js-field-v1", [...new TextEncoder().encode(key)]), value, rest);
+  const frame = (term: number[]) => new Array<number>(64).fill(0).concat(term);
+  const valid = field("__proto__", text("ordinary"), field("constructor", text("data"), end));
+  const projected = wasm["decode-projected-term-frame"](frame(valid));
+  if (typeof projected !== "object" || projected === null) throw new Error("expected projected object");
+  expect(Object.getPrototypeOf(projected)).toBe(Object.prototype);
+  expect(Object.hasOwn(projected, "__proto__")).toBe(true);
+  expect(Object.isFrozen(projected)).toBe(true);
+  expect(projected).toEqual(JSON.parse('{"__proto__":"ordinary","constructor":"data"}'));
+  const binary = (bytes: readonly number[]) => bytes.map(byte => String.fromCharCode(byte)).join("");
+  const reused = wasm["decode-projected-term-frame"](binary(frame(valid)));
+  expect(wasm["decode-projected-term-frame"](binary(frame(valid)))).toBe(reused);
+  expect(() => wasm["decode-projected-term-frame"](binary(frame(valid)) + "x")).toThrow("trailing bytes");
+  const changed = field("__proto__", text("updated!"), field("constructor", text("data"), end));
+  expect(wasm["decode-projected-term-frame"](binary(frame(changed))))
+    .toEqual(JSON.parse('{"__proto__":"updated!","constructor":"data"}'));
+  expect(() => wasm["decode-projected-term-frame"](frame(field("x", text("a"), field("x", text("b"), end))))).toThrow("duplicated");
+  expect(() => wasm["decode-projected-term-frame"](frame(field("x", text("a"), projected_atom_node("clause/js-array-end-v1", []))))).toThrow("invalid terminator");
+  expect(() => wasm["decode-projected-term-frame"](frame(valid).concat(0))).toThrow("trailing bytes");
+  const malformed = frame(valid); malformed[malformed.length - 1] = 1;
+  expect(() => wasm["decode-projected-term-frame"](malformed)).toThrow("equality contract");
+  expect(() => wasm["decode-projected-term-frame"](binary(malformed))).toThrow("equality contract");
+});

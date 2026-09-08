@@ -65,12 +65,20 @@ Runtime-created referent occurrence bytes are retained while domain addresses
 are mapped. Unstructured `hot_reload` remains a fresh import.
 
 The new generation's CWR1 is a compiler artifact, **not** the native compiler
-process's live browser world. `last_source_edit()` returns a CET1 witness with
-the exact old source/root, selected frontend declarations, new root, selected
+process's live browser world. `last_source_edit()` returns a CET3 scalar-edit
+witness (CET4 for an explicit item replacement) with the exact old source/root,
+exact imported sources, selected frontend declarations, new root, selected
 identities and field path, replacement expression, and old/new CPP1. Witness checking uses
 that same declared grammar. No host configuration is included. Its aggregate
 envelope is 16 MiB; source, frontend, expression, and CPP1 constituents retain
 their own format-specific bounds.
+
+`source_preparation()` returns a CPS2 capsule carrying the same exact import
+map alongside the source, frontend, and compiled bindings. An independent
+runtime checks those sources before accepting preparation or an edit;
+substituting an import rejects even when the root source is unchanged. The
+import map is ordered and length-bounded, and travels as compiler evidence,
+not host state. These formats require the matching compiler and runtime.
 
 `exact_source()` immutably borrows the exact checked source installed in the
 current native workbench generation. After an accepted edit, persist these
@@ -107,7 +115,7 @@ let attack_entry = clause_runtime::decode_executable_occurrence_v1(
 ```
 
 The handler designation in this example is a consumer request, not compiler
-dispatch. Send the new CWR1, CET1 and compiler-resolved diagnostic entries as
+dispatch. Send the new CWR1, source-edit witness and compiler-resolved diagnostic entries as
 opaque transport data. Do not send the native process's configuration. Preserve
 the old compiler generation until a changed operation has successfully checked;
 no-op and rejected operations preserve it. `last_source_edit()` retains the last
@@ -131,7 +139,7 @@ rejects changed edits with a hidden candidate, so do not use reload as candidate
 disposal. In the current synchronous Wasm port, candidate and Admission finish
 within their callback turn; still check the workbench phase and pending host
 queue at the consumer boundary. Install a single generation-paired pending edit,
-not a global fallback to CET1 for every reload. Clear it after completion.
+not a global source-edit fallback for every reload. Clear it after completion.
 `reloadPackage` provides workbench generation fencing and retirement. Preserve
 the last displayed admitted frame when it sees the replacement's empty bootstrap
 frame; the next ordinary tick, candidate and Admission render the carried world.

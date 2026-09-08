@@ -194,8 +194,8 @@ pub struct RevisionJudgmentAuthorityGrant {
 ///
 /// Its fields are private and its constructor is crate-visible so untrusted
 /// package users cannot promote arbitrary bytes to a checked snapshot claim.
-/// Formation/checking owns construction; this module revalidates the claimed
-/// content-derived snapshot identity before retaining it.
+/// Formation/checking owns construction; this module binds the exact checked
+/// snapshot bytes and identity before retaining them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedSnapshotAuthorityInput {
     package: ProcessPackageId,
@@ -249,7 +249,17 @@ impl CheckedSnapshotAuthorityInput {
         judgment_authority_grants: Vec<RevisionJudgmentAuthorityGrant>,
         constitution: Option<&ResolvedProgramConstitutionV2>,
     ) -> Result<Self, AuthorityError> {
-        let derived = derive_program_snapshot_id(semantics, &canonical_snapshot_preimage);
+        let derived = match constitution {
+            Some(checked) => {
+                if checked.semantics() != semantics
+                    || checked.exact_snapshot_preimage_bytes() != canonical_snapshot_preimage
+                {
+                    return Err(AuthorityError::ConstitutionSnapshotBindingMismatch(snapshot));
+                }
+                checked.snapshot()
+            }
+            None => derive_program_snapshot_id(semantics, &canonical_snapshot_preimage),
+        };
         if snapshot != derived {
             return Err(AuthorityError::ProgramSnapshotIdMismatch {
                 claimed: snapshot,
@@ -1444,6 +1454,33 @@ mod tests {
             Vec::new(),
         )
         .expect("checked snapshot")
+    }
+
+    #[test]
+    fn retained_constitution_requires_exact_snapshot_bytes_scope_and_identity() {
+        let preimage = crate::canonical::ProgramSnapshotPreimageV2 {
+            constitution: crate::formation::ProgramConstitutionPreimageV2 {
+                semantics: id!(ClauseSemanticsId, 1),
+                universe: crate::UniverseId::from_bytes([2; 32]),
+                formations: vec![], schemas: vec![], capabilities: vec![],
+                operators: vec![], applications: vec![],
+            },
+            successor_grants: vec![], static_execution_grants: vec![],
+            state_admission_grants: vec![], judgment_authority_grants: vec![],
+        };
+        let checked = crate::formation::resolve_program_constitution_v2(&preimage).unwrap();
+        let bind = |semantics, snapshot, bytes: Vec<u8>| {
+            CheckedSnapshotAuthorityInput::from_checked_process_package_parts_with_governance(
+                id!(ProcessPackageId, 3), semantics, snapshot, bytes,
+                vec![], vec![], vec![], vec![], Some(&checked))
+        };
+        let exact = checked.exact_snapshot_preimage_bytes().to_vec();
+        assert!(bind(checked.semantics(), checked.snapshot(), exact.clone()).is_ok());
+        let mut changed = exact.clone();
+        changed[0] ^= 1;
+        assert!(bind(checked.semantics(), checked.snapshot(), changed).is_err());
+        assert!(bind(id!(ClauseSemanticsId, 4), checked.snapshot(), exact.clone()).is_err());
+        assert!(bind(checked.semantics(), id!(ProgramSnapshotId, 5), exact).is_err());
     }
 
     #[test]

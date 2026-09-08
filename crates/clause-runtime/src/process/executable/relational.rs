@@ -174,9 +174,45 @@ impl ExecutableRelationEffectV1 {
     }
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub(super) struct Bindings(Vec<(u16, ExecutableValueV1)>);
+
+impl Bindings {
+    pub fn get(&self, binding: &u16) -> Option<&ExecutableValueV1> {
+        self.0.binary_search_by_key(binding, |(key, _)| *key).ok().map(|index| &self.0[index].1)
+    }
+
+    pub fn contains_key(&self, binding: &u16) -> bool { self.get(binding).is_some() }
+    pub fn len(&self) -> usize { self.0.len() }
+    pub fn is_empty(&self) -> bool { self.0.is_empty() }
+
+    pub fn insert(&mut self, binding: u16, value: ExecutableValueV1) -> Option<ExecutableValueV1> {
+        match self.0.binary_search_by_key(&binding, |(key, _)| *key) {
+            Ok(index) => Some(std::mem::replace(&mut self.0[index].1, value)),
+            Err(index) => { self.0.insert(index, (binding, value)); None }
+        }
+    }
+
+    pub fn remove(&mut self, binding: &u16) -> Option<ExecutableValueV1> {
+        self.0.binary_search_by_key(binding, |(key, _)| *key).ok().map(|index| self.0.remove(index).1)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&u16, &ExecutableValueV1)> {
+        self.0.iter().map(|(binding, value)| (binding, value))
+    }
+}
+
+impl<const N: usize> From<[(u16, ExecutableValueV1); N]> for Bindings {
+    fn from(entries: [(u16, ExecutableValueV1); N]) -> Self {
+        let mut bindings = Self::default();
+        for (binding, value) in entries { bindings.insert(binding, value); }
+        bindings
+    }
+}
+
 #[derive(Clone, Default)]
 pub(super) struct Matched {
-    pub bindings: Arc<BTreeMap<u16, ExecutableValueV1>>,
+    pub bindings: Arc<Bindings>,
     pub predicates: Vec<EvaluatedValue>,
 }
 
@@ -186,6 +222,16 @@ pub(super) struct Matched {
 pub(super) struct SumQueries {
     entries: Vec<SumQuery>,
     prefixes: Vec<SumPrefix>,
+    pub scalar_plans: Arc<ScalarPlans>,
+}
+
+#[derive(Default)]
+pub(super) struct ScalarPlans(Mutex<Vec<Arc<scalar_reuse::ScalarPlan>>>, Mutex<EffectPlans>);
+
+#[derive(Default)]
+struct EffectPlans {
+    program: Option<Arc<ExecutableProgramV1>>,
+    plans: BTreeMap<(usize, usize, usize), Option<Arc<scalar_reuse::ScalarPlan>>>,
 }
 
 struct SumPrefix {
@@ -197,12 +243,17 @@ struct SumPrefix {
 }
 
 struct SumQuery {
+    shape: Option<Arc<[u8]>>,
     predicates: Vec<ExecutableExpressionV1>,
     contribution: ExecutableExpressionV1,
+    captured_reads: bool,
+    results: Vec<SumResult>,
+}
+
+struct SumResult {
     inputs: Vec<ExecutableValueV1>,
     result: ExecutableValueV1,
     reads: Vec<ExecutableReadV1>,
-    captured_reads: bool,
 }
 
 pub(super) fn sum(
@@ -213,15 +264,31 @@ pub(super) fn sum(
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    sum_with_shape(inputs, predicates, value, configuration, arguments, context, None)
+}
+
+pub(super) fn sum_with_shape(
+    inputs: &[ExecutableExpressionV1],
+    predicates: &[ExecutableExpressionV1],
+    value: &ExecutableExpressionV1,
+    configuration: &[ExecutableSlotV1],
+    arguments: &[ExecutableValueV1],
+    context: EvaluationContextV1,
+    shape: Option<&Arc<[u8]>>,
+) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    let same_query = |previous: &SumQuery| {
+        previous.captured_reads == context.reads.is_some()
+            && match (shape, previous.shape.as_ref()) {
+                (Some(left), Some(right)) => left == right,
+                _ => previous.contribution == *value && previous.predicates == predicates,
+            }
+    };
     let inputs = inputs.iter().map(|input| evaluate(input, configuration, arguments, context))
         .collect::<Result<Vec<_>, _>>()?;
     if let Some(queries) = context.sum_queries {
-        // Inputs usually differ between adjacent actor evaluations. Check the
-        // compact value vector first so those misses avoid walking the
-        // (often large) structural predicate tree.
         if let Some(previous) = queries.borrow().entries.iter().find(|previous|
-            previous.inputs == inputs && previous.contribution == *value && previous.predicates == predicates
-                && previous.captured_reads == context.reads.is_some()) {
+            same_query(previous))
+            .and_then(|query| query.results.iter().find(|previous| previous.inputs == inputs)) {
             if let Some(reads) = context.reads {
                 reads.borrow_mut().extend(previous.reads.iter().cloned());
             }
@@ -231,22 +298,30 @@ pub(super) fn sum(
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumQuery);
     let query_reads = std::cell::RefCell::new(Vec::new());
     let query_context = EvaluationContextV1 { reads: context.reads.map(|_| &query_reads), ..context };
+    let plan = scalar_plan(value, query_context)?;
     let mut visits = 0;
     let mut total = 0.0;
-    for (matched, accepted) in match_sum(predicates, configuration, &inputs,
-        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits)? {
-        if let Some(reads) = query_context.reads {
-            for predicate in &matched.predicates {
-                reads.borrow_mut().extend(predicate.reads.iter().cloned());
-            }
-        }
-        if accepted {
-            let contribution = evaluate(value, configuration, &inputs,
-                EvaluationContextV1 { bindings: Some(&matched.bindings), ..query_context })?;
-            total += contribution.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
-            if !total.is_finite() {
-                return Err(ExecutableErrorV1::NumericDomain);
-            }
+    let matches = match_sum(predicates, configuration, &inputs,
+        EvaluationContextV1 { bindings: None, ..query_context }, &mut visits)?;
+    if let Some(result) = plan.as_ref().and_then(|plan| plan.compiled_sum(configuration, &inputs, &matches)) {
+        total = result?;
+    } else {
+        let memo = plan.as_ref().map(|plan| plan.memo());
+        for (matched, accepted) in matches {
+              if let Some(reads) = query_context.reads {
+                  for predicate in &matched.predicates {
+                      reads.borrow_mut().extend(predicate.reads.iter().cloned());
+                  }
+              }
+              if accepted {
+                  let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
+                  let contribution = evaluate(plan.as_ref().map_or(value, |plan| plan.expression.as_ref()), configuration, &inputs,
+                      EvaluationContextV1 { bindings: Some(&matched.bindings), scalar_memo: memo.as_ref(), ..query_context })?;
+                  total += contribution.as_number().ok_or(ExecutableErrorV1::TypeMismatch)?;
+                  if !total.is_finite() {
+                      return Err(ExecutableErrorV1::NumericDomain);
+                  }
+              }
         }
     }
     let result = ExecutableValueV1::number(total)?;
@@ -255,12 +330,55 @@ pub(super) fn sum(
         reads.borrow_mut().extend(query_reads.iter().cloned());
     }
     if let Some(queries) = context.sum_queries {
-        queries.borrow_mut().entries.push(SumQuery {
-            predicates: predicates.to_vec(), contribution: value.clone(), inputs,
-            result: result.clone(), reads: query_reads, captured_reads: context.reads.is_some(),
-        });
+        let mut queries = queries.borrow_mut();
+        let result = SumResult { inputs, result: result.clone(), reads: query_reads };
+        if let Some(query) = queries.entries.iter_mut().find(|previous|
+            same_query(previous)) {
+            query.results.push(result);
+        } else {
+            queries.entries.push(SumQuery {
+                shape: shape.cloned(), predicates: predicates.to_vec(), contribution: value.clone(),
+                captured_reads: context.reads.is_some(), results: vec![result],
+            });
+        }
     }
     Ok(result)
+}
+
+pub(super) fn effect_scalar_plan(
+    program: &Arc<ExecutableProgramV1>, coordinate: (usize, usize, usize),
+    expression: &ExecutableExpressionV1, context: EvaluationContextV1,
+) -> Result<Option<Arc<scalar_reuse::ScalarPlan>>, ExecutableErrorV1> {
+    let Some(queries) = context.sum_queries else { return Ok(None) };
+    let retained = queries.borrow().scalar_plans.clone();
+    let mut effects = retained.1.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+    if effects.program.as_ref().is_none_or(|prior| !Arc::ptr_eq(prior, program)) {
+        effects.plans.clear();
+        effects.program = Some(program.clone());
+    }
+    if let Some(plan) = effects.plans.get(&coordinate) { return Ok(plan.clone()); }
+    let plan = scalar_plan(expression, context)?;
+    effects.plans.insert(coordinate, plan.clone());
+    Ok(plan)
+}
+
+pub(super) fn scalar_plan(expression: &ExecutableExpressionV1, context: EvaluationContextV1)
+    -> Result<Option<Arc<scalar_reuse::ScalarPlan>>, ExecutableErrorV1> {
+    use ExecutableExpressionV1 as E;
+    if context.reads.is_some() || matches!(expression, E::Constant(_) | E::Binding(_) | E::Argument(_) | E::Slot(_)) {
+        return Ok(None);
+    }
+    let Some(queries) = context.sum_queries else { return Ok(None) };
+    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanLookup);
+    let queries = queries.borrow();
+    let mut plans = queries.scalar_plans.0.lock().map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+    if let Some(existing) = plans.iter().find(|plan| plan.expression.as_ref() == expression) {
+        return Ok(Some(existing.clone()));
+    }
+    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarPlanBuild);
+    let plan = Arc::new(scalar_reuse::ScalarPlan::new(expression)?);
+    plans.push(plan.clone());
+    Ok(Some(plan))
 }
 
 fn match_sum(
@@ -318,7 +436,7 @@ fn match_sum(
 fn unify(
     expression: &ExecutableExpressionV1,
     value: &ExecutableValueV1,
-    bindings: &mut Arc<BTreeMap<u16, ExecutableValueV1>>,
+    bindings: &mut Arc<Bindings>,
     configuration: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
@@ -398,7 +516,7 @@ pub(super) fn facet_value(
 
 fn bound_pattern(
     expression: &ExecutableExpressionV1,
-    bindings: &BTreeMap<u16, ExecutableValueV1>,
+    bindings: &Bindings,
 ) -> Option<bool> {
     match expression {
         ExecutableExpressionV1::Binding(binding) => Some(bindings.contains_key(binding)),
@@ -679,14 +797,18 @@ fn match_rule_from(
             }
             active = next.into_values().collect();
         } else {
+            let plan = if capture { None } else { scalar_plan(predicate, context)? };
+            let memo = plan.as_ref().map(|plan| plan.memo());
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::ScalarEvaluation);
             let mut next = Vec::new();
             for mut matched in active {
                 let evaluated = evaluate_for_trace(
-                    predicate,
+                    plan.as_ref().map_or(predicate, |plan| plan.expression.as_ref()),
                     configuration,
                     arguments,
                     EvaluationContextV1 {
                         bindings: Some(&matched.bindings),
+                        scalar_memo: memo.as_ref(),
                         ..context
                     },
                     capture,
@@ -715,13 +837,13 @@ fn match_rule_from(
 pub(super) struct LazyOccurrenceIdentity<'a> {
     context: EvaluationContextV1<'a>,
     rule: usize,
-    bindings: &'a BTreeMap<u16, ExecutableValueV1>,
+    bindings: &'a Bindings,
     identity: std::cell::Cell<Option<[u8; IDENTITY_BYTES]>>,
 }
 
 impl<'a> LazyOccurrenceIdentity<'a> {
     pub(super) fn new(context: EvaluationContextV1<'a>, rule: usize,
-        bindings: &'a BTreeMap<u16, ExecutableValueV1>) -> Self {
+        bindings: &'a Bindings) -> Self {
         Self { context, rule, bindings, identity: std::cell::Cell::new(None) }
     }
 
@@ -736,11 +858,11 @@ impl<'a> LazyOccurrenceIdentity<'a> {
 pub(super) fn occurrence_identity(
     context: EvaluationContextV1,
     rule: usize,
-    bindings: &BTreeMap<u16, ExecutableValueV1>,
+    bindings: &Bindings,
 ) -> Result<[u8; IDENTITY_BYTES], ExecutableErrorV1> {
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::OccurrenceIdentity);
     let mut bytes = Vec::new();
-    for (binding, value) in bindings {
+    for (binding, value) in bindings.iter() {
         bytes.extend_from_slice(&binding.to_le_bytes());
         encode_value(&mut bytes, value)?;
     }
@@ -949,7 +1071,7 @@ mod sum_reuse_tests {
             value: Box::new(E::Binding(1)),
         };
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
-            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+            step_ordinal: 0, reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         let queries = std::cell::RefCell::new(SumQueries::default());
         let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
         for (input, result) in [(1e16, 0.0), (0.0, -1e16), (1e16, 0.0)] {
@@ -990,7 +1112,7 @@ mod sum_reuse_tests {
             value: Box::new(E::Constant(ExecutableValueV1::number(1.0).unwrap())),
         };
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
-            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+            step_ordinal: 0, reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         for capture in [false, true] {
             let queries = std::cell::RefCell::new(SumQueries::default());
             let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
@@ -1035,7 +1157,7 @@ mod sum_reuse_tests {
             value: Box::new(E::Constant(number(1.0))),
         };
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
-            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+            step_ordinal: 0, reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         let expected = [1.0, 2.0].map(|input|
             evaluate_with_reads(&query, &configuration, &[number(input)], context).unwrap());
         assert_eq!(expected[0].value, number(3.0));
@@ -1060,7 +1182,7 @@ mod sum_reuse_tests {
             for _ in 0..2 {
                 assert!(matches!(evaluate_with_reads(&invalid, &configuration, &[], shared),
                     Err(ExecutableErrorV1::TypeMismatch)));
-                assert_eq!(queries.borrow().entries.len(), 2);
+                assert_eq!(queries.borrow().entries.iter().map(|query| query.results.len()).sum::<usize>(), 2);
             }
         }
     }
@@ -1086,14 +1208,14 @@ mod sum_reuse_tests {
             value: Box::new(ExecutableExpressionV1::Binding(1)),
         };
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
-            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+            step_ordinal: 0, reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         let expected = evaluate_with_reads(&sum, &configuration, &[], context).unwrap();
         let queries = std::cell::RefCell::new(SumQueries::default());
         let shared = EvaluationContextV1 { sum_queries: Some(&queries), ..context };
         for _ in 0..2 {
             assert_eq!(evaluate(&sum, &configuration, &[], shared).unwrap(), expected.value);
             assert_eq!(queries.borrow().entries.len(), 1);
-            assert!(queries.borrow().entries[0].reads.is_empty());
+            assert!(queries.borrow().entries[0].results[0].reads.is_empty());
         }
         let traced = evaluate_with_reads(&sum, &configuration, &[], shared).unwrap();
         assert_eq!(traced.value, expected.value);
@@ -1144,20 +1266,43 @@ mod match_ownership_tests {
     use super::*;
 
     #[test]
+    fn contiguous_bindings_preserve_sparse_map_order_replacement_and_removal() {
+        let n = |value| ExecutableValueV1::number(value).unwrap();
+        let mut cases = Vec::new();
+        for entries in [vec![], vec![(7, n(2.0)), (1, n(4.0))],
+            vec![(1, n(4.0))], vec![(7, n(2.0)), (1, n(4.0)), (7, n(-1.0))]] {
+            let mut actual = Bindings::default();
+            let mut expected = BTreeMap::new();
+            for (binding, value) in entries {
+                assert_eq!(actual.insert(binding, value.clone()), expected.insert(binding, value));
+            }
+            assert_eq!(actual.iter().collect::<Vec<_>>(), expected.iter().collect::<Vec<_>>());
+            for binding in [0, 1, 7, 128] { assert_eq!(actual.get(&binding), expected.get(&binding)); }
+            cases.push((actual.clone(), expected.clone()));
+            assert_eq!(actual.remove(&7), expected.remove(&7));
+            assert_eq!(actual.remove(&7), expected.remove(&7));
+            assert_eq!(actual.iter().collect::<Vec<_>>(), expected.iter().collect::<Vec<_>>());
+        }
+        for (left, left_map) in &cases {
+            for (right, right_map) in &cases { assert_eq!(left.cmp(right), left_map.cmp(right_map)); }
+        }
+    }
+
+    #[test]
     fn relational_identity_is_derived_only_for_evaluated_fresh_referents() {
         use ExecutableExpressionV1 as E;
-        let bindings = BTreeMap::from([(3, ExecutableValueV1::text("bound text").unwrap())]);
+        let bindings = Bindings::from([(3, ExecutableValueV1::text("bound text").unwrap())]);
         let context = EvaluationContextV1 { allocation_root: [17; IDENTITY_BYTES],
-            step_ordinal: 19, reads: None, sum_queries: None, bindings: Some(&bindings), relational_occurrence: None };
+            step_ordinal: 19, reads: None, sum_queries: None, scalar_memo: None, bindings: Some(&bindings), relational_occurrence: None };
         let identity = LazyOccurrenceIdentity::new(context, 23, &bindings);
         let evaluation = EvaluationContextV1 { relational_occurrence: Some(&identity), ..context };
         let fresh = E::FreshReferent { domain: 29, binder: 31 };
         let ordinary = E::Conditional(Box::new(E::Constant(ExecutableValueV1::Boolean(false))),
             Box::new(fresh.clone()), Box::new(E::Binding(3)));
-        assert_eq!(evaluate(&ordinary, &[], &[], evaluation).unwrap(), bindings[&3]);
+        assert_eq!(&evaluate(&ordinary, &[], &[], evaluation).unwrap(), bindings.get(&3).unwrap());
         assert_eq!(identity.identity.get(), None);
         let mut preimage = 3u16.to_le_bytes().to_vec();
-        encode_value(&mut preimage, &bindings[&3]).unwrap();
+        encode_value(&mut preimage, bindings.get(&3).unwrap()).unwrap();
         let expected_match = runtime_domain_hash("clause/relational-match/v1", &[
             &[17; IDENTITY_BYTES], &19u64.to_be_bytes(), &23u64.to_be_bytes(), &preimage]);
         let expected = ExecutableValueV1::Referent(ExecutableReferentV1::created(29,
@@ -1191,7 +1336,7 @@ mod match_ownership_tests {
             E::Constant(ExecutableValueV1::Boolean(false)),
         ];
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES],
-            step_ordinal: 0, reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+            step_ordinal: 0, reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         for capture in [false, true] {
             let mut visits = 0;
             assert!(matches!(match_rule(&predicates, &configuration, &[], context,
@@ -1217,7 +1362,7 @@ mod match_ownership_tests {
             Box::new(ExecutableExpressionV1::Binding(0)));
         let results = match_rule(&[predicate], &[ExecutableValueV1::RelationTable(table).into()], &[],
             EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
-                reads: None, sum_queries: None, bindings: None, relational_occurrence: None }, &mut 0, true).unwrap();
+                reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None }, &mut 0, true).unwrap();
         assert_eq!(results.len(), 1);
         let (matched, accepted) = &results[0];
         assert!(!accepted);

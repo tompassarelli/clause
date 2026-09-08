@@ -1,5 +1,6 @@
 import * as workbench from "./workbench.js";
 import { enterSourceTransferPhase, leaveSourceTransferPhase, observeSourceTransferPhase } from "./source-transfer-observation.js";
+const byteTextDecoder = new TextDecoder(new Uint8Array(new Uint16Array([1]).buffer)[0] === 1 ? "utf-16le" : "utf-16be", { fatal: true, ignoreBOM: true });
 function equivalent(left, right) {
     return (Object.is(left, right) ||
         (Array.isArray(left) &&
@@ -50,6 +51,10 @@ function is_source_edit_module(module) {
     return is_session_wasm_module(module) && "clause_session_v1_source_edit_bulk" in module
         && typeof module.clause_session_v1_source_edit_bulk === "function";
 }
+function is_scalar_edit_module(module) {
+    return is_session_wasm_module(module) && "clause_session_v1_scalar_edit_bulk" in module
+        && typeof module.clause_session_v1_scalar_edit_bulk === "function";
+}
 function checked_referent(value) {
     const u32 = (value) => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 0xffffffff;
     if (typeof value !== "object" || value === null || !("kind" in value) ||
@@ -73,93 +78,52 @@ function checked_referent(value) {
     }
     throw new Error("referent identity is malformed");
 }
-function hex_whitespace_code_p(code) {
-    return (equivalent(code, 9) ||
-        equivalent(code, 10) ||
-        equivalent(code, 13) ||
-        equivalent(code, 32));
-}
-function lowercase_hex_nibble(code) {
-    return 48 <= code && code <= 57
-        ? code - 48
-        : 97 <= code && code <= 102
-            ? code - 97 + 10
-            : -1;
+function decode_hex_octets(source, label, maximumBytes, maximumSourceUnits) {
+    if (typeof source !== "string")
+        throw new Error(`${label} hex transport must be text`);
+    if (source.length === 0 || source.length > maximumSourceUnits) {
+        throw new Error(`${label} hex transport is outside its source bound`);
+    }
+    const bytes = [];
+    let high = -1;
+    for (let index = 0; index < source.length; index += 1) {
+        const code = source.charCodeAt(index);
+        const nibble = code >= 48 && code <= 57 ? code - 48
+            : code >= 97 && code <= 102 ? code - 87 : -1;
+        if (nibble < 0) {
+            if (code === 9 || code === 10 || code === 13 || code === 32)
+                continue;
+            throw new Error(`${label} hex transport contains a non-hex unit`);
+        }
+        if (high < 0) {
+            high = nibble;
+        }
+        else {
+            if (bytes.length >= maximumBytes)
+                throw new Error(`${label} hex transport exceeds its byte bound`);
+            bytes.push(high * 16 + nibble);
+            high = -1;
+        }
+    }
+    if (high >= 0)
+        throw new Error(`${label} hex transport has an incomplete byte`);
+    if (bytes.length === 0)
+        throw new Error(`${label} hex transport is empty`);
+    return bytes;
 }
 function decode_hex_transport(source, label, maximumBytes, maximumSourceUnits) {
-    if (typeof source === "string") {
-        const length = source.length;
-        if (equivalent(length, 0) || length > maximumSourceUnits) {
-            (() => {
-                throw new Error(`${label} hex transport is outside its source bound`);
-            })();
-        }
-        const bytes = [];
-        return (() => {
-            let index = 0;
-            let high = -1;
-            while (true) {
-                if (index === length) {
-                    return !equivalent(high, -1)
-                        ? (() => {
-                            throw new Error(`${label} hex transport has an incomplete byte`);
-                        })()
-                        : equivalent(countValues(bytes), 0)
-                            ? (() => {
-                                throw new Error(`${label} hex transport is empty`);
-                            })()
-                            : Object.freeze(bytes);
-                }
-                else {
-                    const code = source.charCodeAt(index);
-                    const nibble = lowercase_hex_nibble(code);
-                    if (hex_whitespace_code_p(code)) {
-                        const _recur_0 = index + 1;
-                        const _recur_1 = high;
-                        index = _recur_0;
-                        high = _recur_1;
-                        continue;
-                    }
-                    else if (nibble < 0) {
-                        return (() => {
-                            throw new Error(`${label} hex transport contains a non-hex unit`);
-                        })();
-                    }
-                    else if (equivalent(high, -1)) {
-                        const _recur_0 = index + 1;
-                        const _recur_1 = nibble;
-                        index = _recur_0;
-                        high = _recur_1;
-                        continue;
-                    }
-                    else if (countValues(bytes) >= maximumBytes) {
-                        return (() => {
-                            throw new Error(`${label} hex transport exceeds its byte bound`);
-                        })();
-                    }
-                    else {
-                        bytes.push(high * 16 + nibble);
-                        const _recur_0 = index + 1;
-                        const _recur_1 = -1;
-                        index = _recur_0;
-                        high = _recur_1;
-                        continue;
-                    }
-                }
-            }
-        })();
-    }
-    else {
-        return (() => {
-            throw new Error(`${label} hex transport must be text`);
-        })();
-    }
+    return retain_decoded_bytes(decode_hex_octets(source, label, maximumBytes, maximumSourceUnits));
+}
+/** Decode a bounded cartridge directly to immutable request custody. */
+export function decodeProcessRequestHex(source) {
+    const bytes = decode_hex_octets(source, "CWR1", cwr1_max_bytes, cwr1_hex_max_source_units);
+    return Object.freeze({ _tag: "ExactProcessRequest", bytes: byteTextDecoder.decode(new Uint16Array(bytes)) });
 }
 function decode_cwr1_hex(source) {
     return decode_hex_transport(source, "CWR1", cwr1_max_bytes, cwr1_hex_max_source_units);
 }
 function decode_cet1_hex(source) {
-    return decode_hex_transport(source, "CET1", cet1_max_bytes, 3 * cet1_max_bytes);
+    return decode_hex_transport(source, "source-edit witness", cet1_max_bytes, 3 * cet1_max_bytes);
 }
 function ExactProcessRequest(bytes) {
     return Object.freeze({ _tag: "ExactProcessRequest", bytes });
@@ -259,16 +223,28 @@ function cwo1observation_stateRevisionId(r) {
 function cwo1observation_values(r) {
     return r.values;
 }
+// Only arrays copied and frozen by this adapter enter this set. A caller's
+// frozen array can still contain accessors whose values change between reads.
+const validated_frozen_bytes = new WeakSet();
+// Packed storage is private; every Wasm call receives its own mutable copy.
+const decoded_byte_storage = new WeakMap();
+function retain_decoded_bytes(bytes) {
+    const packed = new Uint8Array(bytes);
+    const frozen = Object.freeze(bytes);
+    validated_frozen_bytes.add(frozen);
+    decoded_byte_storage.set(frozen, packed);
+    return frozen;
+}
 function exact_byte_array_p(bytes, maximum) {
     const profile = enterSourceTransferPhase("byte-validation");
     try {
         return (Array.isArray(bytes) &&
             bytes.length >= 1 &&
             bytes.length <= maximum &&
-            bytes.every((byte) => typeof byte === "number" &&
+            (validated_frozen_bytes.has(bytes) || bytes.every((byte) => typeof byte === "number" &&
                 Number.isInteger(byte) &&
                 byte >= 0 &&
-                byte <= 255));
+                byte <= 255)));
     }
     finally {
         leaveSourceTransferPhase(profile);
@@ -279,8 +255,15 @@ function require_request_bytes(request) {
     try {
         if (typeof request !== "object" ||
             request === null ||
-            !("bytes" in request) ||
-            !Array.isArray(request.bytes) || request.bytes.length < 1 || request.bytes.length > cwr1_max_bytes) {
+            !("bytes" in request)) {
+            throw new Error("cartridge request must carry bounded exact bytes");
+        }
+        if (typeof request.bytes === "string") {
+            if (!binary_text_p(request.bytes, cwr1_max_bytes))
+                throw new Error("cartridge request must carry bounded exact bytes");
+            return request.bytes;
+        }
+        if (!Array.isArray(request.bytes) || request.bytes.length < 1 || request.bytes.length > cwr1_max_bytes) {
             throw new Error("cartridge request must carry bounded exact bytes");
         }
         return exact_bytes_to_binary_text(request.bytes);
@@ -356,7 +339,12 @@ function frozen_byte_range(bytes, start, end) {
             let index = start;
             while (true) {
                 if (index === end) {
-                    return Object.freeze(result);
+                    const frozen = Object.freeze(result);
+                    if (typeof bytes !== "string" && validated_frozen_bytes.has(bytes) &&
+                        Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && end <= bytes.length) {
+                        validated_frozen_bytes.add(frozen);
+                    }
+                    return frozen;
                 }
                 else {
                     result.push(byte_at(bytes, index));
@@ -377,6 +365,10 @@ function canonical_byte_range(bytes, start, end) {
         : frozen_byte_range(bytes, start, end);
 }
 function exact_bytes_to_binary_text(bytes) {
+    const packed = decoded_byte_storage.get(bytes);
+    if (packed !== undefined)
+        return byteTextDecoder.decode(new Uint16Array(packed));
+    const validated = validated_frozen_bytes.has(bytes);
     const chunks = [];
     const chunk_size = 4096;
     for (let start = 0; start < bytes.length; start += chunk_size) {
@@ -384,7 +376,7 @@ function exact_bytes_to_binary_text(bytes) {
         let chunk = "";
         for (let index = start; index < end; index += 1) {
             const byte = byte_at(bytes, index);
-            if (!Number.isInteger(byte) || byte < 0 || byte > 255)
+            if (!validated && (!Number.isInteger(byte) || byte < 0 || byte > 255))
                 throw new Error("cartridge byte is not an exact octet");
             chunk += String.fromCharCode(byte);
         }
@@ -396,8 +388,10 @@ function binary_text_p(value, maximum) {
     return typeof value === "string" && value.length > 0 && value.length <= maximum && !/[^\u0000-\u00ff]/.test(value);
 }
 function typed_bytes(bytes) {
-    if (typeof bytes !== "string")
-        return new Uint8Array(bytes);
+    if (typeof bytes !== "string") {
+        const packed = decoded_byte_storage.get(bytes);
+        return packed === undefined ? new Uint8Array(bytes) : packed.slice();
+    }
     const result = new Uint8Array(bytes.length);
     for (let index = 0; index < bytes.length; index += 1)
         result[index] = bytes.charCodeAt(index);
@@ -642,27 +636,30 @@ function dispatch_session_request(module, request, operation) {
         : session_command_max_bytes;
     if (exact_byte_array_p(request, maximum) || binary_text_p(request, maximum)) {
         const api = session_module_functions(module);
-        const typed_request = typed_bytes(request);
-        const status = process_status(operation === "open"
+        const typed_request = observeSourceTransferPhase("typed-array-construction", () => typed_bytes(request));
+        const status = process_status(observeSourceTransferPhase("bulk-call", () => operation === "open"
             ? api.open(typed_request)
-            : api.command(typed_request));
+            : api.command(typed_request)));
         if (!equivalent(status, 0)) {
             (() => {
                 throw new Error(concatenate("persistent session ", operation, " rejected with status ", status));
             })();
         }
-        const event = Array.from(api.event());
+        const event = observeSourceTransferPhase("event-bulk", () => api.event());
         const length = event.length;
         if (length < 21 || length > cse1_max_bytes) {
             (() => {
                 throw new Error("CSE1 event length is out of bounds");
             })();
         }
-        return exact_byte_array_p(event, cse1_max_bytes)
-            ? Object.freeze(event)
-            : (() => {
-                throw new Error("CSE1 bulk event byte is out of bounds");
-            })();
+        if (!(event instanceof Uint8Array)) {
+            throw new Error("CSE1 bulk event byte is out of bounds");
+        }
+        return observeSourceTransferPhase("event-array-construction", () => {
+            // Widening each octet to one native-endian code unit preserves all 256
+            // values; the decoder returns an immutable snapshot without JS iteration.
+            return byteTextDecoder.decode(new Uint16Array(event));
+        });
     }
     else {
         return (() => {
@@ -671,7 +668,7 @@ function dispatch_session_request(module, request, operation) {
     }
 }
 function decode_cse1_event(bytes) {
-    if (exact_byte_array_p(bytes, cse1_max_bytes)) {
+    if (exact_byte_array_p(bytes, cse1_max_bytes) || binary_text_p(bytes, cse1_max_bytes)) {
         if (bytes.length < 21 ||
             !equivalent(frozen_byte_range(bytes, 0, 4), [67, 83, 69, 49])) {
             (() => {
@@ -769,8 +766,8 @@ function decode_cse1_event(bytes) {
                                 : equivalent(projection_tag, 1)
                                     ? (() => {
                                         const observation_offset = prefix_end + 1;
-                                        const term_record = parse_blob(bytes, observation_offset + identity_bytes, cse1_max_bytes, "CSE1 projected Term");
-                                        if (!equivalent(term_record.next, bytes.length)) {
+                                        const term_end = blob_end(bytes, observation_offset + identity_bytes, cse1_max_bytes, "CSE1 projected Term");
+                                        if (!equivalent(term_end, bytes.length)) {
                                             (() => {
                                                 throw new Error("CSE1 Admission projection has trailing bytes");
                                             })();
@@ -789,7 +786,7 @@ function decode_cse1_event(bytes) {
                                             sessionId: identity_at(213),
                                             projection: {
                                                 observationId: identity_at(observation_offset),
-                                                termBytes: term_record.bytes,
+                                                termBytes: canonical_byte_range(bytes, observation_offset + identity_bytes + 4, term_end),
                                             },
                                         };
                                     })()
@@ -1261,7 +1258,8 @@ function admission_scope_bytes_bang(session, candidate) {
     return payload;
 }
 function apply_session_command_bang(module, session, command) {
-    const event = decode_cse1_event(dispatch_session_request(module, command, "command"));
+    const bytes = dispatch_session_request(module, command, "command");
+    const event = observeSourceTransferPhase("cse1-decode", () => decode_cse1_event(bytes));
     const current_sequence = session.sequence.value;
     if (!equivalent(event.slot, session.handle.slot) ||
         !equivalent(event.generation, session.handle.generation) ||
@@ -1297,6 +1295,13 @@ function parse_canonical_blob(bytes, offset, label) {
     return { bytes: canonical_byte_range(bytes, header_end, end), next: end };
 }
 function ascii_text(bytes, label) {
+    if (typeof bytes === "string") {
+        if (bytes.length === 0 || bytes.length > 128)
+            throw new Error(`${label} is outside its text bound`);
+        if (/[^\x20-\x7e]/.test(bytes))
+            throw new Error(`${label} is not canonical ASCII`);
+        return bytes;
+    }
     if (equivalent(bytes.length, 0) || bytes.length > 128) {
         (() => {
             throw new Error(concatenate(label, " is outside its text bound"));
@@ -1318,119 +1323,6 @@ function utf8_text(bytes, label) {
     catch {
         throw new Error(concatenate(label, " is not canonical UTF-8"));
     }
-}
-function decode_term_node(bytes, offset, depth) {
-    if (depth > cse1_projected_term_max_depth) {
-        (() => {
-            throw new Error("projected Term exceeds its depth bound");
-        })();
-    }
-    const tag_end = require_range(bytes, offset, 1, "projected Term node");
-    const tag = byte_at(bytes, offset);
-    return tag === 0
-        ? (() => {
-            const kind = parse_canonical_blob(bytes, tag_end, "projected Atom kind");
-            const payload = parse_canonical_blob(bytes, kind.next, "projected Atom payload");
-            const equality_end = require_range(bytes, payload.next, 1, "projected Atom equality");
-            if (!equivalent(byte_at(bytes, payload.next), 0)) {
-                (() => {
-                    throw new Error("projected Atom equality contract is invalid");
-                })();
-            }
-            return {
-                node: { kind: "atom", atomKind: kind.bytes, payload: payload.bytes },
-                next: equality_end,
-            };
-        })()
-        : tag === 1
-            ? (() => {
-                const left = decode_term_node(bytes, tag_end, depth + 1);
-                const operator = decode_term_node(bytes, left.next, depth + 1);
-                const right = decode_term_node(bytes, operator.next, depth + 1);
-                return {
-                    node: {
-                        kind: "triple",
-                        slots: [left.node, operator.node, right.node],
-                    },
-                    next: right.next,
-                };
-            })()
-            : (() => {
-                throw new Error("projected Term node tag is invalid");
-            })();
-}
-function decode_canonical_term(bytes, maximumBytes = cse1_max_bytes) {
-    const envelope_source = workbench["workbench-byte-envelope-source"](bytes);
-    const source = envelope_source === null ? bytes : envelope_source;
-    if ((typeof source === "string" && source.length <= maximumBytes) ||
-        exact_byte_array_p(source, maximumBytes)) {
-        const node_start = require_range(source, 0, 2 * identity_bytes, "projected Term scope");
-        const result = decode_term_node(source, node_start, 0);
-        if (!equivalent(result.next, source.length)) {
-            (() => {
-                throw new Error("projected Term has trailing bytes");
-            })();
-        }
-        return result.node;
-    }
-    else {
-        return (() => {
-            throw new Error("projected Term bytes are outside the CSE1 bound");
-        })();
-    }
-}
-function atom_kind_text(node) {
-    if (node.kind !== "atom")
-        throw new Error("projected realization expected an Atom");
-    return ascii_text(node.atomKind, "projected Atom kind");
-}
-function projected_number(payload) {
-    return equivalent(payload.length, 8)
-        ? finite_f64(payload, 0)
-        : (() => {
-            throw new Error("projected F64 payload is invalid");
-        })();
-}
-function realize_object(realize_node, first) {
-    let node = first;
-    const fields = [];
-    const keys = new Set();
-    while (node.kind === "triple") {
-        const [field, value, rest] = node.slots;
-        if (field.kind !== "atom" ||
-            atom_kind_text(field) !== "clause/js-field-v1") {
-            throw new Error("projected object entry lacks a field Atom");
-        }
-        const key = ascii_text(field.payload, "projected field");
-        if (keys.has(key)) {
-            throw new Error("projected object field is duplicated");
-        }
-        keys.add(key);
-        fields.push([key, realize_node(value)]);
-        node = rest;
-    }
-    if (atom_kind_text(node) !== "clause/js-object-end-v1") {
-        throw new Error("projected object has an invalid terminator");
-    }
-    // Object.fromEntries defines own data properties without invoking the
-    // legacy __proto__ setter; freezing prevents later prototype mutation.
-    return Object.freeze(Object.fromEntries(fields));
-}
-function realize_array(realize_node, first) {
-    let node = first;
-    const values = [];
-    while (node.kind === "triple") {
-        const [item, value, rest] = node.slots;
-        if (item.kind !== "atom" || atom_kind_text(item) !== "clause/js-item-v1") {
-            throw new Error("projected array entry lacks an item Atom");
-        }
-        values.push(realize_node(value));
-        node = rest;
-    }
-    if (atom_kind_text(node) !== "clause/js-array-end-v1") {
-        throw new Error("projected array has an invalid terminator");
-    }
-    return Object.freeze(values);
 }
 // Passive transport only: these are exact runtime table rows, not an evaluator
 // or a host-owned collection of game objects. No labels become identities.
@@ -1470,22 +1362,23 @@ function projected_scalar_order(a, b, kind) {
 }
 function projected_table(payload) {
     let offset = 0;
-    const take = (count) => {
+    const advance = (count) => {
         if (count < 0 || offset + count > payload.length)
             throw new Error("truncated projected relation table");
-        const value = Array.from({ length: count }, (_, i) => byte_at(payload, offset + i));
+        const start = offset;
         offset += count;
-        return value;
+        return start;
     };
-    const u8 = () => take(1)[0];
-    const u16 = () => { const bytes = take(2); return bytes[0] + bytes[1] * 256; };
-    const u32 = () => little_u32(take(4), 0);
+    const take = (count) => canonical_byte_range(payload, advance(count), offset);
+    const u8 = () => byte_at(payload, advance(1));
+    const u16 = () => little_u16(payload, advance(2));
+    const u32 = () => little_u32(payload, advance(4));
     const referent = () => {
         const domain = u32(), tag = u8();
         if (tag === 0)
             return checked_referent({ kind: "referent", domain, identity: { kind: "declared", value: u32() } });
         if (tag === 1)
-            return checked_referent({ kind: "referent", domain, identity: { kind: "created", value: take(32) } });
+            return checked_referent({ kind: "referent", domain, identity: { kind: "created", value: frozen_byte_range(payload, advance(32), offset) } });
         throw new Error("invalid projected row referent");
     };
     if (payload.length > 1024 * 1024 || u8() !== 6)
@@ -1493,6 +1386,8 @@ function projected_table(payload) {
     const subjectDomain = u32(), valueKind = u8(), optional = u8();
     if (valueKind > 4 || optional > 1)
         throw new Error("invalid projected relation domain");
+    const numericBytes = valueKind === 0 ? typed_bytes(payload) : null;
+    const numericView = numericBytes === null ? null : new DataView(numericBytes.buffer);
     const valueDomain = optional === 1 ? u32() : undefined;
     if ((valueKind === 4) !== (valueDomain !== undefined))
         throw new Error("inconsistent projected relation domain");
@@ -1514,8 +1409,11 @@ function projected_table(payload) {
         for (let i = 0; i < valueCount; ++i) {
             const tag = u8();
             let value;
-            if (valueKind === 0 && tag === 0)
-                value = projected_number(take(8));
+            if (valueKind === 0 && tag === 0 && numericView !== null) {
+                value = numericView.getFloat64(advance(8), true);
+                if (!Number.isFinite(value) || Object.is(value, -0))
+                    throw new Error("CWO1 number is not canonical finite f64");
+            }
             else if (valueKind === 1 && tag === 1) {
                 const bit = u8();
                 if (bit > 1)
@@ -1549,84 +1447,192 @@ function projected_table(payload) {
     return Object.freeze({ kind: "relation-table", subjectDomain, valueKind, cardinality, total,
         ...(valueDomain === undefined ? {} : { valueDomain }), rows: Object.freeze(rows) });
 }
-function projected_set(node) {
-    if (node.kind !== "triple")
-        throw new Error("invalid projected set");
-    const [header, tree, end] = node.slots;
-    if (header.kind !== "atom" || header.payload.length !== 1 || ![0, 1, 2, 6, 8].includes(byte_at(header.payload, 0)) ||
-        end.kind !== "atom" || atom_kind_text(end) !== "clause/process-projected-set-end-v1" || end.payload.length !== 0)
-        throw new Error("invalid projected set header");
-    const values = [];
-    const kind = byte_at(header.payload, 0);
-    const visit = (tree, depth) => {
-        if (depth > 32 || values.length > 65535)
-            throw new Error("projected set exceeds bounds");
-        if (tree.kind === "atom") {
-            if (atom_kind_text(tree) !== "clause/process-projected-set-end-v1" || tree.payload.length !== 0)
-                throw new Error("invalid projected set tree");
-            return;
-        }
-        visit(tree.slots[0], depth + 1);
-        const leaf = tree.slots[1];
-        const expected = new Map([[0, "clause/process-projected-f64-v1"], [1, "clause/process-projected-bool-v1"], [2, "clause/process-projected-symbol-v1"], [6, "clause/process-projected-text-v1"], [8, "clause/process-projected-referent-v1"]]);
-        if (leaf.kind !== "atom" || atom_kind_text(leaf) !== expected.get(kind))
-            throw new Error("wrong projected set kind");
-        const value = realize_projection_node(leaf);
-        if (values.length && projected_scalar_order(values[values.length - 1], value, kind) >= 0)
-            throw new Error("noncanonical projected set");
-        values.push(value);
-        visit(tree.slots[2], depth + 1);
-    };
-    visit(tree, 0);
-    return Object.freeze(values);
+function realize_projected_atom(kind, payload) {
+    if (kind === "clause/js-object-end-v1" && payload.length === 0)
+        return Object.freeze({});
+    if (kind === "clause/js-array-end-v1" && payload.length === 0)
+        return Object.freeze([]);
+    if (kind === "clause/process-projected-f64-v1") {
+        if (payload.length !== 8)
+            throw new Error("projected F64 payload is invalid");
+        return finite_f64(payload, 0);
+    }
+    if (kind === "clause/process-projected-bool-v1") {
+        const value = byte_at(payload, 0);
+        if (payload.length !== 1 || value > 1)
+            throw new Error("projected Boolean payload is invalid");
+        return value === 1;
+    }
+    if (kind === "clause/process-projected-symbol-v1")
+        return ascii_text(payload, "projected symbol");
+    if (kind === "clause/process-projected-text-v1")
+        return utf8_text(payload, "projected Text");
+    if (kind === "clause/process-projected-relation-table-v1")
+        return projected_table(payload);
+    if (kind === "clause/process-projected-referent-v1") {
+        if (payload.length === 9 && byte_at(payload, 4) === 0)
+            return checked_referent({ kind: "referent", domain: little_u32(payload, 0), identity: { kind: "declared", value: little_u32(payload, 5) } });
+        if (payload.length === 37 && byte_at(payload, 4) === 1)
+            return checked_referent({ kind: "referent", domain: little_u32(payload, 0), identity: { kind: "created", value: frozen_byte_range(payload, 5, 37) } });
+        throw new Error("projected referent is malformed");
+    }
+    throw new Error("projected scalar Atom is not realizable");
 }
-function realize_projection_node(node) {
-    if (node.kind === "atom") {
-        const kind = atom_kind_text(node);
-        const payload = node.payload;
-        if (kind === "clause/js-object-end-v1" && payload.length === 0)
-            return Object.freeze({});
-        if (kind === "clause/js-array-end-v1" && payload.length === 0)
-            return Object.freeze([]);
-        if (kind === "clause/process-projected-f64-v1")
-            return projected_number(payload);
-        if (kind === "clause/process-projected-bool-v1") {
-            const value = byte_at(payload, 0);
-            if (payload.length !== 1 || value === undefined || value > 1) {
-                throw new Error("projected Boolean payload is invalid");
+// Retain only one complete frame and its value spans. Reused values are
+// deeply frozen, and span equality includes every encoded structural check.
+let previousProjectedFrame;
+class ProjectionCursor {
+    bytes;
+    retainValues;
+    previousFrame;
+    offset = 2 * identity_bytes;
+    values = new Map();
+    maximumDepth = 0;
+    constructor(bytes, retainValues, previousFrame) {
+        this.bytes = bytes;
+        this.retainValues = retainValues;
+        this.previousFrame = previousFrame;
+        require_range(bytes, 0, this.offset, "projected Term scope");
+    }
+    tag(depth) {
+        if (depth > cse1_projected_term_max_depth)
+            throw new Error("projected Term exceeds its depth bound");
+        if (this.retainValues)
+            this.maximumDepth = Math.max(this.maximumDepth, depth);
+        require_range(this.bytes, this.offset, 1, "projected Term node");
+        const tag = byte_at(this.bytes, this.offset++);
+        if (tag > 1)
+            throw new Error("projected Term node tag is invalid");
+        return tag;
+    }
+    atomPayload() {
+        const kind = parse_canonical_blob(this.bytes, this.offset, "projected Atom kind");
+        const payload = parse_canonical_blob(this.bytes, kind.next, "projected Atom payload");
+        this.offset = require_range(this.bytes, payload.next, 1, "projected Atom equality");
+        if (byte_at(this.bytes, payload.next) !== 0)
+            throw new Error("projected Atom equality contract is invalid");
+        return { kind: ascii_text(kind.bytes, "projected Atom kind"), payload: payload.bytes };
+    }
+    atom(depth) {
+        if (this.tag(depth) !== 0)
+            throw new Error("projected realization expected an Atom");
+        return this.atomPayload();
+    }
+    value(depth) {
+        if (!this.retainValues || typeof this.bytes !== "string")
+            return this.freshValue(depth);
+        const start = this.offset;
+        const frame = this.previousFrame;
+        const previous = frame?.values.get(start);
+        if (frame !== undefined && previous !== undefined &&
+            this.bytes.slice(start, previous.end) === frame.source.slice(start, previous.end)) {
+            const maximumDepth = depth + previous.depth;
+            if (maximumDepth > cse1_projected_term_max_depth)
+                throw new Error("projected Term exceeds its depth bound");
+            this.maximumDepth = Math.max(this.maximumDepth, maximumDepth);
+            this.offset = previous.end;
+            this.values.set(start, previous);
+            return previous.value;
+        }
+        const enclosingDepth = this.maximumDepth;
+        this.maximumDepth = depth;
+        try {
+            const value = this.freshValue(depth);
+            this.values.set(start, { end: this.offset, depth: this.maximumDepth - depth, value });
+            return value;
+        }
+        finally {
+            this.maximumDepth = Math.max(enclosingDepth, this.maximumDepth);
+        }
+    }
+    freshValue(depth) {
+        if (this.tag(depth) === 0) {
+            const atom = this.atomPayload();
+            return realize_projected_atom(atom.kind, atom.payload);
+        }
+        let head = this.atom(depth + 1);
+        if (head.kind === "clause/process-projected-set-v1")
+            return this.set(head.payload, depth);
+        const object = head.kind === "clause/js-field-v1";
+        if (!object && head.kind !== "clause/js-item-v1")
+            throw new Error("projected Term lacks a realizable shape");
+        const fields = [];
+        const values = [];
+        const keys = new Set();
+        for (;;) {
+            if (object) {
+                if (head.kind !== "clause/js-field-v1")
+                    throw new Error("projected object entry lacks a field Atom");
+                const key = ascii_text(head.payload, "projected field");
+                if (keys.has(key))
+                    throw new Error("projected object field is duplicated");
+                keys.add(key);
+                fields.push([key, this.value(depth + 1)]);
             }
-            return value === 1;
+            else {
+                if (head.kind !== "clause/js-item-v1")
+                    throw new Error("projected array entry lacks an item Atom");
+                values.push(this.value(depth + 1));
+            }
+            depth += 1;
+            if (this.tag(depth) === 0) {
+                const end = this.atomPayload();
+                if (end.kind !== (object ? "clause/js-object-end-v1" : "clause/js-array-end-v1")) {
+                    throw new Error(object ? "projected object has an invalid terminator" : "projected array has an invalid terminator");
+                }
+                // Own data properties preserve __proto__ as an ordinary field.
+                return object ? Object.freeze(Object.fromEntries(fields)) : Object.freeze(values);
+            }
+            head = this.atom(depth + 1);
         }
-        if (kind === "clause/process-projected-symbol-v1")
-            return ascii_text(payload, "projected symbol");
-        if (kind === "clause/process-projected-text-v1")
-            return utf8_text(payload, "projected Text");
-        if (kind === "clause/process-projected-relation-table-v1")
-            return projected_table(payload);
-        if (kind === "clause/process-projected-referent-v1") {
-            const bytes = Array.from({ length: payload.length }, (_, index) => byte_at(payload, index));
-            if (payload.length === 9 && byte_at(payload, 4) === 0)
-                return checked_referent({ kind: "referent", domain: little_u32(bytes, 0), identity: { kind: "declared", value: little_u32(bytes, 5) } });
-            if (payload.length === 37 && byte_at(payload, 4) === 1)
-                return checked_referent({ kind: "referent", domain: little_u32(bytes, 0), identity: { kind: "created", value: frozen_byte_range(bytes, 5, 37) } });
-            throw new Error("projected referent is malformed");
-        }
-        throw new Error("projected scalar Atom is not realizable");
     }
-    else {
-        const head = node.slots[0];
-        const kind = atom_kind_text(head);
-        if (kind === "clause/process-projected-set-v1")
-            return projected_set(node);
-        if (kind === "clause/js-field-v1")
-            return realize_object(realize_projection_node, node);
-        if (kind === "clause/js-item-v1")
-            return realize_array(realize_projection_node, node);
-        throw new Error("projected Term lacks a realizable shape");
+    set(payload, depth) {
+        const kinds = new Map([[0, "clause/process-projected-f64-v1"], [1, "clause/process-projected-bool-v1"], [2, "clause/process-projected-symbol-v1"], [6, "clause/process-projected-text-v1"], [8, "clause/process-projected-referent-v1"]]);
+        if (payload.length !== 1 || !kinds.has(byte_at(payload, 0)))
+            throw new Error("invalid projected set header");
+        const kind = byte_at(payload, 0), values = [];
+        const end = (atom) => {
+            if (atom.kind !== "clause/process-projected-set-end-v1" || atom.payload.length !== 0)
+                throw new Error("invalid projected set tree");
+        };
+        const visit = (depth, treeDepth) => {
+            if (treeDepth > 32 || values.length > 65535)
+                throw new Error("projected set exceeds bounds");
+            if (this.tag(depth) === 0) {
+                end(this.atomPayload());
+                return;
+            }
+            visit(depth + 1, treeDepth + 1);
+            const leaf = this.atom(depth + 1);
+            if (leaf.kind !== kinds.get(kind))
+                throw new Error("wrong projected set kind");
+            const value = realize_projected_atom(leaf.kind, leaf.payload);
+            if (values.length && projected_scalar_order(values[values.length - 1], value, kind) >= 0)
+                throw new Error("noncanonical projected set");
+            values.push(value);
+            visit(depth + 1, treeDepth + 1);
+        };
+        visit(depth + 1, 0);
+        end(this.atom(depth + 1));
+        return Object.freeze(values);
     }
+}
+function decode_projected_value(bytes, maximumBytes, reuseValues = false) {
+    const envelope = workbench["workbench-byte-envelope-source"](bytes);
+    const source = envelope === null ? bytes : envelope;
+    if (!((typeof source === "string" && source.length <= maximumBytes) || exact_byte_array_p(source, maximumBytes))) {
+        throw new Error("projected Term bytes are outside the CSE1 bound");
+    }
+    const cursor = new ProjectionCursor(source, reuseValues, reuseValues ? previousProjectedFrame : undefined);
+    const value = cursor.value(0);
+    if (cursor.offset !== source.length)
+        throw new Error("projected Term has trailing bytes");
+    if (reuseValues)
+        previousProjectedFrame = typeof source === "string" ? { source, values: cursor.values } : undefined;
+    return value;
 }
 function decode_projected_term_frame(bytes) {
-    return realize_projection_node(decode_canonical_term(bytes));
+    return decode_projected_value(bytes, cse1_max_bytes, true);
 }
 function is_wasm_session(value) {
     return (typeof value === "object" &&
@@ -1943,7 +1949,7 @@ function create_wasm_cartridge_port_bang(module, policy) {
                     throw new Error("Admission produced no package-declared frame Observation");
                 })();
             }
-            const frame = workbench["create-workbench-byte-envelope"](policy, exact_bytes_to_binary_text(projection.termBytes));
+            const frame = workbench["create-workbench-byte-envelope"](policy, typeof projection.termBytes === "string" ? projection.termBytes : exact_bytes_to_binary_text(projection.termBytes));
             return complete(workbench["->AdmissionAccepted"](session, event.successor, frame));
         }
         catch (_catch_3) {
@@ -1987,21 +1993,50 @@ function create_wasm_cartridge_port_bang(module, policy) {
             : null;
     });
 }
-/** Apply compiler-owned CET1 to this exact live Wasm session. No source parsing,
+function isSourcePreparationModule(module) {
+    return is_session_wasm_module(module)
+        && "clause_session_v1_prepare_source" in module && typeof module.clause_session_v1_prepare_source === "function";
+}
+export function decodeSourcePreparationHex(source) {
+    return decode_hex_transport(source, "CPS2", cet1_max_bytes, 3 * cet1_max_bytes);
+}
+/** Check compiler-owned source preparation against the captured live session.
+ * Preparation imports no state and advances neither generation nor sequence. */
+export function prepareSourceSession(module, incomingSession, preparation) {
+    const session = require_live_session(incomingSession);
+    if (!isSourcePreparationModule(module))
+        throw new Error("Wasm runtime lacks checked source preparation API");
+    if (!exact_byte_array_p(preparation, cet1_max_bytes))
+        throw new Error("source preparation exceeds bound");
+    const status = module.clause_session_v1_prepare_source(session.handle.slot, session.handle.generation, BigInt(session.sequence.value), typed_bytes(preparation));
+    if (status !== 0)
+        throw new Error(`checked source preparation rejected: ${process_status(status)}`);
+}
+/** Apply a compiler-owned source edit to this exact live Wasm session. No source parsing,
  * identity inference, native shadow-state import, or automatic Admission. */
 export function editSourceSession(module, incomingSession, generation, request, witness, policy) {
     const profile = enterSourceTransferPhase("adapter");
     try {
         const previous = require_live_session(incomingSession);
+        if (!is_session_wasm_module(module))
+            throw new Error("Wasm runtime lacks checked session API");
         if (!Number.isSafeInteger(generation) || generation <= previous.sourceGeneration) {
             throw new Error("source edit requires a fresh captured generation");
         }
-        if (!is_source_edit_module(module))
-            throw new Error("Wasm runtime lacks checked source edit API");
         if (!observeSourceTransferPhase("witness-validation", () => exact_byte_array_p(witness, cet1_max_bytes)))
             throw new Error("source edit witness exceeds bound");
         const cartridge = parse_persistent_cartridge_bang(request);
-        const status = observeSourceTransferPhase("bulk-call", () => module.clause_session_v1_source_edit_bulk(previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(cartridge.openBytes)), observeSourceTransferPhase("typed-array-construction", () => new Uint8Array(witness))));
+        const scalarEdit = witness[0] === 67 && witness[1] === 69 && witness[2] === 88 && witness[3] === 49;
+        const status = observeSourceTransferPhase("bulk-call", () => {
+            if (scalarEdit) {
+                if (!is_scalar_edit_module(module))
+                    throw new Error("Wasm runtime lacks checked scalar edit API");
+                return module.clause_session_v1_scalar_edit_bulk(previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(witness)));
+            }
+            if (!is_source_edit_module(module))
+                throw new Error("Wasm runtime lacks checked source edit API");
+            return module.clause_session_v1_source_edit_bulk(previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(cartridge.openBytes)), observeSourceTransferPhase("typed-array-construction", () => typed_bytes(witness)));
+        });
         if (status !== 0)
             throw new Error(`checked source edit rejected: ${process_status(status)}`);
         const eventBytes = observeSourceTransferPhase("event-array-construction", () => [...observeSourceTransferPhase("event-bulk", () => module.clause_session_v1_event_bulk())]);
@@ -2044,19 +2079,69 @@ function diagnosticModule(module) {
 export function projectSession(module, incomingSession) {
     const session = require_live_session(incomingSession);
     const bytes = diagnosticModule(module).clause_session_v1_project_bulk(session.handle.slot, session.handle.generation);
-    return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+    return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), 1024 * 1024);
 }
 export function explainSession(module, incomingSession, entry) {
     const session = require_live_session(incomingSession);
     if (!Number.isInteger(entry) || entry < 0 || entry > 65535)
         throw new Error("explanation entry is invalid");
     const bytes = diagnosticModule(module).clause_session_v1_explain_bulk(session.handle.slot, session.handle.generation, entry);
-    return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+    return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), 1024 * 1024);
 }
 export function sourceContinuity(module, incomingSession) {
     const session = require_live_session(incomingSession);
     const bytes = diagnosticModule(module).clause_session_v1_source_continuity_bulk(session.handle.slot, session.handle.generation);
-    return realize_projection_node(decode_canonical_term([...bytes], source_continuity_max_bytes));
+    if (bytes.length < 76 || bytes.length > source_continuity_max_bytes ||
+        bytes[0] !== 67 || bytes[1] !== 83 || bytes[2] !== 67 || bytes[3] !== 49) {
+        throw new Error("source continuity has an invalid CSC1 envelope");
+    }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const occurrenceCount = view.getUint32(68, true);
+    const slotCount = view.getUint32(72, true);
+    if (76 + occurrenceCount * 76 + slotCount * 4 !== bytes.length) {
+        throw new Error("source continuity has an invalid CSC1 length");
+    }
+    const hex = (start) => {
+        let value = "";
+        for (let index = start; index < start + 32; index++)
+            value += bytes[index].toString(16).padStart(2, "0");
+        return value;
+    };
+    const formations = [];
+    let offset = 76;
+    for (let index = 0; index < occurrenceCount; index++, offset += 76) {
+        formations.push([String(index), Object.freeze({
+                old: view.getUint32(offset, true), new: view.getUint32(offset + 4, true),
+                "occurrence-snapshot": hex(offset + 8),
+                "occurrence-coordinate": view.getUint32(offset + 40, true),
+                occurrence: hex(offset + 44),
+            })]);
+    }
+    const slots = [];
+    const seenSlots = new Set();
+    for (let index = 0; index < slotCount; index++, offset += 4) {
+        const old = view.getUint16(offset, true);
+        if (seenSlots.has(old))
+            throw new Error("source continuity duplicates a slot");
+        seenSlots.add(old);
+        slots.push([String(old), view.getUint16(offset + 2, true)]);
+    }
+    const paged = (entries) => {
+        const pages = new Map();
+        for (const [key, value] of entries) {
+            const index = Number(key), page = Math.floor(index / 64);
+            let fields = pages.get(page);
+            if (fields === undefined) {
+                fields = [];
+                pages.set(page, fields);
+            }
+            fields.push([String(index % 64), value]);
+        }
+        return Object.freeze(Object.fromEntries([...pages].map(([page, fields]) => [String(page), Object.freeze(Object.fromEntries(fields))])));
+    };
+    return Object.freeze({ "old-snapshot": hex(4), "new-snapshot": hex(36),
+        formations: paged(formations), slots: paged(slots),
+    });
 }
 /** Read-only opaque CIQ1/CIQ2 request: all search and semantic evaluation occurs
  * inside the live Wasm runtime against a retained actual event. */
@@ -2065,9 +2150,10 @@ export function interveneSession(module, incomingSession, query) {
     if (!exact_byte_array_p(query, 64 * 1024))
         throw new Error("intervention query exceeds bound");
     const bytes = diagnosticModule(module).clause_session_v1_intervene_bulk(session.handle.slot, session.handle.generation, new Uint8Array(query));
-    return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+    return decode_projected_value(byteTextDecoder.decode(new Uint16Array(bytes)), 1024 * 1024);
 }
 export { checked_referent as checkedProjectedReferent };
+export { decode_cse1_event as decodeSessionEvent };
 /** Decode exact runtime coordinates; ordinal page keys are not row identities. */
 export function explanationRelationRows(explanation) {
     const object = (value) => {

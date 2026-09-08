@@ -137,12 +137,30 @@ mod tests {
         })
     }
     fn evaluator<'a>(program: &'a Arc<ExecutableProgramV1>, cache: Option<&'a Mutex<EvaluationCache>>) -> StepEvaluator<'a> {
-        StepEvaluator { program, cache, allocation_root: [11; IDENTITY_BYTES],
+        StepEvaluator { program, cache, scalar_plans: None, allocation_root: [11; IDENTITY_BYTES],
             configuration_id: ConfigurationId::from_bytes([13; IDENTITY_BYTES]) }
     }
     fn rule(entry: u16, assignments: Vec<(u16, E)>) -> ExecutableRuleV1 {
         ExecutableRuleV1 { entry, predicates: vec![], required_present: vec![],
             required_absent: vec![], assignments, removals: vec![] }
+    }
+
+    #[test]
+    fn retained_effect_coordinates_follow_current_values_and_replaced_program() {
+        let plans = Arc::new(relational::ScalarPlans::default());
+        for increment in [2.0, 9.0] {
+            let mut matched = rule(2, vec![(1, E::RelationEffects(vec![ExecutableRelationEffectV1::Insert(
+                E::Binding(0), E::Add(Box::new(E::Binding(1)), Box::new(E::Constant(number(increment)))))]))]);
+            matched.predicates = vec![E::RelationMatch(0, Box::new(E::Binding(0)), Box::new(E::Binding(1)))];
+            let program = Arc::new(ExecutableProgramV1 { initial_configuration: vec![], projection: None, rules: vec![matched] });
+            for input in [1.0, 5.0] {
+                let configuration = [table(&[(1, input)]).into(), table(&[]).into()];
+                let actual = StepEvaluator { scalar_plans: Some(&plans), ..evaluator(&program, None) }
+                    .prepare_step_traced(ExecutableOccurrenceV1 { entry: 2, arguments: vec![] }, 1, 1, &configuration, None).unwrap();
+                assert_eq!(actual, run(&program, None, &configuration, vec![], 1).unwrap());
+                assert_eq!(actual.0[1], table(&[(1, input + increment)]));
+            }
+        }
     }
     fn run(program: &Arc<ExecutableProgramV1>, cache: Option<&Mutex<EvaluationCache>>,
         configuration: &[ExecutableSlotV1], arguments: Vec<V>, ordinal: u64)

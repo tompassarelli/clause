@@ -1,6 +1,6 @@
 use clause_package::{FormationLocalId, Term};
 use clause_runtime::{
-    check_executable_source_edit_v1, decode_executable_source_edit_v1,
+    check_executable_source_edit_v1, decode_executable_scalar_edit_transaction_v1,
     encode_executable_source_edit_v1,
 };
 use clause_workbench::ResidentSourceWorkbenchV1;
@@ -88,6 +88,7 @@ fn checked_field_edit_preserves_equal_siblings_occurrences_and_live_world() {
     assert_eq!(reading(&w), [1.0, 1.0]);
 
     let old = w.generation().clone();
+    let preparation = w.source_preparation().unwrap();
     let world = w.project_current_world().unwrap();
     assert_eq!(
         w.edit_scalar_effect(old.handle, &selected, b"1.0").unwrap(),
@@ -113,7 +114,16 @@ fn checked_field_edit_preserves_equal_siblings_occurrences_and_live_world() {
         [1.0, 1.0],
         "editing a future effect must not reset or run the world"
     );
-    let witness = decode_executable_source_edit_v1(w.last_source_edit().unwrap()).unwrap();
+    let transaction = decode_executable_scalar_edit_transaction_v1(w.last_source_edit().unwrap()).unwrap();
+    assert_eq!(clause_runtime::decode_executable_scalar_edit_transaction_v1(&clause_runtime::encode_executable_scalar_edit_transaction_v1(&transaction).unwrap()).unwrap(), transaction);
+    let witness = clause_runtime::ExecutableSourceEditV1 {
+        old_source: SOURCE.to_vec(),
+        imports: clause_package::CanonicalSourceImportsV1::new(),
+        declared_frontend: clause_package::DECLARED_FOCUSED_FRONTEND_SOURCE_V1.to_vec(),
+        old_root: clause_package::ProgramChangeOccurrenceId::from_bytes(preparation[4..36].try_into().unwrap()),
+        new_root: transaction.new_root, operation: transaction.operation,
+        old_cpp1: old.cpp1.clone(), new_cpp1: w.generation().cpp1.clone(),
+    };
     let clause_runtime::ExecutableSourceOperationV1::ScalarEffect { field_path, .. } =
         &witness.operation
     else {
@@ -121,7 +131,7 @@ fn checked_field_edit_preserves_equal_siblings_occurrences_and_live_world() {
     };
     assert_eq!(*field_path, selected.field_path);
     assert_eq!(
-        decode_executable_source_edit_v1(&encode_executable_source_edit_v1(&witness).unwrap())
+        clause_runtime::decode_executable_source_edit_v1(&encode_executable_source_edit_v1(&witness).unwrap())
             .unwrap(),
         witness
     );

@@ -30,6 +30,9 @@ pub use imports::{CanonicalSourceImportsV1, canonical_source_imports_v1};
 mod scalar_laws;
 use scalar_laws::*;
 mod live_edit;
+mod incremental_read;
+mod source_analysis;
+pub use source_analysis::CheckedCanonicalSourceAnalysisV1;
 mod relational;
 mod contracts;
 mod conformance;
@@ -127,7 +130,7 @@ pub enum CanonicalAllocationJudgmentV1 {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CanonicalAllocatedIdentityV1 {
     Formation(FormationLocalId),
     Capability(CapabilityLocalId),
@@ -150,6 +153,7 @@ pub struct CanonicalAllocationV1 {
 pub struct CanonicalSourceAllocationPlanV1 {
     artifact: CanonicalSourceArtifactIdV1,
     root: ProgramChangeOccurrenceId,
+    // The private constructor preserves unique AllocationRequest order.
     allocations: Vec<CanonicalAllocationV1>,
 }
 
@@ -175,17 +179,15 @@ impl CanonicalSourceAllocationPlanV1 {
         slot: &CanonicalEmissionSlotV1,
         domain: AllocationDomain,
     ) -> Option<CanonicalAllocatedIdentityV1> {
-        self.allocations.iter().find_map(|allocation| {
+        self.allocations.binary_search_by(|allocation| {
             let CanonicalAllocationJudgmentV1::Fresh {
                 producer: actual_producer,
                 slot: CanonicalAllocationSlotV1::Emission(actual_slot),
                 ..
             } = &allocation.judgment;
-            (actual_producer == producer
-                && actual_slot == slot
-                && AllocationDomain::of(allocation.identity) == domain)
-                .then_some(allocation.identity)
-        })
+            (actual_producer, actual_slot, AllocationDomain::of(allocation.identity))
+                .cmp(&(producer, slot, domain))
+        }).ok().map(|index| self.allocations[index].identity)
     }
 }
 
@@ -606,7 +608,8 @@ pub struct CanonicalSourceCstV1 {
     artifact: CanonicalSourceArtifactIdV1,
     exact_source: Box<[u8]>,
     imported_sources: BTreeMap<CanonicalSourceArtifactIdV1, Box<[u8]>>,
-    items: Vec<CstItem>,
+    parsed: std::sync::Arc<incremental_read::ParsedSource>,
+    items: Vec<std::sync::Arc<CstItem>>,
     denotations: Vec<CanonicalSourceDenotationV1>,
     applications: Vec<CanonicalSourceApplicationV1>,
     vocabularies: Vec<CanonicalSourceVocabularyV1>,
@@ -614,6 +617,10 @@ pub struct CanonicalSourceCstV1 {
     declared_frontend: CanonicalDeclaredFrontendV1,
     conformance: std::sync::OnceLock<conformance::Domains>,
     callables: Vec<CanonicalCallableV1>,
+    relational_handlers: std::sync::OnceLock<BTreeSet<CanonicalSourceOriginV1>>,
+    relational_relations: std::sync::OnceLock<BTreeSet<Vec<u8>>>,
+    relation_items: std::sync::OnceLock<BTreeMap<Vec<u8>, Vec<usize>>>,
+    allocation_requests: std::sync::OnceLock<std::sync::Arc<[AllocationRequest]>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -723,6 +730,10 @@ impl CanonicalSourceCstV1 {
     #[must_use]
     pub fn exact_source(&self) -> &[u8] {
         &self.exact_source
+    }
+
+    pub fn imports(&self) -> &CanonicalSourceImportsV1 {
+        &self.parsed.imports
     }
 
     #[must_use]
@@ -1541,7 +1552,7 @@ pub fn read_canonical_source_with_imports_and_frontend_v1(
     let frontend = frontend.with_transition_readings(artifact, &lines)?;
     let frontend = &frontend;
     let mut scalar_laws = ScalarLawEnvironment::read(artifact, &lines, frontend)?;
-    scalar_laws.declarations.extend(imported.items.iter().filter(|item| matches!(item.kind, CstKind::ForeignType { .. })).cloned());
+    scalar_laws.declarations.extend(imported.items.iter().filter(|item| matches!(item.kind, CstKind::ForeignType { .. })).map(|item| item.as_ref().clone()));
     let mut items = imported.items;
     let mut callables = imported.callables;
     let mut vocabularies = Vec::new();
@@ -1581,7 +1592,7 @@ pub fn read_canonical_source_with_imports_and_frontend_v1(
         if let Some((definition, relation)) = callable::read(block, origin, &scalar_laws.declarations)? {
             callables.push(definition);
             if let Some(relation) = relation {
-                items.push(CstItem { origin, kind: CstKind::Relation(relation) });
+                items.push(std::sync::Arc::new(CstItem { origin, kind: CstKind::Relation(relation) }));
             }
             continue;
         }
@@ -1592,7 +1603,7 @@ pub fn read_canonical_source_with_imports_and_frontend_v1(
                 .find(|declaration| declaration.origin == origin)
                 .expect("the declaration pass owns this exact block")
                 .clone();
-            items.push(declaration);
+            items.push(std::sync::Arc::new(declaration));
             continue;
         }
         if block[0].text.starts_with("mode ") {
@@ -1604,7 +1615,7 @@ pub fn read_canonical_source_with_imports_and_frontend_v1(
                 if edge.subject.starts_with(b"?") {
                     return Err(CanonicalSourceErrorV1::InvalidApplication { origin: edge.origin });
                 }
-                items.push(CstItem { origin: edge.origin, kind: CstKind::Application(declared_application(&edge)?) });
+                items.push(std::sync::Arc::new(CstItem { origin: edge.origin, kind: CstKind::Application(declared_application(&edge)?) }));
             }
             continue;
         }
@@ -1618,19 +1629,34 @@ pub fn read_canonical_source_with_imports_and_frontend_v1(
             continue;
         }
         if let Some(denotation) = parse_denotation(artifact, block, origin)? {
-            items.push(CstItem {
+            items.push(std::sync::Arc::new(CstItem {
                 origin,
                 kind: CstKind::Denotation(denotation),
-            });
+            }));
             continue;
         }
         if let Some(focus) = parse_subject_focus(artifact, block, origin, frontend, &scalar_laws)? {
             subject_focuses.push(focus);
         }
-        items.extend(parse_items(artifact, block, origin, &scalar_laws, frontend)?);
+        items.extend(parse_items(artifact, block, origin, &scalar_laws, frontend)?.into_iter().map(std::sync::Arc::new));
     }
+    finish_canonical_source(exact_source, artifact, &lines, frontend,
+        incremental_read::ParsedSource { items, scalar_laws, callables, imports: imports.clone(), imported_sources: imported.sources }, vocabularies, subject_focuses)
+}
+
+fn finish_canonical_source(
+    exact_source: &[u8],
+    artifact: CanonicalSourceArtifactIdV1,
+    lines: &[SourceLine<'_>],
+    frontend: &CanonicalDeclaredFrontendV1,
+    parsed: incremental_read::ParsedSource,
+    vocabularies: Vec<CanonicalSourceVocabularyV1>,
+    subject_focuses: Vec<CanonicalSubjectFocusV1>,
+) -> Result<CanonicalSourceCstV1, CanonicalSourceErrorV1> {
+    let mut items = parsed.items.clone();
+    let scalar_laws = &parsed.scalar_laws;
     items.extend(scalar_laws.relations.iter().filter_map(|relation|
-        relation.contract_origin.map(|origin| CstItem { origin, kind: CstKind::Relation(relation.clone()) })));
+        relation.contract_origin.map(|origin| std::sync::Arc::new(CstItem { origin, kind: CstKind::Relation(relation.clone()) }))));
     retain_supported_boolean_derive_pairs(&mut items);
     // Scalar syntax is a front-end convenience, not a separate state system.
     // Promote only handlers connected to created relation rows into the same
@@ -1659,7 +1685,7 @@ pub fn read_canonical_source_with_imports_and_frontend_v1(
             if connected.len() == before { break; }
         }
         for (index, handler) in alternatives {
-            if general_handler_relation_designations(&handler, &items).iter().any(|relation| connected.contains(relation)) { items[index].kind = CstKind::GeneralHandler(handler); }
+            if general_handler_relation_designations(&handler, &items).iter().any(|relation| connected.contains(relation)) { std::sync::Arc::make_mut(&mut items[index]).kind = CstKind::GeneralHandler(handler); }
         }
     }
     validate_unique_designations(&items)?;
@@ -1686,12 +1712,13 @@ pub fn read_canonical_source_with_imports_and_frontend_v1(
             _ => None,
         })
         .collect();
-    let callables = callable::check_definitions(&callables)?;
+    let callables = callable::check_definitions(&parsed.callables)?;
     callable::complete_inferred_results(&mut items, &callables)?;
     let mut cst = CanonicalSourceCstV1 {
         artifact,
         exact_source: exact_source.into(),
-        imported_sources: imported.sources,
+        imported_sources: parsed.imported_sources.clone(),
+        parsed: std::sync::Arc::new(parsed),
         items,
         denotations,
         applications,
@@ -1700,6 +1727,10 @@ pub fn read_canonical_source_with_imports_and_frontend_v1(
         declared_frontend: frontend.clone(),
         conformance: std::sync::OnceLock::new(),
         callables,
+        relational_handlers: std::sync::OnceLock::new(),
+        relational_relations: std::sync::OnceLock::new(),
+        relation_items: std::sync::OnceLock::new(),
+        allocation_requests: std::sync::OnceLock::new(),
     };
     normalize_focused_state_assertions(&mut cst);
     Ok(cst)
@@ -1718,12 +1749,13 @@ fn normalize_focused_state_assertions(cst: &mut CanonicalSourceCstV1) {
             && x.name == b"x" && y.name == b"y" && z.name == b"z"
             && let (CanonicalScalarValueV1::Number(x), CanonicalScalarValueV1::Number(y), CanonicalScalarValueV1::Number(z)) = (&x.value, &y.value, &z.value)
         {
-            item.kind = CstKind::VectorAssertion(VectorAssertionCst {
+            let replacement = CstKind::VectorAssertion(VectorAssertionCst {
                 origin: assertion.origin,
                 subject: assertion.subject.clone(),
                 relation: assertion.relation.clone(),
                 x: *x, y: *y, z: *z,
             });
+            std::sync::Arc::make_mut(item).kind = replacement;
         }
         let CstKind::Application(application) = &item.kind else { continue };
         if !state_relations.contains(&application.role) { continue; }
@@ -1732,7 +1764,7 @@ fn normalize_focused_state_assertions(cst: &mut CanonicalSourceCstV1) {
         let origin = item.origin;
         let subject = application.subject.clone();
         let relation = application.role.clone();
-        item.kind = match &application.object {
+        let replacement = match &application.object {
             CanonicalScalarValueV1::Number(value) => CstKind::NumberAssertion(NumberAssertionCst {
                 origin, subject, relation, value: *value,
             }),
@@ -1747,6 +1779,7 @@ fn normalize_focused_state_assertions(cst: &mut CanonicalSourceCstV1) {
             }),
             _ => unreachable!("source applications contain literal scalar values"),
         };
+        std::sync::Arc::make_mut(item).kind = replacement;
     }
 }
 
@@ -1783,29 +1816,23 @@ pub fn rematerialize_canonical_source_allocation_plan_v1(
     }
     let (schema_for_producer, operator_for_producer) =
         derived_container_coordinates(recorded.root, &requests)?;
-    for request in &requests {
-        let matches = recorded
-            .allocations
-            .iter()
-            .filter(|allocation| {
-                let CanonicalAllocationJudgmentV1::Fresh {
-                    basis,
-                    producer,
-                    slot: CanonicalAllocationSlotV1::Emission(slot),
-                    collision,
-                    cycle,
-                } = &allocation.judgment;
-                *basis == CanonicalFreshBasisV1::ConstitutedProgramChange(recorded.root)
-                    && producer == &request.producer
-                    && slot == &request.slot
-                    && *collision == CanonicalAllocationCollisionDispositionV1::RejectTypedCollision
-                    && *cycle == CanonicalAllocationCycleDispositionV1::RejectDependencyCycle
-                    && AllocationDomain::of(allocation.identity) == request.domain
-            })
-            .collect::<Vec<_>>();
-        let [allocation] = matches.as_slice() else {
+    for (request, allocation) in requests.iter().zip(&recorded.allocations) {
+        let CanonicalAllocationJudgmentV1::Fresh {
+            basis,
+            producer,
+            slot: CanonicalAllocationSlotV1::Emission(slot),
+            collision,
+            cycle,
+        } = &allocation.judgment;
+        if !(*basis == CanonicalFreshBasisV1::ConstitutedProgramChange(recorded.root)
+            && producer == &request.producer
+            && slot == &request.slot
+            && *collision == CanonicalAllocationCollisionDispositionV1::RejectTypedCollision
+            && *cycle == CanonicalAllocationCycleDispositionV1::RejectDependencyCycle
+            && AllocationDomain::of(allocation.identity) == request.domain)
+        {
             return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
-        };
+        }
         let (coordinate, attempt) = derive_local_coordinate(recorded.root, request)?;
         let expected_identity = allocated_identity(
             request,
@@ -1850,8 +1877,8 @@ fn build_independent_plan(
             derivation_attempt,
             judgment: CanonicalAllocationJudgmentV1::Fresh {
                 basis,
-                producer: request.producer,
-                slot: CanonicalAllocationSlotV1::Emission(request.slot),
+                producer: request.producer.clone(),
+                slot: CanonicalAllocationSlotV1::Emission(request.slot.clone()),
                 collision: CanonicalAllocationCollisionDispositionV1::RejectTypedCollision,
                 cycle: CanonicalAllocationCycleDispositionV1::RejectDependencyCycle,
             },
@@ -1930,7 +1957,14 @@ fn allocated_identity(
     }
 }
 
-fn allocation_requests(
+fn allocation_requests(cst: &CanonicalSourceCstV1) -> Result<&[AllocationRequest], CanonicalSourceErrorV1> {
+    if let Some(requests) = cst.allocation_requests.get() { return Ok(requests); }
+    let requests = compute_allocation_requests(cst)?;
+    let _ = cst.allocation_requests.set(requests.into());
+    Ok(cst.allocation_requests.get().expect("a successful request computation initializes the immutable source index"))
+}
+
+fn compute_allocation_requests(
     cst: &CanonicalSourceCstV1,
 ) -> Result<Vec<AllocationRequest>, CanonicalSourceErrorV1> {
     let mut requested = Vec::new();
@@ -2341,14 +2375,30 @@ fn initial_assertion_slot(
     slot
 }
 
+fn source_relations<'a>(cst: &'a CanonicalSourceCstV1, surface: &[u8]) -> impl Iterator<Item = &'a RelationCst> {
+    // Keep every declaration in source order; ambiguity remains a checker
+    // judgment and cannot be erased by indexing an immutable source snapshot.
+    cst.relation_items.get_or_init(|| {
+        let mut relations = BTreeMap::<Vec<u8>, Vec<usize>>::new();
+        for (index, item) in cst.items.iter().enumerate() {
+            if let CstKind::Relation(relation) = &item.kind {
+                relations.entry(relation.surface.clone()).or_default().push(index);
+            }
+        }
+        relations
+    }).get(surface).into_iter().flatten().map(move |index| {
+        let CstKind::Relation(relation) = &cst.items[*index].kind else {
+            unreachable!("the immutable source index contains only relation items")
+        };
+        relation
+    })
+}
+
 fn declared_state_cardinality(
     cst: &CanonicalSourceCstV1,
     surface: &[u8],
 ) -> Option<SourceCardinality> {
-    let relation = cst.items.iter().find_map(|item| match &item.kind {
-        CstKind::Relation(relation) if relation.surface == surface => Some(relation),
-        _ => None,
-    })?;
+    let relation = source_relations(cst, surface).next()?;
     let subject = relation.subject.as_ref()?;
     let matching = relation
         .modes
@@ -2363,7 +2413,7 @@ fn declared_state_cardinality(
 
 fn general_handler_relation_designations(
     handler: &GeneralHandlerCst,
-    items: &[CstItem],
+    items: &[std::sync::Arc<CstItem>],
 ) -> BTreeSet<Vec<u8>> {
     handler
         .parameter_sources
@@ -2425,7 +2475,11 @@ fn general_handler_mutated_relation_designations(
         .collect()
 }
 
-fn relational_handler_origins(cst: &CanonicalSourceCstV1) -> BTreeSet<CanonicalSourceOriginV1> {
+fn relational_handler_origins(cst: &CanonicalSourceCstV1) -> &BTreeSet<CanonicalSourceOriginV1> {
+    cst.relational_handlers.get_or_init(|| compute_relational_handler_origins(cst))
+}
+
+fn compute_relational_handler_origins(cst: &CanonicalSourceCstV1) -> BTreeSet<CanonicalSourceOriginV1> {
     let handlers = cst
         .items
         .iter()
@@ -2478,7 +2532,11 @@ fn relational_handler_origins(cst: &CanonicalSourceCstV1) -> BTreeSet<CanonicalS
     origins
 }
 
-fn relational_relation_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<u8>> {
+fn relational_relation_designations(cst: &CanonicalSourceCstV1) -> &BTreeSet<Vec<u8>> {
+    cst.relational_relations.get_or_init(|| compute_relational_relation_designations(cst))
+}
+
+fn compute_relational_relation_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<u8>> {
     let origins = relational_handler_origins(cst);
     cst.items
         .iter()
@@ -2511,10 +2569,7 @@ fn initial_relational_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<u
         if declared_state_cardinality(cst, surface) != Some(SourceCardinality::Many) {
             return None;
         }
-        let relation = cst.items.iter().find_map(|item| match &item.kind {
-            CstKind::Relation(r) if &r.surface == surface => Some(r),
-            _ => None,
-        })?;
+        let relation = source_relations(cst, surface).next()?;
         let subject_role = relation.subject.as_ref()?;
         let domain = &relation.roles.iter().find(|role| &role.name == subject_role)?.domain;
         declared_domain_facet(cst, subject, domain).then(|| surface.clone())
@@ -2522,14 +2577,7 @@ fn initial_relational_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<u
 }
 
 fn declared_state_relation(cst: &CanonicalSourceCstV1, surface: &[u8]) -> bool {
-    let matching = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::Relation(relation) if relation.surface == surface => Some(relation),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let matching = source_relations(cst, surface).collect::<Vec<_>>();
     let [relation] = matching.as_slice() else {
         return false;
     };
@@ -2569,14 +2617,7 @@ fn resolved_state_relation<'a>(
     surface: &[u8],
     origin: CanonicalSourceOriginV1,
 ) -> Result<ResolvedStateRelation<'a>, CanonicalSourceErrorV1> {
-    let matching = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::Relation(relation) if relation.surface == surface => Some(relation),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let matching = source_relations(cst, surface).collect::<Vec<_>>();
     let [relation] = matching.as_slice() else {
         return Err(if matching.is_empty() {
             CanonicalSourceErrorV1::MissingExecutableBinding { origin }
@@ -4511,7 +4552,7 @@ fn checked_source_state_cells(
             .items
             .iter()
             .find_map(|item| match &item.kind {
-                CstKind::Relation(candidate) if candidate.surface == relation => Some(item.origin),
+                CstKind::Relation(candidate) if candidate.surface == *relation => Some(item.origin),
                 _ => None,
             })
             .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding {
@@ -5151,16 +5192,19 @@ fn checked_executable_handlers(
     input: Option<(&InputHandlerCst, &VectorAssertionCst)>,
     scalar: &[ScalarHandlerParts<'_>],
     keyboard: &[CanonicalKeyboardBindingV1],
+    selected: Option<&BTreeSet<FormationLocalId>>,
 ) -> Result<Vec<CanonicalExecutableHandlerV1>, CanonicalSourceErrorV1> {
     let mut handlers = Vec::new();
     let handler_id = |producer: &CanonicalSemanticProducerV1| {
         formation_id(
             plan,
             producer,
-            &head_slot(CanonicalSourceProductionV1::Handler),
+            &head_slot(producer.production),
         )
     };
-    if let Some((source, assertion)) = input {
+    let input = input.map(|(source, assertion)| Ok::<_, CanonicalSourceErrorV1>((source, assertion, handler_id(&source.producer)?)))
+        .transpose()?;
+    if let Some((source, assertion, _)) = input.filter(|(_, _, id)| selected.is_none_or(|ids| ids.contains(id))) {
         let x = state_ref_for_origin(cst, plan, assertion.origin, Some(b"x"))?;
         let z = state_ref_for_origin(cst, plan, assertion.origin, Some(b"z"))?;
         handlers.push(CanonicalExecutableHandlerV1 {
@@ -5189,6 +5233,7 @@ fn checked_executable_handlers(
     }
     let derives = resolved_boolean_derives(cst, plan)?;
     for derive in &derives {
+        if selected.is_some_and(|ids| !ids.contains(&derive.state.assertion)) { continue; }
         let mut rules = Vec::with_capacity(derive.cases.len() + 1);
         let mut cases = Vec::new();
         for case in &derive.cases {
@@ -5242,6 +5287,7 @@ fn checked_executable_handlers(
         }
     }
     for parts in scalar {
+        if let Some(ids) = selected { if !ids.contains(&handler_id(&parts.handler.producer)?) { continue; } }
         let mut rules = Vec::with_capacity(parts.cases.len());
         for case in &parts.cases {
             let mut assignments = Vec::with_capacity(case.components.len());
@@ -5344,6 +5390,7 @@ fn checked_executable_handlers(
         CstKind::GeneralHandler(handler) => Some(handler),
         _ => None,
     }) {
+        if let Some(ids) = selected { if !ids.contains(&handler_id(&source.producer)?) { continue; } }
         if relational_handler_origins(cst).contains(&source.origin) {
             continue;
         }
@@ -5798,7 +5845,11 @@ fn checked_executable_handlers(
             .iter()
             .filter_map(|item| match &item.kind {
                 CstKind::GeneralHandler(handler) if relational.contains(&handler.origin) => {
-                    Some(relational_checked_handler(cst, plan, handler))
+                    match handler_id(&handler.producer) {
+                        Err(error) => Some(Err(error)),
+                        Ok(id) if selected.is_none_or(|ids| ids.contains(&id)) => Some(relational_checked_handler(cst, plan, handler)),
+                        Ok(_) => None,
+                    }
                 }
                 _ => None,
             })
@@ -6091,6 +6142,7 @@ fn checked_canonical_source_execution_v1(
     plan: &CanonicalSourceAllocationPlanV1,
     input_parts: Option<(&InputHandlerCst, &VectorAssertionCst)>,
     scalar_parts: &[ScalarHandlerParts<'_>],
+    reused: Option<(&[CanonicalExecutableHandlerV1], &BTreeSet<FormationLocalId>)>,
 ) -> Result<CheckedCanonicalSourceExecutionV1, CanonicalSourceErrorV1> {
     let input_handler = input_parts
         .as_ref()
@@ -6126,13 +6178,18 @@ fn checked_canonical_source_execution_v1(
     let keyboard_bindings = source_keyboard_bindings(cst)?;
     let scalar_input_bindings = source_scalar_input_bindings(cst)?;
     let state_cells = checked_source_state_cells(cst, plan)?;
-    let executable_handlers = checked_executable_handlers(
+    let mut executable_handlers = checked_executable_handlers(
         cst,
         plan,
         input_parts,
         scalar_parts,
         &keyboard_bindings,
+        reused.map(|(_, selected)| selected),
     )?;
+    if let Some((handlers, _)) = reused {
+        executable_handlers.extend_from_slice(handlers);
+        executable_handlers.sort_by_key(|handler| handler.id);
+    }
     validate_keyboard_handler_targets(cst, &keyboard_bindings, &executable_handlers)?;
     validate_scalar_input_handler_targets(cst, &scalar_input_bindings, &executable_handlers)?;
     let referent_input_bindings = checked_referent_input_bindings(cst, plan, &executable_handlers)?;
@@ -6154,11 +6211,24 @@ pub fn elaborate_canonical_source_package_v1(
     context: CanonicalSourceContextV1,
     plan: &CanonicalSourceAllocationPlanV1,
 ) -> Result<CanonicalSourcePackageSliceV1, CanonicalSourceErrorV1> {
+    elaborate_canonical_source_package_inner(cst, context, plan, None)
+}
+
+fn elaborate_canonical_source_package_inner(
+    cst: &CanonicalSourceCstV1,
+    context: CanonicalSourceContextV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    reused: Option<&source_analysis::RetainedSourceDerivations<'_>>,
+) -> Result<CanonicalSourcePackageSliceV1, CanonicalSourceErrorV1> {
     if plan.artifact != cst.artifact {
         return Err(CanonicalSourceErrorV1::AllocationArtifactMismatch);
     }
     let expanded = structured_bindings::expand(cst, plan)?;
     let cst = expanded.as_ref();
+    let source_formation = |scope, id, source: &[u8], origin, kind: &str| {
+        source_formation(scope, id, source, origin, kind,
+            reused.and_then(|retained| retained.formations.get(&id).copied()))
+    };
     let scope = TermScope {
         universe: context.universe,
         semantics: context.semantics,
@@ -6880,6 +6950,7 @@ pub fn elaborate_canonical_source_package_v1(
             plan,
             input_parts,
             &scalar_parts,
+            reused.map(|retained| (retained.handlers, retained.selected)),
         )
     };
     for definition in &cst.callables {
@@ -10871,10 +10942,7 @@ fn state_relation_shape<'a>(
     cst: &'a CanonicalSourceCstV1,
     surface: &[u8],
 ) -> Option<(&'a [u8], &'a [ShapeField])> {
-    let relation = cst.items.iter().find_map(|item| match &item.kind {
-        CstKind::Relation(relation) if relation.surface == surface => Some(relation),
-        _ => None,
-    })?;
+    let relation = source_relations(cst, surface).next()?;
     let subject = relation.subject.as_ref()?;
     let produced = relation
         .modes
@@ -11076,7 +11144,7 @@ fn require_leaf(
     Ok(())
 }
 
-fn retain_supported_boolean_derive_pairs(items: &mut [CstItem]) {
+fn retain_supported_boolean_derive_pairs(items: &mut [std::sync::Arc<CstItem>]) {
     let mut counts = BTreeMap::<Vec<u8>, (usize, usize)>::new();
     for item in items.iter() {
         match &item.kind {
@@ -11104,7 +11172,7 @@ fn retain_supported_boolean_derive_pairs(items: &mut [CstItem]) {
             _ => None,
         };
         if let Some(production) = unsupported {
-            item.kind = CstKind::Unsupported(CanonicalUnsupportedProductionV1 {
+            std::sync::Arc::make_mut(item).kind = CstKind::Unsupported(CanonicalUnsupportedProductionV1 {
                 production,
                 origin: item.origin,
                 emissions: vec![],
@@ -11125,7 +11193,7 @@ fn assertion_subject(kind: &CstKind) -> Option<&Vec<u8>> {
     }
 }
 
-fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSourceErrorV1> {
+fn validate_unique_designations(items: &[std::sync::Arc<CstItem>]) -> Result<(), CanonicalSourceErrorV1> {
     let mut seen = BTreeMap::<Vec<u8>, (bool, bool)>::new();
     for (designation, declaration, referent_use) in
         items.iter().filter_map(|item| {
@@ -11350,19 +11418,17 @@ fn emission(
     slot: CanonicalEmissionSlotV1,
     origin: CanonicalSourceOriginV1,
 ) -> CanonicalSourceEmissionV1 {
-    let allocations = plan
-        .allocations
-        .iter()
-        .filter(|allocation| {
-            let CanonicalAllocationJudgmentV1::Fresh {
-                producer: actual_producer,
-                slot: CanonicalAllocationSlotV1::Emission(actual_slot),
-                ..
-            } = &allocation.judgment;
-            actual_producer == &producer && actual_slot == &slot
-        })
-        .cloned()
-        .collect();
+    let key = |allocation: &CanonicalAllocationV1| {
+        let CanonicalAllocationJudgmentV1::Fresh {
+            producer: actual_producer,
+            slot: CanonicalAllocationSlotV1::Emission(actual_slot),
+            ..
+        } = &allocation.judgment;
+        (actual_producer, actual_slot).cmp(&(&producer, &slot))
+    };
+    let start = plan.allocations.partition_point(|allocation| key(allocation).is_lt());
+    let end = start + plan.allocations[start..].partition_point(|allocation| key(allocation).is_eq());
+    let allocations = plan.allocations[start..end].to_vec();
     CanonicalSourceEmissionV1 {
         producer,
         slot,
@@ -11377,16 +11443,30 @@ fn source_formation(
     source: &[u8],
     origin: CanonicalSourceOriginV1,
     kind: &str,
+    retained: Option<&FormationJudgmentPreimageV2>,
 ) -> Result<FormationJudgmentPreimageV2, CanonicalSourceErrorV1> {
+    let type_kind = format!("clause/source-{kind}-type-v1");
+    let exact_atom = |term: &Term, kind: &[u8], payload: &[u8]| {
+        term.scope() == scope && term.as_atom().is_some_and(|atom|
+            atom.kind() == kind && atom.canonical_payload() == payload
+                && atom.equality_contract() == EqualityContract::ExactOctetsV1)
+    };
+    // Only explicit occurrence continuity offers a previous derivation. Its
+    // source and semantic scope must still be exact; origins are always new.
+    let retained = retained.filter(|old|
+        old.direct_dependencies.is_empty()
+            && exact_atom(&old.term, b"clause/canonical-source-slice-v1", source)
+            && exact_atom(&old.target.type_term, type_kind.as_bytes(), b"closed")
+            && exact_atom(&old.target.interpretation, b"clause/canonical-reading-v1", b"declaration-profile-v1"));
+    let (term, target) = match retained {
+        Some(old) => (old.term.clone(), old.target.clone()),
+        None => (source_term(scope, source)?, target(scope, type_kind.as_bytes(), b"closed")?),
+    };
     Ok(FormationJudgmentPreimageV2 {
         id,
         context: vec![origin_term(scope, origin)?],
-        term: source_term(scope, source)?,
-        target: target(
-            scope,
-            format!("clause/source-{kind}-type-v1").as_bytes(),
-            b"closed",
-        )?,
+        term,
+        target,
         direct_dependencies: vec![],
     })
 }

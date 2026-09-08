@@ -50,6 +50,10 @@ impl RetiredPersistentProcessRuntimeV1 {
 }
 
 impl PersistentProcessSessionV1 {
+    pub(crate) fn source_continuity(&self) -> Result<&super::ExecutableSourceContinuityV1, PersistentProcessSessionErrorV1> {
+        Ok(self.runtime()?.source_continuity()?)
+    }
+
     pub fn source_continuity_term(&self) -> Result<clause_package::Term, PersistentProcessSessionErrorV1> {
         Ok(self.runtime()?.source_continuity_term()?)
     }
@@ -117,6 +121,26 @@ impl PersistentProcessSessionV1 {
             allocation,
             last_admitted: None,
             accepted_projection,
+        })
+    }
+
+    pub(crate) fn open_source_edit(
+        package: CheckedProcessPackage,
+        authority: AuthorityStore,
+        application: ApplicationId,
+        checked: &super::CheckedExecutableSourceEditV1,
+        facts: ExecutableAuthorityFactsV1,
+    ) -> Result<Self, PersistentProcessSessionErrorV1> {
+        let mut runtime = ExecutableProcessRuntimeV1::instantiate_source_edit(
+            package, authority, application, checked, facts,
+        )?;
+        runtime.start_carrier_process(facts)?;
+        let accepted_projection = runtime.current_projection_term()?;
+        let allocation = runtime.allocation();
+        Ok(Self {
+            runtime: Some(runtime), session: facts.session,
+            program_revision: facts.program_revision, world_base: facts.initial_state,
+            allocation, last_admitted: None, accepted_projection,
         })
     }
 

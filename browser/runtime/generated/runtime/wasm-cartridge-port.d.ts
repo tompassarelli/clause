@@ -5,7 +5,7 @@ export type ExactBytes = readonly number[];
 type CanonicalBytes = ExactBytes | string;
 export interface ExactProcessRequest {
     readonly _tag: "ExactProcessRequest";
-    readonly bytes: ExactBytes;
+    readonly bytes: CanonicalBytes;
 }
 export interface ExactProcessObservation {
     readonly _tag: "ExactProcessObservation";
@@ -29,7 +29,7 @@ interface Cse1EventBase {
 }
 type AdmissionProjection = null | Readonly<{
     observationId: ExactBytes;
-    termBytes: ExactBytes;
+    termBytes: CanonicalBytes;
 }>;
 export type Cse1Event = (Cse1EventBase & Readonly<{
     kind: "opened";
@@ -165,10 +165,14 @@ export type ProjectedReferent = Readonly<{
 }>;
 declare function checked_referent(value: unknown): ProjectedReferent;
 export type ProjectedValue = number | boolean | string | readonly ProjectedValue[] | ProjectedObject;
+/** Decode a bounded cartridge directly to immutable request custody. */
+export declare function decodeProcessRequestHex(source: unknown): ExactProcessRequest;
 declare function decode_cwr1_hex(source: unknown): ExactBytes;
 declare function decode_cet1_hex(source: unknown): ExactBytes;
-declare function ExactProcessRequest(bytes: ExactBytes): ExactProcessRequest;
-declare function exactprocessrequest_bytes(r: ExactProcessRequest): ExactBytes;
+declare function ExactProcessRequest(bytes: ExactBytes): ExactProcessRequest & {
+    readonly bytes: ExactBytes;
+};
+declare function exactprocessrequest_bytes(r: ExactProcessRequest): CanonicalBytes;
 declare function ExactProcessObservation(bytes: ExactBytes): ExactProcessObservation;
 declare function exactprocessobservation_bytes(r: ExactProcessObservation): ExactBytes;
 declare function Cwo1Observation(observationId: ExactBytes, stateRevisionId: ExactBytes, values: readonly (number | boolean)[]): Cwo1Observation;
@@ -180,7 +184,7 @@ declare function process_status(status: unknown): number;
 declare function byte_at(bytes: CanonicalBytes, index: number): number;
 declare function little_u16(bytes: CanonicalBytes, offset: number): number;
 declare function little_u32(bytes: CanonicalBytes, offset: number): number;
-declare function little_safe_u64(bytes: ExactBytes, offset: number): number;
+declare function little_safe_u64(bytes: CanonicalBytes, offset: number): number;
 declare function append_u32_bang(bytes: number[], value: number): number;
 declare function append_u64_bang(bytes: number[], value: number): number;
 declare function append_blob_bang(bytes: number[], value: ExactBytes): void;
@@ -189,6 +193,7 @@ declare function frozen_byte_range(bytes: CanonicalBytes, start: number, end: nu
 declare function decode_cwo1_observation(incoming: unknown): Cwo1Observation;
 declare function parse_blob(bytes: CanonicalBytes, offset: number, maximum: number, label: string): ParsedBlob;
 declare function process_request_occurrences_bang(request: unknown): readonly ExactBytes[];
+declare function decode_cse1_event(bytes: unknown): Cse1Event;
 declare function decode_projected_term_frame(bytes: unknown): ProjectedValue;
 declare function advance_session_occurrence_bang(module: unknown, incoming_session: unknown, ordinal: number): Extract<Cse1Event, {
     kind: "input";
@@ -218,7 +223,11 @@ declare function admit_session_candidate_bang(module: unknown, incoming_session:
     kind: "admission";
 }>;
 declare function create_wasm_cartridge_port_bang(module: unknown, policy: workbench.WorkbenchPolicy): workbench.CartridgePort;
-/** Apply compiler-owned CET1 to this exact live Wasm session. No source parsing,
+export declare function decodeSourcePreparationHex(source: unknown): ExactBytes;
+/** Check compiler-owned source preparation against the captured live session.
+ * Preparation imports no state and advances neither generation nor sequence. */
+export declare function prepareSourceSession(module: unknown, incomingSession: unknown, preparation: ExactBytes): void;
+/** Apply a compiler-owned source edit to this exact live Wasm session. No source parsing,
  * identity inference, native shadow-state import, or automatic Admission. */
 export declare function editSourceSession(module: unknown, incomingSession: unknown, generation: number, request: ExactProcessRequest, witness: ExactBytes, policy: workbench.WorkbenchPolicy): workbench.SessionCompletion;
 /** Read the package-declared projection of the current accepted world without
@@ -230,6 +239,7 @@ export declare function sourceContinuity(module: unknown, incomingSession: unkno
  * inside the live Wasm runtime against a retained actual event. */
 export declare function interveneSession(module: unknown, incomingSession: unknown, query: ExactBytes): ProjectedValue;
 export { checked_referent as checkedProjectedReferent };
+export { decode_cse1_event as decodeSessionEvent };
 export interface InterventionCoordinate {
     readonly slot: number;
     readonly subject?: ProjectedReferent;

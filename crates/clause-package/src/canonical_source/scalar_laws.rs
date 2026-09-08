@@ -40,6 +40,14 @@ pub(super) struct ScalarBindingCase {
     pub origins: Vec<CanonicalSourceOriginV1>,
 }
 
+impl ScalarLawCst {
+    pub(super) fn rebase_origins(&mut self, edit: &incremental_read::OriginEdit) -> Result<(), CanonicalSourceErrorV1> {
+        edit.origin(&mut self.origin)?;
+        for (_, origin) in &mut self.premises { edit.origin(origin)?; }
+        Ok(())
+    }
+}
+
 impl ScalarLawEnvironment {
     pub fn read(
         artifact: CanonicalSourceArtifactIdV1,

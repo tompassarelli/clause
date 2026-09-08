@@ -3048,11 +3048,10 @@ pub fn check_process_package(
         }
     }
 
-    let canonical_snapshot_preimage =
-        encode_wire(&snapshot).map_err(ProcessPackageCheckError::Canonical)?;
     let semantics = snapshot.constitution.semantics;
     let constitution =
         resolve_program_constitution_v2(&snapshot).map_err(ProcessPackageCheckError::Formation)?;
+    let canonical_snapshot_preimage = constitution.exact_snapshot_preimage_bytes().to_vec();
     let derived_snapshot = constitution.snapshot();
     if claimed_snapshot != derived_snapshot {
         return Err(ProcessPackageCheckError::SnapshotIdMismatch {

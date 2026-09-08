@@ -3,6 +3,7 @@
 use clause_package::*;
 
 mod checkpoint;
+mod source_continuity;
 pub use checkpoint::{wasm_session_checkpoint_context_v1, wasm_session_checkpoint_open_v1};
 
 use super::wasm_boundary::{
@@ -283,6 +284,7 @@ pub struct WasmSessionEventV1 {
 }
 
 struct LiveSessionV1 {
+    source_preparation: Option<std::sync::Arc<super::CheckedExecutableSourcePreparationV1>>,
     exact_open: Vec<u8>,
     session: PersistentProcessSessionV1,
     sequence: u64,
@@ -291,6 +293,24 @@ struct LiveSessionV1 {
     limits: WasmSessionLimitsV1,
     last_input_sequence: u64,
     last_configuration_revision: u64,
+}
+
+/// A local checked transaction cannot be constructed or altered by a caller.
+/// Its retained preparation and custody bind commit to the exact checked edit.
+pub struct PreparedWasmScalarEditV1 {
+    handle: WasmSessionHandleV1,
+    sequence: u64,
+    previous: std::sync::Arc<super::CheckedExecutableSourcePreparationV1>,
+    checked: super::CheckedExecutableSourceEditV1,
+    transaction: Vec<u8>,
+}
+
+impl PreparedWasmScalarEditV1 {
+    pub fn exact_transaction(&self) -> &[u8] { &self.transaction }
+    pub fn analysis(&self) -> &std::sync::Arc<CheckedCanonicalSourceAnalysisV1> { &self.checked.preparation.analysis }
+    pub fn exact_cpp1(&self) -> &[u8] { &self.checked.preparation.exact_cpp1 }
+    pub fn physical_plan(&self) -> &super::ExecutablePhysicalPlanV1 { &self.checked.preparation.plan }
+    pub fn lowered(&self) -> &super::ExecutableCanonicalProgramV1 { &self.checked.preparation.lowered }
 }
 
 /// A bounded physical boundary with one transactionally replaceable live slot.
@@ -368,10 +388,9 @@ impl WasmPersistentSessionBoundaryV1 {
     }
 
     pub fn source_continuity_bytes(&self, handle: WasmSessionHandleV1) -> Result<Vec<u8>, WasmProcessStatusV1> {
-        diagnostic_bytes_with_limit(
-            self.source_continuity_term(handle)?,
-            WASM_SOURCE_CONTINUITY_LIMIT_V1,
-        )
+        let continuity = self.captured_session(handle)?.source_continuity()
+            .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        source_continuity::encode(continuity, WASM_SOURCE_CONTINUITY_LIMIT_V1)
     }
 
     pub fn intervention_bytes(&self, handle: WasmSessionHandleV1, request: &[u8]) -> Result<Vec<u8>, WasmProcessStatusV1> {
@@ -468,7 +487,88 @@ impl WasmPersistentSessionBoundaryV1 {
     }
 
     pub fn open(&mut self, bytes: &[u8]) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
-        self.open_inner(bytes, None)
+        self.open_inner(bytes, None, None)
+    }
+
+    pub fn open_prepared(&mut self, bytes: &[u8], preparation: &[u8]) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+        self.open_inner(bytes, None, Some(preparation))
+    }
+
+    /// Preparation is passive: successful checking changes no runtime state,
+    /// handle, or sequence. A rejected capsule preserves the previous analysis.
+    pub fn prepare_source(&mut self, handle: WasmSessionHandleV1, expected_sequence: u64, preparation: &[u8]) -> Result<(), WasmProcessStatusV1> {
+        if handle.slot != SLOT || self.generation != Some(handle.generation) { return Err(WasmProcessStatusV1::StaleSessionHandle); }
+        let live = self.live.as_mut().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
+        if live.sequence != expected_sequence { return Err(WasmProcessStatusV1::SequenceRejected); }
+        let carrier = live.session.carrier().map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        let constitution = carrier.constitution();
+        let scope = TermScope { universe: constitution.universe(), semantics: constitution.semantics() };
+        let open = decode_wasm_session_open_v1(&live.exact_open)?;
+        let checked = super::check_executable_source_preparation_v1(preparation, scope, &open.physical_plan_bytes)
+            .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        live.source_preparation = Some(std::sync::Arc::new(checked));
+        Ok(())
+    }
+
+    pub fn check_source_edit(&self, handle: WasmSessionHandleV1, expected_sequence: u64, witness: &super::ExecutableSourceEditV1) -> Result<super::CheckedExecutableSourceEditV1, WasmProcessStatusV1> {
+        if handle.slot != SLOT || self.generation != Some(handle.generation) { return Err(WasmProcessStatusV1::StaleSessionHandle); }
+        let live = self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
+        if live.sequence != expected_sequence { return Err(WasmProcessStatusV1::SequenceRejected); }
+        if decode_wasm_session_open_v1(&live.exact_open)?.physical_plan_bytes != witness.old_cpp1 { return Err(WasmProcessStatusV1::ProcessRejected); }
+        let carrier = live.session.carrier().map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        let constitution = carrier.constitution();
+        let scope = TermScope { universe: constitution.universe(), semantics: constitution.semantics() };
+        match &live.source_preparation {
+            Some(preparation) => super::check_prepared_executable_source_edit_v1(witness, scope, preparation),
+            None => super::check_executable_source_edit_v1(witness, scope),
+        }.map_err(|_| WasmProcessStatusV1::ProcessRejected)
+    }
+
+    pub fn prepare_scalar_edit(&self, handle: WasmSessionHandleV1, sequence: u64,
+        new_root: ProgramChangeOccurrenceId, operation: &super::ExecutableSourceOperationV1,
+    ) -> Result<PreparedWasmScalarEditV1, WasmProcessStatusV1> {
+        if handle.slot != SLOT || self.generation != Some(handle.generation) { return Err(WasmProcessStatusV1::StaleSessionHandle); }
+        let live = self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
+        if live.sequence != sequence { return Err(WasmProcessStatusV1::SequenceRejected); }
+        let previous = live.source_preparation.as_ref().ok_or(WasmProcessStatusV1::ProcessRejected)?;
+        let checked = super::derive_prepared_scalar_edit_v1(previous, operation, new_root).map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        let transaction = super::encode_executable_scalar_edit_transaction_v1(&super::ExecutableScalarEditTransactionV1 {
+            old_plan: checked.old_plan, new_plan: checked.new_plan, new_root, operation: operation.clone(),
+        }).map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        Ok(PreparedWasmScalarEditV1 { handle, sequence, previous: std::sync::Arc::clone(previous), checked, transaction })
+    }
+
+    pub fn commit_scalar_edit(&mut self, prepared: PreparedWasmScalarEditV1) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+        let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::Transfer);
+        if prepared.handle.slot != SLOT || self.generation != Some(prepared.handle.generation) { return Err(WasmProcessStatusV1::StaleSessionHandle); }
+        let live = self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
+        if live.sequence != prepared.sequence { return Err(WasmProcessStatusV1::SequenceRejected); }
+        if live.source_preparation.as_ref().is_none_or(|current| !std::sync::Arc::ptr_eq(current, &prepared.previous)) {
+            return Err(WasmProcessStatusV1::ProcessRejected);
+        }
+        let mut open = decode_wasm_session_open_v1(&live.exact_open)?;
+        if open.physical_plan_bytes != prepared.previous.exact_cpp1
+            || prepared.checked.old_plan != prepared.previous.identity {
+            return Err(WasmProcessStatusV1::ProcessRejected);
+        }
+        open.physical_plan_bytes = prepared.checked.preparation.exact_cpp1.clone();
+        open.allocation = WasmSessionAllocationV1::New;
+        self.open_inner(&encode_wasm_session_open_v1(&open)?, Some(&prepared.checked), None)
+    }
+
+    pub fn scalar_edit(&mut self, handle: WasmSessionHandleV1, sequence: u64, bytes: &[u8]) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+        let transaction = super::decode_executable_scalar_edit_transaction_v1(bytes).map_err(|_| WasmProcessStatusV1::MalformedRequest)?;
+        let prepared = self.prepare_scalar_edit(handle, sequence, transaction.new_root, &transaction.operation)?;
+        if prepared.checked.old_plan != transaction.old_plan || prepared.checked.new_plan != transaction.new_plan {
+            return Err(WasmProcessStatusV1::ProcessRejected);
+        }
+        self.commit_scalar_edit(prepared)
+    }
+
+    pub fn scalar_edit_bulk(&mut self, handle: WasmSessionHandleV1, sequence: u64, bytes: &[u8]) -> Result<(), WasmProcessStatusV1> {
+        let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::SourceEditBulk);
+        let event = self.scalar_edit(handle, sequence, bytes)?;
+        self.install_event(event)
     }
 
     /// A compiler witness is replayed against the exact currently owned plan.
@@ -482,24 +582,16 @@ impl WasmPersistentSessionBoundaryV1 {
         witness: &[u8],
     ) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
         let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::Transfer);
-        if handle.slot != SLOT || self.generation != Some(handle.generation) {
-            return Err(WasmProcessStatusV1::StaleSessionHandle);
-        }
-        let live = self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
-        if live.sequence != expected_sequence { return Err(WasmProcessStatusV1::SequenceRejected); }
-        let carrier = live.session.carrier().map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
-        let constitution = carrier.constitution();
-        let scope = TermScope { universe: constitution.universe(), semantics: constitution.semantics() };
         let witness = super::decode_executable_source_edit_v1(witness).map_err(|_| WasmProcessStatusV1::MalformedRequest)?;
         let request = decode_wasm_session_open_v1(open)?;
         if request.physical_plan_bytes != witness.new_cpp1 || !matches!(request.allocation, WasmSessionAllocationV1::New) {
             return Err(WasmProcessStatusV1::ProcessRejected);
         }
-        let checked = super::check_executable_source_edit_v1(&witness, scope).map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
-        self.open_inner(open, Some(&checked))
+        let checked = self.check_source_edit(handle, expected_sequence, &witness)?;
+        self.open_inner(open, Some(&checked), None)
     }
 
-    fn open_inner(&mut self, bytes: &[u8], continuity: Option<&super::CheckedExecutableSourceEditV1>) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+    fn open_inner(&mut self, bytes: &[u8], continuity: Option<&super::CheckedExecutableSourceEditV1>, preparation: Option<&[u8]>) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
         let _profile = super::source_profile_scope_v1(super::SourceProfilePhaseV1::Instantiate);
         let request = decode_wasm_session_open_v1(bytes)?;
         validate_limits(request.limits)?;
@@ -522,12 +614,14 @@ impl WasmPersistentSessionBoundaryV1 {
                 }
             },
         };
+        let preparation_cpp1 = preparation.map(|_| request.physical_plan_bytes.clone());
         let mut session = instantiate_persistent_process_session_v1(
             request.package_bytes,
             request.application,
             request.physical_plan_bytes,
             request.authority,
             request.allocation,
+            continuity,
         )?;
         if let Some(checked) = continuity {
             let previous = &self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?.session;
@@ -556,7 +650,15 @@ impl WasmPersistentSessionBoundaryV1 {
                 state_revision_count: state_revision_count(&session)?,
             },
         };
+        let source_preparation = if let Some(preparation) = preparation {
+            let carrier = session.carrier().map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+            let constitution = carrier.constitution();
+            let scope = TermScope { universe: constitution.universe(), semantics: constitution.semantics() };
+            Some(std::sync::Arc::new(super::check_executable_source_preparation_v1(preparation, scope, preparation_cpp1.as_deref().expect("preparation retains exact CPP1"))
+                .map_err(|_| WasmProcessStatusV1::ProcessRejected)?))
+        } else { continuity.map(|checked| std::sync::Arc::clone(&checked.preparation)) };
         let replacement = LiveSessionV1 {
+            source_preparation,
             exact_open: bytes.to_vec(),
             session,
             sequence: 0,
@@ -765,6 +867,7 @@ pub fn open_fresh_persistent_process_session_v1(
         request.physical_plan_bytes,
         request.authority,
         WasmSessionAllocationV1::New,
+        None,
     )
 }
 
@@ -774,6 +877,7 @@ fn instantiate_persistent_process_session_v1(
     physical_plan_bytes: Vec<u8>,
     authority_input: WasmAuthorityInputV1,
     allocation: WasmSessionAllocationV1,
+    continuity: Option<&super::CheckedExecutableSourceEditV1>,
 ) -> Result<PersistentProcessSessionV1, WasmProcessStatusV1> {
     let decoded =
         decode_process_package(&package_bytes).map_err(|_| WasmProcessStatusV1::PackageRejected)?;
@@ -783,9 +887,17 @@ fn instantiate_persistent_process_session_v1(
         snapshot: package.constitution().snapshot(),
         local: application,
     };
+    let (authority, facts) = establish_persistent_authority(&package, &authority_input)?;
+    if let Some(checked) = continuity {
+        if !matches!(allocation, WasmSessionAllocationV1::New)
+            || physical_plan_bytes != checked.preparation.exact_cpp1 {
+            return Err(WasmProcessStatusV1::ProcessRejected);
+        }
+        return PersistentProcessSessionV1::open_source_edit(package, authority, application, checked, facts)
+            .map_err(|_| WasmProcessStatusV1::ProcessRejected);
+    }
     let physical_plan = decode_executable_physical_plan_v1(&physical_plan_bytes)
         .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
-    let (authority, facts) = establish_persistent_authority(&package, &authority_input)?;
     match allocation {
         WasmSessionAllocationV1::New => {
             PersistentProcessSessionV1::open(package, authority, application, physical_plan, facts)
@@ -2148,36 +2260,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn source_continuity_aggregate_accepts_exact_limit_and_rejects_limit_plus_one() {
-        let scope = TermScope {
-            universe: UniverseId::from_bytes([1; 32]),
-            semantics: ClauseSemanticsId::from_bytes([2; 32]),
-        };
-        let term = |payload| {
-            Term::atom(
-                scope,
-                b"continuity".to_vec(),
-                vec![0; payload],
-                EqualityContract::ExactOctetsV1,
-            )
-            .unwrap()
-        };
-        let fixed = canonical_term_bytes(&term(0)).unwrap().len();
-        let exact = diagnostic_bytes_with_limit(
-            term(WASM_SOURCE_CONTINUITY_LIMIT_V1 - fixed),
-            WASM_SOURCE_CONTINUITY_LIMIT_V1,
-        )
-        .unwrap();
-        assert_eq!(exact.len(), WASM_SOURCE_CONTINUITY_LIMIT_V1);
-        assert_eq!(
-            diagnostic_bytes_with_limit(
-                term(WASM_SOURCE_CONTINUITY_LIMIT_V1 - fixed + 1),
-                WASM_SOURCE_CONTINUITY_LIMIT_V1,
-            ),
-            Err(WasmProcessStatusV1::ResponseOutOfBounds),
-        );
-    }
+
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -2247,6 +2330,20 @@ mod wasm_exports {
     }
 
     #[wasm_bindgen(skip_typescript)]
+    pub fn clause_session_v1_prepare_source(slot: u32, generation: u32, sequence: u64, preparation: &[u8]) -> u32 {
+        SESSION_BOUNDARY.with_borrow_mut(|boundary| match boundary.prepare_source(
+            super::WasmSessionHandleV1 { slot, generation }, sequence, preparation,
+        ) { Ok(()) => WasmProcessStatusV1::Ready as u32, Err(error) => error as u32 })
+    }
+
+    #[wasm_bindgen(skip_typescript)]
+    pub fn clause_session_v1_scalar_edit_bulk(slot: u32, generation: u32, sequence: u64, transaction: &[u8]) -> u32 {
+        SESSION_BOUNDARY.with_borrow_mut(|boundary| match boundary.scalar_edit_bulk(super::WasmSessionHandleV1 { slot, generation }, sequence, transaction) {
+            Ok(()) => WasmProcessStatusV1::Ready as u32, Err(error) => error as u32,
+        })
+    }
+
+    #[wasm_bindgen(skip_typescript)]
     pub fn clause_session_v1_source_edit_bulk(slot: u32, generation: u32, sequence: u64, open: &[u8], witness: &[u8]) -> u32 {
         SESSION_BOUNDARY.with_borrow_mut(|boundary| match boundary.source_edit_bulk(
             super::WasmSessionHandleV1 { slot, generation }, sequence, open, witness,
@@ -2290,6 +2387,8 @@ mod wasm_exports {
     const SESSION_BULK_TYPES: &'static str = r#"
 export function clause_session_v1_open_bulk(request: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_command_bulk(request: Uint8Array<ArrayBuffer>): number;
+export function clause_session_v1_prepare_source(slot: number, generation: number, sequence: bigint, preparation: Uint8Array<ArrayBuffer>): number;
+export function clause_session_v1_scalar_edit_bulk(slot: number, generation: number, sequence: bigint, transaction: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_source_edit_bulk(slot: number, generation: number, sequence: bigint, open: Uint8Array<ArrayBuffer>, witness: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_intervene_bulk(slot: number, generation: number, request: Uint8Array<ArrayBuffer>): Uint8Array;
 "#;

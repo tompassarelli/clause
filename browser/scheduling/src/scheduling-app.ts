@@ -36,6 +36,7 @@ interface GenerationPayload {
   readonly compilerMicros: number;
   readonly cwr1: string;
   readonly cet1: string | null;
+  readonly sourcePreparation: string | null;
   readonly scalarEffects: readonly ScalarEffectPayload[];
   readonly completeEntry: number;
 }
@@ -98,6 +99,7 @@ function parseGeneration(value: unknown): GenerationPayload {
     || typeof payload.compilerMicros !== "number"
     || typeof payload.cwr1 !== "string"
     || !(payload.cet1 === null || typeof payload.cet1 === "string")
+    || !(payload.sourcePreparation === null || typeof payload.sourcePreparation === "string")
     || !Array.isArray(payload.scalarEffects)
     || !Number.isSafeInteger(payload.completeEntry)) {
     throw new Error("schedule generation is malformed");
@@ -117,6 +119,7 @@ function parseGeneration(value: unknown): GenerationPayload {
     compilerMicros: payload.compilerMicros,
     cwr1: payload.cwr1,
     cet1: payload.cet1 as string | null,
+    sourcePreparation: payload.sourcePreparation as string | null,
     scalarEffects: Object.freeze(scalarEffects),
     completeEntry: payload.completeEntry as number,
   });
@@ -194,11 +197,13 @@ async function start(): Promise<void> {
   const policy = schedulePolicy();
   const port = wasm["create-wasm-cartridge-port"](module, policy);
   const accepted = completed<workbench.PackageCheck>(done =>
-    port.acceptPackage(wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](generation.cwr1)), done));
+    port.acceptPackage(wasm.decodeProcessRequestHex(generation.cwr1), done));
   if (accepted._tag !== "PackageAccepted") throw new Error(accepted.reason);
   const started = completed<workbench.SessionCompletion>(done =>
     port.startSession(accepted.acceptedPackage, generation.generation, done));
   if (started._tag !== "SessionStarted") throw new Error(started.reason);
+  if (generation.sourcePreparation === null) throw new Error("schedule source preparation is missing");
+  wasm.prepareSourceSession(module, started.session, wasm.decodeSourcePreparationHex(generation.sourcePreparation));
   let session = started.session;
   activeGeneration = generation;
   disposeSession = () => port.disposeSession(session);
@@ -418,8 +423,8 @@ async function start(): Promise<void> {
       module,
       session,
       nextGeneration.generation,
-      wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](nextGeneration.cwr1)),
-      wasm["decode-cwr1-hex"](nextGeneration.cet1),
+      wasm.decodeProcessRequestHex(nextGeneration.cwr1),
+      wasm["decode-cet1-hex"](nextGeneration.cet1),
       policy,
     );
     if (result._tag !== "SessionStarted") throw new Error(result.reason);

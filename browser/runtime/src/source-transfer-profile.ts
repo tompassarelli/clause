@@ -42,6 +42,7 @@ for (const name of ["encounter", "collections"]) {
     if (checked._tag !== "PackageAccepted") throw new Error(checked.reason);
     const started = completed<workbench.SessionCompletion>(done => port.startSession(checked.acceptedPackage, 1, done));
     if (started._tag !== "SessionStarted") throw new Error(started.reason);
+    wasm.prepareSourceSession(module, started.session, await bytes(`${name}/initial.cps1`));
     const key = (code: string) => ({ kind: "keyboard", code, phase: "down", repeat: false });
     const values: unknown[] = [key("BeginEncounter"), key("Attack")];
     if (name === "collections") values.push(...[1, 3].map(value => ({ kind: "scalar-input", channel: "IgniteDuration", value })));

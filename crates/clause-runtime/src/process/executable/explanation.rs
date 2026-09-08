@@ -213,7 +213,7 @@ impl RetainedEventV1 {
                 program: &self.program,
                 allocation_root: self.allocation_root,
                 configuration_id: self.step.before,
-                cache: None,
+                cache: None, scalar_plans: None,
             }.prepare_step_traced(
                 self.step.occurrence.clone(), self.step_ordinal,
                 self.configuration_ordinal, &self.before, Some(&mut trace),
@@ -252,7 +252,7 @@ mod retained_event_tests {
         let evaluator = StepEvaluator {
             program: &program, allocation_root: [7; IDENTITY_BYTES],
             configuration_id: ConfigurationId::from_bytes([3; IDENTITY_BYTES]),
-            cache: None,
+            cache: None, scalar_plans: None,
         };
         let mut eager = ExecutableEvaluationTraceV1::default();
         let (after, step) = evaluator.prepare_step_traced(
@@ -587,16 +587,12 @@ impl ExecutableProcessRuntimeV1 {
                 boolean(recorded.step.rule_applied)?,
             ),
         ];
-        if let Some(projection) = &self.program.projection {
-            let bindings = projection.bindings.iter().copied()
-                .map(|binding| (binding.role, binding)).collect::<BTreeMap<_, _>>();
+        if let Some(plan) = &self.projection_plan {
             for (name, configuration) in [
                 (b"before-projection".as_slice(), &recorded.before),
                 (b"after-projection".as_slice(), &recorded.after),
             ] {
-                fields.push((name.to_vec(), realize_projection_term(
-                    &projection.template, &bindings, configuration,
-                )?));
+                fields.push((name.to_vec(), plan.realize(configuration)?));
             }
         }
         if let Some(metadata) = metadata {
@@ -971,7 +967,7 @@ impl ExecutableProcessRuntimeV1 {
             allocation_root: self.allocation.root,
             step_ordinal: recorded.step_ordinal,
             reads: None,
-            sum_queries: None,
+            sum_queries: None, scalar_memo: None,
             bindings: None,
             relational_occurrence: None,
         };

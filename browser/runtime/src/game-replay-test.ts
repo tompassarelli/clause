@@ -33,7 +33,9 @@ test("actual encounter replay agrees and altered expected vitality reports the f
     const needle = new Uint8Array(8), replacement = new Uint8Array(8);
     new DataView(needle.buffer).setFloat64(0, 9, true);
     new DataView(replacement.buffer).setFloat64(0, 10, true);
-    const term = event.projection.termBytes;
+    const term = typeof event.projection.termBytes === "string"
+      ? Uint8Array.from(event.projection.termBytes, (character) => character.charCodeAt(0))
+      : Uint8Array.from(event.projection.termBytes);
     const offset = term.findIndex((_, index) => needle.every((byte, position) => term[index + position] === byte));
     expect(offset).toBeGreaterThanOrEqual(0);
     bytes.set(replacement, bytes.length - term.length + offset);

@@ -395,9 +395,9 @@ impl CallableCst {
     }
 }
 
-pub(super) fn complete_inferred_results(items: &mut [CstItem], callables: &[CanonicalCallableV1]) -> Result<(), CanonicalSourceErrorV1> {
+pub(super) fn complete_inferred_results(items: &mut [std::sync::Arc<CstItem>], callables: &[CanonicalCallableV1]) -> Result<(), CanonicalSourceErrorV1> {
     for item in items {
-        if let CstKind::Relation(relation) = &mut item.kind
+        if let CstKind::Relation(relation) = &mut std::sync::Arc::make_mut(item).kind
             && let Some(callable) = callables.iter().find(|c| c.designation == relation.designation)
             && let Some(role) = relation.roles.last_mut()
             && role.domain.is_empty()
@@ -407,6 +407,13 @@ pub(super) fn complete_inferred_results(items: &mut [CstItem], callables: &[Cano
         }
     }
     Ok(())
+}
+
+impl CallableCst {
+    pub(super) fn rebase_origins(&mut self, edit: &incremental_read::OriginEdit<'_>) -> Result<(), CanonicalSourceErrorV1> {
+        edit.origin(&mut self.origin)?;
+        edit.origin(&mut self.expression_origin)
+    }
 }
 
 /// Reads literal segments and embedded Clause expressions without reinterpreting

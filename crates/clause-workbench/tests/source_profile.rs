@@ -85,13 +85,14 @@ fn profiled_real_source_edit_still_checks_noop_rejection_stale_and_live_continui
     let report = finish().unwrap();
     assert!(!report.truncated);
     assert_eq!(report.phases[Phase::Transfer as usize].calls, 1);
-    // Native preparation performs a checked preflight; the independently
-    // owned live boundary replays the witness again before replacement.
-    assert_eq!(report.phases[Phase::WitnessCheck as usize].calls, 2);
-    assert_eq!(report.phases[Phase::OldElaboration as usize].calls, 2);
-    assert_eq!(report.phases[Phase::NewElaboration as usize].calls, 2);
+    // One native boundary derives the transaction and commits its private
+    // custody-bound token. Wasm independently derives the wire transaction.
+    assert_eq!(report.phases[Phase::WitnessCheck as usize].calls, 1);
+    // The old source analysis was checked during preparation.
+    assert_eq!(report.phases[Phase::OldElaboration as usize].calls, 0);
+    assert_eq!(report.phases[Phase::NewElaboration as usize].calls, 1);
     assert_eq!(report.phases[Phase::Migration as usize].calls, 1);
-    assert!(report.phases[Phase::Lowering as usize].calls >= 2);
+    assert_eq!(report.phases[Phase::Lowering as usize].calls, 1);
     assert!(w.rejects_stale_handle(old.handle).unwrap());
     assert!(w.source_continuity().is_ok());
     assert!(w.edit_scalar_effect(old.handle, &effect, b"0.0").is_err());

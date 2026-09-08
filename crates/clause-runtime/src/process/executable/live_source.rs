@@ -1,15 +1,14 @@
 //! Compiler-checked source transitions applied to runtime-owned live state.
 use super::*;
 use clause_package::{
-    CanonicalAllocatedIdentityV1, CanonicalDeclaredFrontendV1, CanonicalSourceEditV1, CanonicalSourceContextV1,
-    ProgramChangeOccurrenceId, canonical_scalar_effects_v1, elaborate_canonical_source_package_v1,
-    plan_independent_canonical_source_allocations_v1, read_canonical_source_with_declared_frontend_v1,
-    replace_canonical_scalar_effect_v1,
+    CheckedCanonicalSourceAnalysisV1, CanonicalAllocatedIdentityV1, CanonicalDeclaredFrontendV1, CanonicalSourceEditV1, CanonicalSourceContextV1,
+    ProgramChangeOccurrenceId,
+    plan_independent_canonical_source_allocations_v1, read_canonical_source_with_imports_and_frontend_v1, CanonicalSourceImportsV1,
 };
 
 /// Aggregate envelope for one compiler-produced source transition witness.
 ///
-/// CET1 carries both independently bounded old/new session snapshots together
+/// CET3 carries both independently bounded old/new session snapshots together
 /// with the source operation that relates them. Constituent formats retain
 /// their own limits; this is only the outer transport ceiling.
 pub const EXECUTABLE_SOURCE_EDIT_LIMIT_V1: usize = 16 * 1024 * 1024;
@@ -18,6 +17,7 @@ pub const EXECUTABLE_SOURCE_EDIT_LIMIT_V1: usize = 16 * 1024 * 1024;
 pub struct ExecutableSourceEditV1 {
     pub old_source: Vec<u8>,
     pub declared_frontend: Vec<u8>,
+    pub imports: CanonicalSourceImportsV1,
     pub old_root: ProgramChangeOccurrenceId,
     pub new_root: ProgramChangeOccurrenceId,
     pub operation: ExecutableSourceOperationV1,
@@ -61,10 +61,11 @@ pub struct ExecutableSourceContinuityV1 {
 }
 
 pub struct CheckedExecutableSourceEditV1 {
-    old_plan: ExecutablePhysicalPlanIdV1,
-    new_plan: ExecutablePhysicalPlanIdV1,
+    pub(crate) old_plan: ExecutablePhysicalPlanIdV1,
+    pub(crate) new_plan: ExecutablePhysicalPlanIdV1,
     edit: CanonicalSourceEditV1,
     continuity: ExecutableSourceContinuityV1,
+    pub(crate) preparation: Arc<CheckedExecutableSourcePreparationV1>,
 }
 
 impl CheckedExecutableSourceEditV1 {
@@ -81,8 +82,25 @@ impl ExecutablePhysicalPlanV1 {
         artifact: clause_package::CanonicalSourceArtifactIdV1,
         root: ProgramChangeOccurrenceId,
     ) -> Result<(), ExecutableErrorV1> {
+        let roles = self.program.projection.as_ref()
+            .ok_or(ExecutableErrorV1::MalformedProgram)?.bindings.iter()
+            .map(|binding| binding.role).collect::<Vec<_>>();
+        let lowered = lower_canonical_executable_program_v1(
+            scope, &package.state_cells, &package.executable_handlers, &roles,
+        )?;
+        self.bind_source_snapshot_with_states(scope, package, artifact, root, &lowered.states)
+    }
+
+    fn bind_source_snapshot_with_states(
+        &mut self,
+        scope: TermScope,
+        package: &clause_package::CanonicalSourcePackageSliceV1,
+        artifact: clause_package::CanonicalSourceArtifactIdV1,
+        root: ProgramChangeOccurrenceId,
+        states: &[ExecutableCanonicalStateBindingV1],
+    ) -> Result<(), ExecutableErrorV1> {
         let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SnapshotMetadata);
-        self.project_source_rows(scope, package)?;
+        self.project_source_rows(scope, package, states)?;
         let projection = self
             .program
             .projection
@@ -123,7 +141,7 @@ impl ExecutablePhysicalPlanV1 {
             projection.template.clone(),
         ])
         .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
-        self.source_metadata = Some(source_metadata(scope, package, artifact, &self.program)?);
+        self.source_metadata = Some(source_metadata(scope, package, artifact, states)?);
         Ok(())
     }
 }
@@ -132,22 +150,8 @@ fn source_metadata(
     scope: TermScope,
     package: &clause_package::CanonicalSourcePackageSliceV1,
     artifact: clause_package::CanonicalSourceArtifactIdV1,
-    program: &ExecutableProgramV1,
+    states: &[ExecutableCanonicalStateBindingV1],
 ) -> Result<Term, ExecutableErrorV1> {
-    let roles = program
-        .projection
-        .as_ref()
-        .ok_or(ExecutableErrorV1::MalformedProgram)?
-        .bindings
-        .iter()
-        .map(|binding| binding.role)
-        .collect::<Vec<_>>();
-    let lowered = lower_canonical_executable_program_v1(
-        scope,
-        &package.state_cells,
-        &package.executable_handlers,
-        &roles,
-    )?;
     let mut handlers = package.executable_handlers.iter().collect::<Vec<_>>();
     handlers.sort_by_key(|handler| handler.id);
     let mut rules = Vec::new();
@@ -194,8 +198,7 @@ fn source_metadata(
             ));
         }
     }
-    let states = lowered
-        .states
+    let states = states
         .iter()
         .map(|binding| {
             let state = &binding.state;
@@ -382,7 +385,7 @@ pub fn replay_canonical_executable_entry_layout_v1(
             scope,
             package,
             artifact,
-            &lowered.program,
+            &lowered.states,
         )?)
         || recorded.program.initial_configuration != lowered.program.initial_configuration
         || recorded.program.rules.len() < lowered.program.rules.len()
@@ -462,8 +465,8 @@ pub fn encode_executable_source_edit_v1(
     edit: &ExecutableSourceEditV1,
 ) -> Result<Vec<u8>, ExecutableErrorV1> {
     let mut bytes = match edit.operation {
-        ExecutableSourceOperationV1::ScalarEffect { .. } => b"CET1".to_vec(),
-        ExecutableSourceOperationV1::ReplaceItems(_) => b"CET2".to_vec(),
+        ExecutableSourceOperationV1::ScalarEffect { .. } => b"CET3".to_vec(),
+        ExecutableSourceOperationV1::ReplaceItems(_) => b"CET4".to_vec(),
     };
     bytes.extend_from_slice(edit.old_root.as_bytes());
     bytes.extend_from_slice(edit.new_root.as_bytes());
@@ -532,6 +535,7 @@ pub fn encode_executable_source_edit_v1(
         );
         bytes.extend_from_slice(blob);
     }
+    encode_source_imports(&mut bytes, &edit.imports)?;
     if bytes.len() > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 {
         return Err(ExecutableErrorV1::ResourceLimit);
     }
@@ -546,12 +550,12 @@ pub fn decode_executable_source_edit_v1(
     }
     let mut d = Decoder::new(bytes);
     let magic = d.take(4)?;
-    if magic != b"CET1" && magic != b"CET2" {
+    if magic != b"CET3" && magic != b"CET4" {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
     let old_root = ProgramChangeOccurrenceId::from_bytes(d.identity()?);
     let new_root = ProgramChangeOccurrenceId::from_bytes(d.identity()?);
-    let mut operation = if magic == b"CET1" {
+    let mut operation = if magic == b"CET3" {
         let handler = FormationLocalId::new(d.u32()?);
         let effect = FormationLocalId::new(d.u32()?);
         let field_count = d.u32()? as usize;
@@ -609,6 +613,7 @@ pub fn decode_executable_source_edit_v1(
         declared_frontend,
         old_cpp1: blob()?,
         new_cpp1: blob()?,
+        imports: decode_source_imports(&mut d)?,
     };
     if !d.is_complete() {
         return Err(ExecutableErrorV1::MalformedProgram);
@@ -616,52 +621,160 @@ pub fn decode_executable_source_edit_v1(
     Ok(result)
 }
 
+fn encode_source_imports(bytes: &mut Vec<u8>, imports: &CanonicalSourceImportsV1) -> Result<(), ExecutableErrorV1> {
+    bytes.extend_from_slice(&u32::try_from(imports.len()).map_err(|_| ExecutableErrorV1::ResourceLimit)?.to_le_bytes());
+    for (name, source) in imports {
+        for blob in [name.as_bytes(), source.as_slice()] {
+            bytes.extend_from_slice(&u32::try_from(blob.len()).map_err(|_| ExecutableErrorV1::ResourceLimit)?.to_le_bytes());
+            bytes.extend_from_slice(blob);
+            if bytes.len() > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 { return Err(ExecutableErrorV1::ResourceLimit); }
+        }
+    }
+    Ok(())
+}
+
+fn decode_source_imports(d: &mut Decoder<'_>) -> Result<CanonicalSourceImportsV1, ExecutableErrorV1> {
+    let count = d.u32()? as usize;
+    if count > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 / 8 { return Err(ExecutableErrorV1::ResourceLimit); }
+    let mut imports = CanonicalSourceImportsV1::new();
+    for _ in 0..count {
+        let len = d.u32()? as usize;
+        let name = std::str::from_utf8(d.take(len)?).map_err(|_| ExecutableErrorV1::MalformedProgram)?.to_owned();
+        if imports.last_key_value().is_some_and(|(last, _)| last >= &name) {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+        let len = d.u32()? as usize;
+        imports.insert(name, d.take(len)?.to_vec());
+    }
+    Ok(imports)
+}
+
+/// Source-only startup capsule, including exact declared imports. Executable state never crosses this interface.
+pub fn encode_executable_source_preparation_v1(
+    source: &[u8], root: ProgramChangeOccurrenceId, declared_frontend: &[u8], imports: &CanonicalSourceImportsV1,
+) -> Result<Vec<u8>, ExecutableErrorV1> {
+    let mut bytes = b"CPS2".to_vec();
+    bytes.extend_from_slice(root.as_bytes());
+    for blob in [source, declared_frontend] {
+        bytes.extend_from_slice(&u32::try_from(blob.len()).map_err(|_| ExecutableErrorV1::ResourceLimit)?.to_le_bytes());
+        bytes.extend_from_slice(blob);
+    }
+    encode_source_imports(&mut bytes, imports)?;
+    if bytes.len() > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 { return Err(ExecutableErrorV1::ResourceLimit); }
+    Ok(bytes)
+}
+
+/// Privately checked analysis of one exact source and physical realization.
+/// It is local to this compiler instance and cannot be deserialized from a host.
+pub struct CheckedExecutableSourcePreparationV1 {
+    pub(crate) analysis: Arc<CheckedCanonicalSourceAnalysisV1>,
+    declared_frontend: Vec<u8>,
+    scope: TermScope,
+    pub(crate) exact_cpp1: Vec<u8>,
+    pub(crate) identity: ExecutablePhysicalPlanIdV1,
+    pub(crate) plan: ExecutablePhysicalPlanV1,
+    pub(crate) lowered: ExecutableCanonicalProgramV1,
+}
+
+pub fn check_executable_source_preparation_v1(
+    bytes: &[u8], scope: TermScope, exact_cpp1: &[u8],
+) -> Result<CheckedExecutableSourcePreparationV1, ExecutableErrorV1> {
+    if bytes.len() > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 { return Err(ExecutableErrorV1::ResourceLimit); }
+    let mut d = Decoder::new(bytes);
+    if d.take(4)? != b"CPS2" { return Err(ExecutableErrorV1::MalformedProgram); }
+    let root = ProgramChangeOccurrenceId::from_bytes(d.identity()?);
+    let len = d.u32()? as usize;
+    let source = d.take(len)?;
+    let len = d.u32()? as usize;
+    let declared_frontend = d.take(len)?;
+    let imports = decode_source_imports(&mut d)?;
+    if !d.is_complete() { return Err(ExecutableErrorV1::MalformedProgram); }
+    let rejected = |_| ExecutableErrorV1::MalformedProgram;
+    let frontend = CanonicalDeclaredFrontendV1::read(declared_frontend).map_err(rejected)?;
+    let cst = read_canonical_source_with_imports_and_frontend_v1(source, &imports, &frontend).map_err(rejected)?;
+    let allocations = plan_independent_canonical_source_allocations_v1(&cst, root).map_err(rejected)?;
+    let analysis = CheckedCanonicalSourceAnalysisV1::new(cst, allocations,
+        CanonicalSourceContextV1 { universe: scope.universe, semantics: scope.semantics }).map_err(rejected)?;
+    let plan = decode_executable_physical_plan_v1(exact_cpp1)?;
+    let package = analysis.package();
+    let roles = plan.program.projection.as_ref().ok_or(ExecutableErrorV1::MalformedProgram)?
+        .bindings.iter().map(|binding| binding.role).collect::<Vec<_>>();
+    let mut lowered = lower_canonical_executable_program_v1(scope, &package.state_cells, &package.executable_handlers, &roles)?;
+    replay_canonical_executable_entry_layout_v1(scope, package, analysis.source().artifact(), &mut lowered, &plan)?;
+    let mut expected = plan.clone();
+    expected.program = lowered.program.clone();
+    if plan.program.rules.len() == expected.program.rules.len() + 1 {
+        let checkpoint = plan.program.rules.last().ok_or(ExecutableErrorV1::MalformedProgram)?;
+        if !checkpoint.predicates.is_empty() || !checkpoint.required_present.is_empty()
+            || !checkpoint.required_absent.is_empty() || !checkpoint.assignments.is_empty() || !checkpoint.removals.is_empty() {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+        expected.program.rules.push(checkpoint.clone());
+    }
+    expected.project_referent_input_domains(scope)?;
+    expected.bind_source_snapshot_with_states(scope, package, analysis.source().artifact(), root, &lowered.states)?;
+    if expected != plan { return Err(ExecutableErrorV1::SourceContinuityRejected("prepared source does not realize exact bound CPP1")); }
+    Ok(CheckedExecutableSourcePreparationV1 { analysis: Arc::new(analysis), declared_frontend: declared_frontend.to_vec(), scope, exact_cpp1: exact_cpp1.to_vec(), identity: physical_plan_identity(exact_cpp1), plan, lowered })
+}
+
 pub fn check_executable_source_edit_v1(
     witness: &ExecutableSourceEditV1,
     scope: TermScope,
 ) -> Result<CheckedExecutableSourceEditV1, ExecutableErrorV1> {
+    let phase = source_profile_scope_v1(SourceProfilePhaseV1::OldElaboration);
+    let capsule = encode_executable_source_preparation_v1(&witness.old_source, witness.old_root, &witness.declared_frontend, &witness.imports)?;
+    let preparation = check_executable_source_preparation_v1(&capsule, scope, &witness.old_cpp1)?;
+    drop(phase);
+    check_prepared_executable_source_edit_v1(witness, scope, &preparation)
+}
+
+pub fn check_prepared_executable_source_edit_v1(
+    witness: &ExecutableSourceEditV1, scope: TermScope, preparation: &CheckedExecutableSourcePreparationV1,
+) -> Result<CheckedExecutableSourceEditV1, ExecutableErrorV1> {
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::WitnessCheck);
+    if preparation.scope != scope || preparation.exact_cpp1 != witness.old_cpp1
+        || preparation.analysis.source().exact_source() != witness.old_source
+        || preparation.analysis.plan().root() != witness.old_root
+        || preparation.declared_frontend != witness.declared_frontend {
+        return Err(ExecutableErrorV1::SourceContinuityRejected("stale source preparation"));
+    }
+    if preparation.analysis.source().imports() != &witness.imports {
+        return Err(ExecutableErrorV1::SourceContinuityRejected("stale source imports"));
+    }
+    let derived = derive_prepared_source_edit(preparation, &witness.operation, witness.new_root)?;
+    if derived.preparation.exact_cpp1 != witness.new_cpp1 {
+        return Err(ExecutableErrorV1::SourceContinuityRejected("edited source does not realize exact replacement CPP1"));
+    }
+    Ok(derived)
+}
+
+pub(crate) fn derive_prepared_scalar_edit_v1(
+    preparation: &CheckedExecutableSourcePreparationV1, operation: &ExecutableSourceOperationV1,
+    new_root: ProgramChangeOccurrenceId,
+) -> Result<CheckedExecutableSourceEditV1, ExecutableErrorV1> {
+    if !matches!(operation, ExecutableSourceOperationV1::ScalarEffect { .. }) { return Err(ExecutableErrorV1::MalformedProgram); }
+    let _profile = source_profile_scope_v1(SourceProfilePhaseV1::WitnessCheck);
+    derive_prepared_source_edit(preparation, operation, new_root)
+}
+
+fn derive_prepared_source_edit(
+    preparation: &CheckedExecutableSourcePreparationV1, operation: &ExecutableSourceOperationV1,
+    new_root: ProgramChangeOccurrenceId,
+) -> Result<CheckedExecutableSourceEditV1, ExecutableErrorV1> {
+    let scope = preparation.scope;
     let rejected = |_| ExecutableErrorV1::MalformedProgram;
-    let phase = source_profile_scope_v1(SourceProfilePhaseV1::SourceRead);
-    let frontend =
-        CanonicalDeclaredFrontendV1::read(&witness.declared_frontend).map_err(rejected)?;
-    let old_cst = read_canonical_source_with_declared_frontend_v1(&witness.old_source, &frontend)
-        .map_err(rejected)?;
-    drop(phase);
-    let phase = source_profile_scope_v1(SourceProfilePhaseV1::Allocation);
-    let old_allocations =
-        plan_independent_canonical_source_allocations_v1(&old_cst, witness.old_root)
-            .map_err(rejected)?;
-    drop(phase);
+    let old_cst = preparation.analysis.source();
+    let old_allocations = preparation.analysis.plan();
     let phase = source_profile_scope_v1(SourceProfilePhaseV1::OfferedEdit);
-    let edit = match &witness.operation {
+    let edit = match operation {
         ExecutableSourceOperationV1::ScalarEffect {
             handler,
             effect,
             field_path,
             expression,
         } => {
-            let offered =
-                canonical_scalar_effects_v1(&old_cst, &old_allocations).map_err(rejected)?;
-            let selected = offered
-                .iter()
-                .find(|selected| {
-                    selected.handler == *handler
-                        && selected.effect == *effect
-                        && selected.field_path == *field_path
-                })
-                .ok_or(ExecutableErrorV1::MalformedProgram)?;
-            if selected.expression == *expression {
-                return Err(ExecutableErrorV1::MalformedProgram);
-            }
-            replace_canonical_scalar_effect_v1(
-                &old_cst,
-                &old_allocations,
-                selected,
-                expression,
-                witness.new_root,
-            )
-            .map_err(rejected)?
+            preparation.analysis.replace_scalar_effect(*handler, *effect, field_path, expression, new_root)
+                .map_err(rejected)?
         }
         ExecutableSourceOperationV1::ReplaceItems(items) => {
             let offered =
@@ -684,52 +797,27 @@ pub fn check_executable_source_edit_v1(
                 &old_cst,
                 &old_allocations,
                 &replacements,
-                witness.new_root,
+                new_root,
             )
             .map_err(rejected)?
         }
     };
     drop(phase);
-    let context = CanonicalSourceContextV1 {
-        universe: scope.universe,
-        semantics: scope.semantics,
-    };
-    let phase = source_profile_scope_v1(SourceProfilePhaseV1::OldElaboration);
-    let old = elaborate_canonical_source_package_v1(&old_cst, context, &old_allocations)
-        .map_err(rejected)?;
-    drop(phase);
+    let old = preparation.analysis.package();
     let phase = source_profile_scope_v1(SourceProfilePhaseV1::NewElaboration);
-    let new = elaborate_canonical_source_package_v1(edit.source(), context, edit.plan())
-        .map_err(rejected)?;
+    let next_analysis = preparation.analysis.advance(&edit).map_err(rejected)?;
+    let new = next_analysis.package();
     drop(phase);
-    let phase = source_profile_scope_v1(SourceProfilePhaseV1::Cpp1Decode);
-    let old_plan = decode_executable_physical_plan_v1(&witness.old_cpp1)?;
-    let new_plan = decode_executable_physical_plan_v1(&witness.new_cpp1)?;
-    drop(phase);
-    let roles = old_plan
-        .program
-        .projection
-        .as_ref()
-        .ok_or(ExecutableErrorV1::MalformedProgram)?
-        .bindings
-        .iter()
-        .map(|binding| binding.role)
-        .collect::<Vec<_>>();
-    let mut old_lowered = lower_canonical_executable_program_v1(
-        scope,
-        &old.state_cells,
-        &old.executable_handlers,
-        &roles,
-    )?;
-    replay_canonical_executable_entry_layout_v1(scope, &old, old_cst.artifact(), &mut old_lowered, &old_plan)?;
+    let old_plan = &preparation.plan;
+    let roles = old_plan.program.projection.as_ref().ok_or(ExecutableErrorV1::MalformedProgram)?
+        .bindings.iter().map(|binding| binding.role).collect::<Vec<_>>();
+    let old_lowered = &preparation.lowered;
     let new_lowered = lower_canonical_executable_program_v1(
         scope,
         &new.state_cells,
         &new.executable_handlers,
         &roles,
     )?;
-    let mut expected_old = old_plan.clone();
-    expected_old.program = old_lowered.program.clone();
     let mut expected_new = old_plan.clone();
     expected_new.program = new_lowered.program.clone();
     let mut entries = BTreeMap::new();
@@ -747,7 +835,7 @@ pub fn check_executable_source_edit_v1(
         entries.insert(binding.entry, matching.entry);
     }
     // The event-only publication checkpoint is effect-free physical data.
-    if old_plan.program.rules.len() == expected_old.program.rules.len() + 1 {
+    if old_plan.program.rules.len() == old_lowered.program.rules.len() + 1 {
         let checkpoint = old_plan
             .program
             .rules
@@ -770,7 +858,6 @@ pub fn check_executable_source_edit_v1(
             .and_then(|entry| entry.checked_add(1))
             .ok_or(ExecutableErrorV1::ResourceLimit)?;
         entries.insert(checkpoint.entry, new_entry);
-        expected_old.program.rules.push(checkpoint.clone());
         let mut replacement = checkpoint.clone();
         replacement.entry = new_entry;
         expected_new.program.rules.push(replacement);
@@ -818,21 +905,10 @@ pub fn check_executable_source_edit_v1(
         });
         input.tick.entries.dedup();
     }
-    expected_old.project_referent_input_domains(scope)?;
     expected_new.project_referent_input_domains(scope)?;
-    expected_old.bind_source_snapshot(scope, &old, old_cst.artifact(), witness.old_root)?;
-    expected_new.bind_source_snapshot(scope, &new, edit.source().artifact(), witness.new_root)?;
+    expected_new.bind_source_snapshot_with_states(scope, &new, edit.source().artifact(), new_root, &new_lowered.states)?;
     let _compare = source_profile_scope_v1(SourceProfilePhaseV1::CompareAndMap);
-    if expected_old != old_plan {
-        return Err(ExecutableErrorV1::SourceContinuityRejected(
-            "old source does not realize exact bound CPP1",
-        ));
-    }
-    if expected_new != new_plan {
-        return Err(ExecutableErrorV1::SourceContinuityRejected(
-            "edited source does not realize exact replacement CPP1",
-        ));
-    }
+    let exact_cpp1 = encode_executable_physical_plan_v1(&expected_new)?;
     let mut slots = Vec::new();
     let new_states = new_lowered
         .states
@@ -849,9 +925,10 @@ pub fn check_executable_source_edit_v1(
     if slots.len() != new_states.len() {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
+    let new_plan = physical_plan_identity(&exact_cpp1);
     Ok(CheckedExecutableSourceEditV1 {
-        old_plan: physical_plan_identity(&witness.old_cpp1),
-        new_plan: physical_plan_identity(&witness.new_cpp1),
+        old_plan: preparation.identity,
+        new_plan,
         continuity: ExecutableSourceContinuityV1 {
             old_snapshot: old.checked_package.constitution().snapshot(),
             new_snapshot: new.checked_package.constitution().snapshot(),
@@ -860,10 +937,60 @@ pub fn check_executable_source_edit_v1(
             occurrences: vec![],
         },
         edit,
+        preparation: Arc::new(CheckedExecutableSourcePreparationV1 {
+            analysis: Arc::new(next_analysis), declared_frontend: preparation.declared_frontend.clone(), scope,
+            exact_cpp1, identity: new_plan, plan: expected_new, lowered: new_lowered,
+        }),
     })
 }
 
-fn physical_plan_identity(bytes: &[u8]) -> ExecutablePhysicalPlanIdV1 {
+/// Compact explicit scalar operation. Result identity compares independently
+/// derived exact physical plans; it never substitutes for source checking.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableScalarEditTransactionV1 {
+    pub old_plan: ExecutablePhysicalPlanIdV1,
+    pub new_plan: ExecutablePhysicalPlanIdV1,
+    pub new_root: ProgramChangeOccurrenceId,
+    pub operation: ExecutableSourceOperationV1,
+}
+
+pub fn encode_executable_scalar_edit_transaction_v1(transaction: &ExecutableScalarEditTransactionV1) -> Result<Vec<u8>, ExecutableErrorV1> {
+    let ExecutableSourceOperationV1::ScalarEffect { handler, effect, field_path, expression } = &transaction.operation
+        else { return Err(ExecutableErrorV1::MalformedProgram); };
+    let mut bytes = b"CEX1".to_vec();
+    bytes.extend_from_slice(transaction.old_plan.as_bytes());
+    bytes.extend_from_slice(transaction.new_plan.as_bytes());
+    bytes.extend_from_slice(transaction.new_root.as_bytes());
+    bytes.extend_from_slice(&handler.get().to_le_bytes());
+    bytes.extend_from_slice(&effect.get().to_le_bytes());
+    bytes.extend_from_slice(&u32::try_from(field_path.len()).map_err(|_| ExecutableErrorV1::ResourceLimit)?.to_le_bytes());
+    for field in field_path { bytes.extend_from_slice(&field.get().to_le_bytes()); }
+    bytes.extend_from_slice(&u32::try_from(expression.len()).map_err(|_| ExecutableErrorV1::ResourceLimit)?.to_le_bytes());
+    bytes.extend_from_slice(expression);
+    if bytes.len() > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 { return Err(ExecutableErrorV1::ResourceLimit); }
+    Ok(bytes)
+}
+
+pub fn decode_executable_scalar_edit_transaction_v1(bytes: &[u8]) -> Result<ExecutableScalarEditTransactionV1, ExecutableErrorV1> {
+    if bytes.len() > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 { return Err(ExecutableErrorV1::ResourceLimit); }
+    let mut d = Decoder::new(bytes);
+    if d.take(4)? != b"CEX1" { return Err(ExecutableErrorV1::MalformedProgram); }
+    let old_plan = ExecutablePhysicalPlanIdV1::from_bytes(d.identity()?);
+    let new_plan = ExecutablePhysicalPlanIdV1::from_bytes(d.identity()?);
+    let new_root = ProgramChangeOccurrenceId::from_bytes(d.identity()?);
+    let handler = FormationLocalId::new(d.u32()?);
+    let effect = FormationLocalId::new(d.u32()?);
+    let count = d.u32()? as usize;
+    if count > EXECUTABLE_SOURCE_EDIT_LIMIT_V1 / 4 { return Err(ExecutableErrorV1::ResourceLimit); }
+    let field_path = (0..count).map(|_| d.u32().map(FormationLocalId::new)).collect::<Result<Vec<_>, _>>()?;
+    let length = d.u32()? as usize;
+    let expression = d.take(length)?.to_vec();
+    if !d.is_complete() { return Err(ExecutableErrorV1::MalformedProgram); }
+    Ok(ExecutableScalarEditTransactionV1 { old_plan, new_plan, new_root,
+        operation: ExecutableSourceOperationV1::ScalarEffect { handler, effect, field_path, expression } })
+}
+
+pub(crate) fn physical_plan_identity(bytes: &[u8]) -> ExecutablePhysicalPlanIdV1 {
     ExecutablePhysicalPlanIdV1::from_bytes(runtime_domain_hash(
         "clause/executable-physical-plan/v1",
         &[bytes],
@@ -930,13 +1057,13 @@ fn migrate_value(
 }
 
 impl ExecutableProcessRuntimeV1 {
+    pub(crate) fn source_continuity(&self) -> Result<&ExecutableSourceContinuityV1, ExecutableErrorV1> {
+        self.source_continuity.as_ref().ok_or(ExecutableErrorV1::SourceContinuityRejected(
+            "no explicit source transition"))
+    }
+
     pub fn source_continuity_term(&self) -> Result<Term, ExecutableErrorV1> {
-        let continuity =
-            self.source_continuity
-                .as_ref()
-                .ok_or(ExecutableErrorV1::SourceContinuityRejected(
-                    "no explicit source transition",
-                ))?;
+        let continuity = self.source_continuity()?;
         let scope = TermScope {
             universe: self.carrier.carrier().constitution().universe(),
             semantics: self.carrier.carrier().constitution().semantics(),
@@ -1111,13 +1238,14 @@ impl ExecutableProcessRuntimeV1 {
 mod tests {
     use super::*;
 
-    const CET1_FIXED_BYTES: usize =
-        4 + 2 * IDENTITY_BYTES + 3 * size_of::<u32>() + 5 * size_of::<u32>();
+    const CET3_FIXED_BYTES: usize =
+        4 + 2 * IDENTITY_BYTES + 3 * size_of::<u32>() + 6 * size_of::<u32>();
 
     fn source_edit_with_old_source(old_source: Vec<u8>) -> ExecutableSourceEditV1 {
         ExecutableSourceEditV1 {
             old_source,
             declared_frontend: Vec::new(),
+            imports: CanonicalSourceImportsV1::new(),
             old_root: ProgramChangeOccurrenceId::from_bytes([1; IDENTITY_BYTES]),
             new_root: ProgramChangeOccurrenceId::from_bytes([2; IDENTITY_BYTES]),
             operation: ExecutableSourceOperationV1::ScalarEffect {
@@ -1136,7 +1264,7 @@ mod tests {
         let exact = source_edit_with_old_source(vec![
             0;
             EXECUTABLE_SOURCE_EDIT_LIMIT_V1
-                - CET1_FIXED_BYTES
+                - CET3_FIXED_BYTES
         ]);
         let encoded = encode_executable_source_edit_v1(&exact).unwrap();
         assert_eq!(encoded.len(), EXECUTABLE_SOURCE_EDIT_LIMIT_V1);
@@ -1145,7 +1273,7 @@ mod tests {
         let oversized =
             source_edit_with_old_source(vec![
                 0;
-                EXECUTABLE_SOURCE_EDIT_LIMIT_V1 - CET1_FIXED_BYTES + 1
+                EXECUTABLE_SOURCE_EDIT_LIMIT_V1 - CET3_FIXED_BYTES + 1
             ]);
         assert_eq!(
             encode_executable_source_edit_v1(&oversized),

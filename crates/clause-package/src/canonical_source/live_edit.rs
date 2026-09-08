@@ -23,12 +23,21 @@ pub struct CanonicalScalarEffectV1 {
 /// connect their continuing semantic occurrences across snapshot addresses.
 #[derive(Clone, Debug)]
 pub struct CanonicalSourceEditV1 {
+    pub(super) old_artifact: CanonicalSourceArtifactIdV1,
+    pub(super) old_root: ProgramChangeOccurrenceId,
+    pub(super) scalar_change: Option<(FormationLocalId, u64, u64, u64)>,
     source: CanonicalSourceCstV1,
     plan: CanonicalSourceAllocationPlanV1,
     retained: BTreeMap<CanonicalAllocatedIdentityV1, CanonicalAllocatedIdentityV1>,
+    retained_index: std::sync::OnceLock<std::collections::HashMap<CanonicalAllocatedIdentityV1, CanonicalAllocatedIdentityV1>>,
 }
 
 impl CanonicalSourceEditV1 {
+    fn retained_identity(&self, old: CanonicalAllocatedIdentityV1) -> Option<CanonicalAllocatedIdentityV1> {
+        self.retained_index.get_or_init(|| self.retained.iter().map(|(old, new)| (*old, *new)).collect())
+            .get(&old).copied()
+    }
+
     pub fn source(&self) -> &CanonicalSourceCstV1 {
         &self.source
     }
@@ -46,11 +55,8 @@ impl CanonicalSourceEditV1 {
         &self,
         old: FormationLocalId,
     ) -> Result<FormationLocalId, CanonicalSourceErrorV1> {
-        match self
-            .retained
-            .get(&CanonicalAllocatedIdentityV1::Formation(old))
-        {
-            Some(CanonicalAllocatedIdentityV1::Formation(new)) => Ok(*new),
+        match self.retained_identity(CanonicalAllocatedIdentityV1::Formation(old)) {
+            Some(CanonicalAllocatedIdentityV1::Formation(new)) => Ok(new),
             _ => Err(CanonicalSourceErrorV1::RecordedPlanMismatch),
         }
     }
@@ -69,31 +75,39 @@ impl CanonicalSourceEditV1 {
         &self,
         old: &CanonicalStateRefV1,
     ) -> Result<CanonicalStateRefV1, CanonicalSourceErrorV1> {
-        let role = |old| match self.retained.get(&CanonicalAllocatedIdentityV1::Role(old)) {
-            Some(CanonicalAllocatedIdentityV1::Role(new)) => Ok(*new),
-            _ => Err(CanonicalSourceErrorV1::RecordedPlanMismatch),
-        };
-        let relation = match self
-            .retained
-            .get(&CanonicalAllocatedIdentityV1::RelationSchema(old.relation))
-        {
-            Some(CanonicalAllocatedIdentityV1::RelationSchema(new)) => *new,
-            _ => return Err(CanonicalSourceErrorV1::RecordedPlanMismatch),
-        };
         let mut new = old.clone();
-        new.assertion = self.formation(old.assertion)?;
-        new.relation = relation;
-        new.subject_role = role(old.subject_role)?;
-        new.value_role = role(old.value_role)?;
-        new.subject_identity = old
-            .subject_identity
-            .map(|value| self.referent(value))
-            .transpose()?;
-        if let CanonicalStatePathV1::Field { formation, .. } = &mut new.path {
-            *formation = self.formation(*formation)?;
-        }
+        self.rebind_state(&mut new)?;
         Ok(new)
     }
+
+    pub(super) fn rebind_state(&self, state: &mut CanonicalStateRefV1) -> Result<(), CanonicalSourceErrorV1> {
+        let role = |old| match self.retained_identity(CanonicalAllocatedIdentityV1::Role(old)) {
+            Some(CanonicalAllocatedIdentityV1::Role(new)) => Ok(new),
+            _ => Err(CanonicalSourceErrorV1::RecordedPlanMismatch),
+        };
+        let relation = match self.retained_identity(CanonicalAllocatedIdentityV1::RelationSchema(state.relation)) {
+            Some(CanonicalAllocatedIdentityV1::RelationSchema(new)) => new,
+            _ => return Err(CanonicalSourceErrorV1::RecordedPlanMismatch),
+        };
+        let assertion = self.formation(state.assertion)?;
+        let subject_role = role(state.subject_role)?;
+        let value_role = role(state.value_role)?;
+        let subject_identity = state.subject_identity.map(|value| self.referent(value)).transpose()?;
+        let field = match &state.path {
+            CanonicalStatePathV1::Field { formation, .. } => Some(self.formation(*formation)?),
+            _ => None,
+        };
+        state.assertion = assertion;
+        state.relation = relation;
+        state.subject_role = subject_role;
+        state.value_role = value_role;
+        state.subject_identity = subject_identity;
+        if let (CanonicalStatePathV1::Field { formation, .. }, Some(new)) = (&mut state.path, field) {
+            *formation = new;
+        }
+        Ok(())
+    }
+
 }
 
 pub fn canonical_scalar_effects_v1(
@@ -101,6 +115,13 @@ pub fn canonical_scalar_effects_v1(
     plan: &CanonicalSourceAllocationPlanV1,
 ) -> Result<Vec<CanonicalScalarEffectV1>, CanonicalSourceErrorV1> {
     rematerialize_canonical_source_allocation_plan_v1(cst, plan)?;
+    scalar_effects_from_bound_source(cst, plan)
+}
+
+pub(super) fn scalar_effects_from_bound_source(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+) -> Result<Vec<CanonicalScalarEffectV1>, CanonicalSourceErrorV1> {
     let mut effects = Vec::new();
     for item in &cst.items {
         let (producer, origin, includes) = match &item.kind {
@@ -257,7 +278,20 @@ pub fn replace_canonical_scalar_effect_v1(
     new_root: ProgramChangeOccurrenceId,
 ) -> Result<CanonicalSourceEditV1, CanonicalSourceErrorV1> {
     let offered = canonical_scalar_effects_v1(cst, old_plan)?;
-    if !offered.contains(selected) || new_root == old_plan.root {
+    if !offered.contains(selected) {
+        return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+    }
+    replace_bound_scalar_effect(cst, old_plan, selected, replacement, new_root)
+}
+
+pub(super) fn replace_bound_scalar_effect(
+    cst: &CanonicalSourceCstV1,
+    old_plan: &CanonicalSourceAllocationPlanV1,
+    selected: &CanonicalScalarEffectV1,
+    replacement: &[u8],
+    new_root: ProgramChangeOccurrenceId,
+) -> Result<CanonicalSourceEditV1, CanonicalSourceErrorV1> {
+    if new_root == old_plan.root {
         return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
     }
     let expression = std::str::from_utf8(replacement)
@@ -277,7 +311,7 @@ pub fn replace_canonical_scalar_effect_v1(
     exact.extend_from_slice(&cst.exact_source[..start]);
     exact.extend_from_slice(replacement);
     exact.extend_from_slice(&cst.exact_source[end..]);
-    let source = read_canonical_source_with_declared_frontend_v1(&exact, &cst.declared_frontend)?;
+    let source = incremental_read::replace_scalar_leaf(cst, selected, &exact, replacement.len())?;
     let plan = build_independent_plan(&source, new_root)?;
     let old_requests = allocation_requests(cst)?;
     let new_requests = allocation_requests(&source)?;
@@ -341,7 +375,7 @@ pub fn replace_canonical_scalar_effect_v1(
             }
             continue;
         }
-        if !new_requests.contains(continued) {
+        if new_requests.binary_search(continued).is_err() {
             return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
         }
         let new = plan
@@ -350,9 +384,12 @@ pub fn replace_canonical_scalar_effect_v1(
         retained.insert(old, new);
     }
     Ok(CanonicalSourceEditV1 {
+        old_artifact: cst.artifact(), old_root: old_plan.root(),
+        scalar_change: Some((selected.handler, selected.expression_origin.start, selected.expression_origin.end, replacement.len() as u64)),
         source,
         plan,
         retained,
+        retained_index: std::sync::OnceLock::new(),
     })
 }
 
@@ -486,7 +523,7 @@ pub fn replace_canonical_source_items_v1(
     if exact.as_slice() == cst.exact_source.as_ref() {
         return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
     }
-    let source = read_canonical_source_with_declared_frontend_v1(&exact, &cst.declared_frontend)?;
+    let source = read_canonical_source_with_imports_and_frontend_v1(&exact, &cst.parsed.imports, &cst.declared_frontend)?;
     let plan = build_independent_plan(&source, new_root)?;
     let new_offered = canonical_editable_source_items_v1(&source, &plan)?;
     let translated_origin =
@@ -539,7 +576,7 @@ pub fn replace_canonical_source_items_v1(
             .items
             .iter()
             .find(|item| item.origin == origin)
-            .and_then(editable_item_producer)
+            .and_then(|item| editable_item_producer(item))
             .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
         if old_producer.production != new.production {
             return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
@@ -562,7 +599,7 @@ pub fn replace_canonical_source_items_v1(
             }
             continued.producer = new.clone();
         }
-        if !new_requests.contains(&continued) {
+        if new_requests.binary_search(&continued).is_err() {
             return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
         }
         let new = plan
@@ -574,8 +611,10 @@ pub fn replace_canonical_source_items_v1(
         return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
     }
     Ok(CanonicalSourceEditV1 {
+        old_artifact: cst.artifact(), old_root: old_plan.root(), scalar_change: None,
         source,
         plan,
         retained,
+        retained_index: std::sync::OnceLock::new(),
     })
 }

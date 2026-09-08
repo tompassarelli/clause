@@ -34,7 +34,7 @@ fn imports(exact_source: &[u8]) -> Result<Vec<(String, CanonicalSourceOriginV1)>
 
 #[derive(Default)]
 pub(super) struct ImportedDeclarations {
-    pub items: Vec<CstItem>,
+    pub items: Vec<std::sync::Arc<CstItem>>,
     pub callables: Vec<callable::CallableCst>,
     pub sources: BTreeMap<CanonicalSourceArtifactIdV1, Box<[u8]>>,
 }
@@ -64,11 +64,11 @@ pub(super) fn read(
             let block = &lines[pair[0]..pair[1]];
             let origin = block_origin(cst.artifact, block);
             if block[0].text.starts_with("foreign ") {
-                let (callable, _) = callable::read(block, origin, &cst.items)?
+                let (callable, _) = callable::read(block, origin, &cst.parsed.scalar_laws.declarations)?
                     .ok_or(CanonicalSourceErrorV1::InvalidImport { origin, reason: "expected a foreign declaration" })?;
                 result.callables.push(callable);
             } else if block[0].text.starts_with("export ") {
-                let (callable, _) = callable::read(block, origin, &cst.items)?
+                let (callable, _) = callable::read(block, origin, &cst.parsed.scalar_laws.declarations)?
                     .ok_or(CanonicalSourceErrorV1::InvalidImport { origin, reason: "expected an exported callable declaration" })?;
                 result.callables.push(callable);
             } else if !cst.items.iter().any(|item| item.origin == origin && matches!(item.kind, CstKind::ForeignType { .. })) {

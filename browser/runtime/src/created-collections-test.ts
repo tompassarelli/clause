@@ -31,6 +31,7 @@ test("fresh Wasm iterates exact created occurrences, preserves them through chec
     return started.session;
   };
   let session = await open("initial.cwr1"), revision = 0, sequence = 0;
+  wasm.prepareSourceSession(module, session, await bytes("initial.cps1"));
   const run = (inputs: unknown[] = [], milliseconds = 1000) => {
     const observations = inputs.map(value => workbench["->InputObservation"](++sequence, workbench["create-workbench-envelope"](policy, JSON.stringify([JSON.stringify(value)]))));
     const pending = completed<workbench.CandidateCompletion>(done => port.runCandidate(session, workbench["->FixedTick"](milliseconds), workbench["->InputConfiguration"](++revision, observations), done));

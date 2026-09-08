@@ -37,9 +37,11 @@ mod explanation;
 pub use explanation::*;
 mod relational;
 mod evaluation_cache;
+mod scalar_reuse;
 mod closure;
 pub use relational::ExecutableRelationEffectV1;
 mod relational_projection;
+mod projection_plan;
 mod source_profile;
 pub use source_profile::*;
 
@@ -1154,9 +1156,7 @@ pub fn lower_canonical_executable_program_v1(
             handler_bindings[*index].invocation_entry = invocation_entry;
         }
     }
-    let projection = (!ordered_states.is_empty())
-        .then(|| canonical_source_projection(scope, &ordered_states, &state_bindings))
-        .transpose()?;
+    let projection = Some(canonical_source_projection(scope, &ordered_states, &state_bindings)?);
     let program = ExecutableProgramV1 {
         initial_configuration,
         rules,
@@ -1205,7 +1205,7 @@ impl ExecutableCallableV1 {
         }
         let value = evaluate(&self.expression, &[], arguments, EvaluationContextV1 {
             allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None,
-            sum_queries: None, bindings: None, relational_occurrence: None,
+            sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None,
         })?;
         if !value_has_type(&value, &self.result) { return Err(ExecutableErrorV1::TypeMismatch); }
         Ok(value)
@@ -2992,6 +2992,8 @@ pub struct ExecutableProcessRuntimeV1 {
     source_metadata: Option<Term>,
     source_continuity: Option<ExecutableSourceContinuityV1>,
     evaluation_cache: Mutex<evaluation_cache::EvaluationCache>,
+    projection_plan: Option<projection_plan::ProjectionPlan>,
+    scalar_plans: Arc<relational::ScalarPlans>,
 }
 
 impl ExecutableProcessRuntimeV1 {
@@ -3014,6 +3016,28 @@ impl ExecutableProcessRuntimeV1 {
             &physical_plan,
             facts,
         )?;
+        let carrier = ProcessRuntime::instantiate(package, authority)
+            .map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+        Self::from_parts(carrier, package_id, application, physical_plan, allocation)
+    }
+
+    pub(crate) fn instantiate_source_edit(
+        package: CheckedProcessPackage,
+        authority: clause_package::AuthorityStore,
+        application: ApplicationId,
+        checked: &CheckedExecutableSourceEditV1,
+        facts: ExecutableAuthorityFactsV1,
+    ) -> Result<Self, ExecutableErrorV1> {
+        let plan = &checked.preparation.plan;
+        validate_executable_physical_plan_bindings_v1(package.constitution(), application, plan)?;
+        // The private transition retains the exact encoding produced alongside
+        // this typed plan; no host identity supplies its checked standing.
+        let physical_plan = CheckedExecutablePhysicalPlanV1 {
+            id: checked.new_plan,
+            plan: plan.clone(),
+        };
+        let package_id = package.id();
+        let allocation = RuntimeAllocationEpochV1::allocate_fresh(package_id, application, &physical_plan, facts)?;
         let carrier = ProcessRuntime::instantiate(package, authority)
             .map_err(|_| ExecutableErrorV1::CarrierRejected)?;
         Self::from_parts(carrier, package_id, application, physical_plan, allocation)
@@ -3098,6 +3122,7 @@ impl ExecutableProcessRuntimeV1 {
         let input = physical_plan.plan.input;
         let program = std::sync::Arc::new(physical_plan.plan.program);
         let configuration = materialize_initial_configuration(&program)?;
+        let projection_plan = program.projection.as_ref().map(projection_plan::ProjectionPlan::new).transpose()?;
         Ok(Self {
             carrier,
             package,
@@ -3127,6 +3152,8 @@ impl ExecutableProcessRuntimeV1 {
             source_metadata: physical_plan.plan.source_metadata,
             source_continuity: None,
             evaluation_cache: Mutex::default(),
+            projection_plan,
+            scalar_plans: Arc::default(),
         })
     }
 }
@@ -3136,6 +3163,20 @@ fn check_executable_physical_plan_v1(
     application: ApplicationId,
     plan: ExecutablePhysicalPlanV1,
 ) -> Result<CheckedExecutablePhysicalPlanV1, ExecutableErrorV1> {
+    validate_executable_physical_plan_bindings_v1(constitution, application, &plan)?;
+    let exact = encode_executable_physical_plan_v1(&plan)?;
+    let id = ExecutablePhysicalPlanIdV1(runtime_domain_hash(
+        "clause/executable-physical-plan/v1",
+        &[&exact],
+    ));
+    Ok(CheckedExecutablePhysicalPlanV1 { id, plan })
+}
+
+fn validate_executable_physical_plan_bindings_v1(
+    constitution: &ResolvedProgramConstitutionV2,
+    application: ApplicationId,
+    plan: &ExecutablePhysicalPlanV1,
+) -> Result<(), ExecutableErrorV1> {
     let shape = constitution
         .application_shape(application.local)
         .filter(|_| application.snapshot == constitution.snapshot())
@@ -3152,12 +3193,8 @@ fn check_executable_physical_plan_v1(
     validate_program(&plan.program)?;
     validate_projection_roles(constitution, &plan.program)?;
     validate_input_roles(constitution, plan.input.as_ref())?;
-    let exact = encode_executable_physical_plan_v1(&plan)?;
-    let id = ExecutablePhysicalPlanIdV1(runtime_domain_hash(
-        "clause/executable-physical-plan/v1",
-        &[&exact],
-    ));
-    Ok(CheckedExecutablePhysicalPlanV1 { id, plan })
+    validate_input_plan_shape(plan.input.as_ref(), &plan.program)?;
+    Ok(())
 }
 
 fn exact_role_exists(constitution: &ResolvedProgramConstitutionV2, role: LocalRoleRefV2) -> bool {
@@ -3221,16 +3258,7 @@ fn validate_projection_roles(
 
 impl ExecutableProcessRuntimeV1 {
     pub(crate) fn current_projection_term(&self) -> Result<Option<Term>, ExecutableErrorV1> {
-        let Some(projection) = &self.program.projection else {
-            return Ok(None);
-        };
-        let bindings = projection
-            .bindings
-            .iter()
-            .copied()
-            .map(|binding| (binding.role, binding))
-            .collect::<BTreeMap<_, _>>();
-        realize_projection_term(&projection.template, &bindings, &self.configuration).map(Some)
+        self.projection_plan.as_ref().map(|plan| plan.realize(&self.configuration)).transpose()
     }
 
     /// Start the unique stateful or effectful Mode constituted for this
@@ -4763,6 +4791,7 @@ impl ExecutableProcessRuntimeV1 {
             allocation_root: self.allocation.root,
             configuration_id: self.configuration_id,
             cache: Some(&self.evaluation_cache),
+            scalar_plans: Some(&self.scalar_plans),
         }.prepare_step_traced(occurrence, step_ordinal, configuration_ordinal, configuration, trace)
     }
 
@@ -5210,9 +5239,12 @@ impl ExecutableProcessRuntimeV1 {
         if let Some((record, _, _)) = &projected {
             ingress.push(record.clone());
         }
-        self.carrier
-            .apply_ingress(&ingress)
-            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        {
+            let _profile = source_profile_scope_v1(SourceProfilePhaseV1::CarrierIngress);
+            self.carrier
+                .apply_ingress(&ingress)
+                .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        }
 
         let admitted = prepared.executable_state;
         let admission = prepared.executable_admission.id;
@@ -5255,16 +5287,11 @@ impl ExecutableProcessRuntimeV1 {
         Option<(ProcessRecordV2, ExecutableProjectedObservationV1, u64)>,
         ExecutableCarrierErrorV1,
     > {
-        let Some(projection) = &self.program.projection else {
+        let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RowProjection);
+        let Some(plan) = &self.projection_plan else {
             return Ok(None);
         };
-        let bindings = projection
-            .bindings
-            .iter()
-            .copied()
-            .map(|binding| (binding.role, binding))
-            .collect::<BTreeMap<_, _>>();
-        let term = realize_projection_term(&projection.template, &bindings, &state.configuration)
+        let term = plan.realize(&state.configuration)
             .map_err(ExecutableCarrierErrorV1::Executable)?;
         let (ordinal, next_ordinal) =
             stage_runtime_ordinal(self.identity_ordinals.next_state_observation)
@@ -5882,7 +5909,7 @@ fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableError
     }
     closure::validate(program, &initial_configuration)?;
     if let Some(projection) = &program.projection {
-        if projection.bindings.is_empty() || projection.bindings.len() > MAX_PROGRAM_ITEMS {
+        if projection.bindings.len() > MAX_PROGRAM_ITEMS {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
         let mut roles = BTreeSet::new();
@@ -5992,7 +6019,7 @@ fn materialize_initial_configuration(
 ) -> Result<Vec<ExecutableSlotV1>, ExecutableErrorV1> {
     let base = materialize_base_configuration(program)?;
     let closed = closure::close(program, &base, EvaluationContextV1 {
-        allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None, sum_queries: None,
+        allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None, sum_queries: None, scalar_memo: None,
         bindings: None, relational_occurrence: None,
     }, None)?;
     relational::validate_contracts(&closed)?;
@@ -6217,7 +6244,7 @@ mod lexical_binding_tests {
         let a = ExecutableValueV1::number(3.0).unwrap();
         let b = ExecutableValueV1::number(9.0).unwrap();
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
-            reads: Some(&reads), sum_queries: None, bindings: None, relational_occurrence: None };
+            reads: Some(&reads), sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         assert_eq!(evaluate(&decoded, &[], &[a.clone(), b.clone()], context).unwrap(), ExecutableValueV1::number(6.0).unwrap());
         assert_eq!(*reads.borrow(), vec![ExecutableReadV1::Argument(0, a.clone()),
             ExecutableReadV1::Argument(1, b), ExecutableReadV1::Binding(200, a.clone()), ExecutableReadV1::Binding(200, a)]);
@@ -6231,7 +6258,7 @@ mod lexical_binding_tests {
             Box::new(E::Binding(0)),
         )) };
         let context = EvaluationContextV1 { allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0,
-            reads: None, sum_queries: None, bindings: None, relational_occurrence: None };
+            reads: None, sum_queries: None, scalar_memo: None, bindings: None, relational_occurrence: None };
         assert_eq!(evaluate(&expression, &[], &[ExecutableValueV1::number(3.0).unwrap(), ExecutableValueV1::number(9.0).unwrap()], context).unwrap(), ExecutableValueV1::number(12.0).unwrap());
     }
 }
@@ -6402,110 +6429,30 @@ fn projected_set_tree(
     .map_err(|_| ExecutableErrorV1::MalformedProgram)
 }
 
-fn realize_projection_term(
-    template: &Term,
-    bindings: &BTreeMap<LocalRoleRefV2, ExecutableProjectionBindingV1>,
-    configuration: &[ExecutableSlotV1],
-) -> Result<Term, ExecutableErrorV1> {
-    if relational_projection::row_selection(template).is_some() {
-        return projected_value_term(
-            template.scope(),
-            relational_projection::selected_value(template, bindings, configuration)?
-                .ok_or(ExecutableErrorV1::MissingState)?,
-        );
-    }
-    if let Some(atom) = template.as_atom() {
-        let Some((role, kind)) = projection_role(atom)? else {
-            return Ok(template.clone());
-        };
-        let binding = bindings
-            .get(&role)
-            .ok_or(ExecutableErrorV1::MalformedProgram)?;
-        let slot = configuration
-            .get(usize::from(binding.slot))
-            .ok_or(ExecutableErrorV1::UnknownSlot(binding.slot))?;
-        let value = slot.value().ok_or(ExecutableErrorV1::MissingState)?;
-        if binding.value_kind != kind || value.kind() != kind {
-            return Err(ExecutableErrorV1::TypeMismatch);
-        }
-        return projected_value_term(template.scope(), value.clone());
-    }
-    let triple = template
-        .as_triple()
-        .ok_or(ExecutableErrorV1::MalformedProgram)?;
-    let [left, operator, right] = triple.slots();
-    if left
-        .as_atom()
-        .is_some_and(|atom| atom.kind() == b"clause/js-field-v1")
-        && projection_subtree_has_role(operator)?
-        && !projection_subtree_has_present_role(operator, bindings, configuration)?
-    {
-        return realize_projection_term(right, bindings, configuration);
-    }
-    Term::triple([
-        realize_projection_term(left, bindings, configuration)?,
-        realize_projection_term(operator, bindings, configuration)?,
-        realize_projection_term(right, bindings, configuration)?,
-    ])
-    .map_err(|_| ExecutableErrorV1::MalformedProgram)
-}
-
-fn projection_subtree_has_role(term: &Term) -> Result<bool, ExecutableErrorV1> {
-    if let Some(atom) = term.as_atom() {
-        return Ok(projection_role(atom)?.is_some());
-    }
-    let triple = term
-        .as_triple()
-        .ok_or(ExecutableErrorV1::MalformedProgram)?;
-    for child in triple.slots() {
-        if projection_subtree_has_role(child)? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-fn projection_subtree_has_present_role(
-    term: &Term,
-    bindings: &BTreeMap<LocalRoleRefV2, ExecutableProjectionBindingV1>,
-    configuration: &[ExecutableSlotV1],
-) -> Result<bool, ExecutableErrorV1> {
-    if relational_projection::row_selection(term).is_some() {
-        return Ok(relational_projection::selected_value(term, bindings, configuration)?.is_some());
-    }
-    if let Some(atom) = term.as_atom() {
-        let Some((role, _)) = projection_role(atom)? else {
-            return Ok(false);
-        };
-        let binding = bindings
-            .get(&role)
-            .ok_or(ExecutableErrorV1::MalformedProgram)?;
-        return Ok(configuration
-            .get(usize::from(binding.slot))
-            .is_some_and(|slot| slot.value().is_some()));
-    }
-    let triple = term
-        .as_triple()
-        .ok_or(ExecutableErrorV1::MalformedProgram)?;
-    for child in triple.slots() {
-        if projection_subtree_has_present_role(child, bindings, configuration)? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 #[derive(Clone, Copy)]
 struct EvaluationContextV1<'a> {
     allocation_root: [u8; IDENTITY_BYTES],
     step_ordinal: u64,
     reads: Option<&'a std::cell::RefCell<Vec<ExecutableReadV1>>>,
     sum_queries: Option<&'a std::cell::RefCell<relational::SumQueries>>,
-    bindings: Option<&'a BTreeMap<u16, ExecutableValueV1>>,
+    scalar_memo: Option<&'a scalar_reuse::ScalarMemo<'a>>,
+    bindings: Option<&'a relational::Bindings>,
     relational_occurrence: Option<&'a relational::LazyOccurrenceIdentity<'a>>,
 }
 
 fn evaluate(
+    expression: &ExecutableExpressionV1,
+    slots: &[ExecutableSlotV1],
+    arguments: &[ExecutableValueV1],
+    context: EvaluationContextV1,
+) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    if context.reads.is_none() && let Some(memo) = context.scalar_memo {
+        return memo.evaluate(expression, slots, arguments, context);
+    }
+    evaluate_uncached(expression, slots, arguments, context)
+}
+
+fn evaluate_uncached(
     expression: &ExecutableExpressionV1,
     slots: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
@@ -7754,6 +7701,7 @@ struct StepEvaluator<'a> {
     allocation_root: [u8; IDENTITY_BYTES],
     configuration_id: ConfigurationId,
     cache: Option<&'a Mutex<evaluation_cache::EvaluationCache>>,
+    scalar_plans: Option<&'a Arc<relational::ScalarPlans>>,
 }
 
 impl StepEvaluator<'_> {
@@ -7770,7 +7718,7 @@ impl StepEvaluator<'_> {
             allocation_root: self.allocation_root,
             step_ordinal,
             reads: None,
-            sum_queries: None,
+            sum_queries: None, scalar_memo: None,
             bindings: None,
             relational_occurrence: None,
         };
@@ -7859,7 +7807,7 @@ impl StepEvaluator<'_> {
                 if let Some(trace) = &mut trace {
                     let rule_trace = ExecutableRuleEvaluationV1 {
                         rule: rule_index as u16,
-                        bindings: matched.bindings.clone(),
+                        bindings: Arc::new(matched.bindings.iter().map(|(key, value)| (*key, value.clone())).collect()),
                         required_present: rule
                             .required_present
                             .iter()
@@ -7923,7 +7871,10 @@ impl StepEvaluator<'_> {
             source_profile_scope_v1(SourceProfilePhaseV1::EffectEvaluation);
         // All effects read this preparation's immutable, closed pre-state.
         // The context below never reaches closure of the staged next state.
-        let sum_queries = std::cell::RefCell::new(relational::SumQueries::default());
+        let mut queries = relational::SumQueries::default();
+        if let Some(plans) = self.scalar_plans { queries.scalar_plans = plans.clone(); }
+        let sum_queries = std::cell::RefCell::new(queries);
+        let mut effect_plans = BTreeMap::new();
         for (rule_index, rule, bindings, trace_index) in &selected {
             let identity = relational::LazyOccurrenceIdentity::new(evaluation, *rule_index, bindings);
             let evaluation = EvaluationContextV1 {
@@ -7952,11 +7903,21 @@ impl StepEvaluator<'_> {
                             let _profile = source_profile_scope_v1(
                                 SourceProfilePhaseV1::EffectValueEvaluation,
                             );
+                            // Every matched row shares this exact program coordinate;
+                            // only the memo values depend on its current bindings.
+                            let plan = if trace.is_none() {
+                                let key = (*rule_index, assignment, effect_index);
+                                if let std::collections::btree_map::Entry::Vacant(entry) = effect_plans.entry(key) {
+                                    entry.insert(relational::effect_scalar_plan(self.program, key, value, evaluation)?);
+                                }
+                                effect_plans[&key].as_ref()
+                            } else { None };
+                            let memo = plan.map(|plan| plan.memo());
                             evaluate_for_trace(
-                                value,
+                                plan.map_or(value, |plan| plan.expression.as_ref()),
                                 configuration,
                                 &occurrence.arguments,
-                                evaluation,
+                                EvaluationContextV1 { scalar_memo: memo.as_ref(), ..evaluation },
                                 trace.is_some(),
                             )?
                         };

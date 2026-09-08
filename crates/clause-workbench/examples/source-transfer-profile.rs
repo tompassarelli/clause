@@ -56,6 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .collect::<String>();
             if index == 0 {
                 std::fs::write(path.join("initial.cwr1"), &w.generation().cwr1)?;
+                std::fs::write(path.join("initial.cps1"), w.source_preparation()?)?;
             }
             let key = |code: &[u8]| ExecutableInputSourceV1::Keyboard {
                 code: code.to_vec(),

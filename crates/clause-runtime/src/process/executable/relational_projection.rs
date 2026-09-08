@@ -33,6 +33,7 @@ impl ExecutablePhysicalPlanV1 {
         &mut self,
         scope: TermScope,
         package: &clause_package::CanonicalSourcePackageSliceV1,
+        states: &[ExecutableCanonicalStateBindingV1],
     ) -> Result<(), ExecutableErrorV1> {
         let _profile = source_profile_scope_v1(SourceProfilePhaseV1::RowProjection);
         if package.relational_projection.is_empty() {
@@ -43,19 +44,7 @@ impl ExecutablePhysicalPlanV1 {
             .projection
             .as_mut()
             .ok_or(ExecutableErrorV1::MalformedProgram)?;
-        let roles = projection
-            .bindings
-            .iter()
-            .map(|binding| binding.role)
-            .collect::<Vec<_>>();
-        let lowered = lower_canonical_executable_program_v1(
-            scope,
-            &package.state_cells,
-            &package.executable_handlers,
-            &roles,
-        )?;
-        let bindings = lowered
-            .states
+        let bindings = states
             .iter()
             .map(|binding| (&binding.state, binding))
             .collect::<BTreeMap<_, _>>();
@@ -190,33 +179,4 @@ pub(super) fn validate_selector(term: &Term) -> Result<(), ExecutableErrorV1> {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
     Ok(())
-}
-
-pub(super) fn selected_value(
-    term: &Term,
-    bindings: &BTreeMap<LocalRoleRefV2, ExecutableProjectionBindingV1>,
-    configuration: &[ExecutableSlotV1],
-) -> Result<Option<ExecutableValueV1>, ExecutableErrorV1> {
-    let (table, subject) = row_selection(term).ok_or(ExecutableErrorV1::MalformedProgram)?;
-    let (role, kind) =
-        projection_role(table.as_atom().ok_or(ExecutableErrorV1::MalformedProgram)?)?
-            .ok_or(ExecutableErrorV1::MalformedProgram)?;
-    if kind != ExecutableValueKindV1::RelationTable {
-        return Err(ExecutableErrorV1::MalformedProgram);
-    }
-    let binding = bindings
-        .get(&role)
-        .ok_or(ExecutableErrorV1::MalformedProgram)?;
-    let Some(ExecutableValueV1::RelationTable(table)) =
-        configuration[usize::from(binding.slot)].value()
-    else {
-        return Err(ExecutableErrorV1::TypeMismatch);
-    };
-    let subject =
-        projected_referent_value_v1(subject)?.ok_or(ExecutableErrorV1::MalformedProgram)?;
-    let subject = ExecutableValueV1::Referent(subject);
-    if !table.present(&subject)? {
-        return Ok(None);
-    }
-    Ok(Some(table.read(&subject)?))
 }
