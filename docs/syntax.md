@@ -476,10 +476,15 @@ declarations and exported callables into the consumer's checked scope.
 the path relative to the consumer file; the source API accepts an explicit
 finite map from import spellings to exact bytes. There is no ambient search.
 This slice admits direct imports of value contracts, foreign declarations and
-exported callable definitions, without nested imports, renaming, or shadowing. Duplicate names
-reject. Each imported definition retains its own source origin and uses the
+exported callable definitions, without nested imports, renaming, or shadowing.
+Imported exported definitions retain their private callable dependencies in the
+defining module's scope. Those private names are unavailable to the importer and
+may coincide with private names in other modules or with importer-local names.
+Duplicate names within one scope, including imported public names, reject.
+Each imported definition retains its own source origin and uses the
 same exact type and foreign binding checks as a local declaration. The complete
-two-consumer example is in `clause:test-vectors/authoring/shared-foreign/`.
+two-consumer example is in `clause:test-vectors/authoring/shared-foreign/`, and
+private helper composition is in `clause:test-vectors/authoring/private-imports/`.
 
 A `Dictionary<Value>` is a finite collection keyed by Text, with one exact
 value contract shared by every entry. `dictionary(key, value)` constructs a

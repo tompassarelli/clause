@@ -1740,7 +1740,7 @@ fn finish_canonical_source(
             _ => None,
         })
         .collect();
-    let callables = callable::check_definitions(&parsed.callables, &items)?;
+    let callables = callable::check_definitions(&parsed.callables, &items, artifact)?;
     callable::complete_inferred_results(&mut items, &callables)?;
     let mut cst = CanonicalSourceCstV1 {
         artifact,

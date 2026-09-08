@@ -1,0 +1,11 @@
+Result:
+  value: Text
+
+finish(?value: Text): Text
+  "library:{?value}"
+
+wrap<Value: Record>(?value: Value)
+  {value: finish(?value.text)}
+
+export imported(?value: Text): Result
+  wrap({text: ?value})

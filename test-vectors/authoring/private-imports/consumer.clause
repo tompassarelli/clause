@@ -1,0 +1,7 @@
+import "library.clause"
+
+finish(?value: Text): Text
+  "consumer:{?value}"
+
+export result(): Text
+  imported("kept").value ++ "/" ++ finish("local")

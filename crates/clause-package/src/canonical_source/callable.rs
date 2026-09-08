@@ -27,7 +27,7 @@ pub(super) struct CallableCst {
     result_kind: Option<value_type::Pattern>,
     type_parameters: BTreeSet<Vec<u8>>,
     body: CallableBodyCst,
-    origin: CanonicalSourceOriginV1,
+    pub(super) origin: CanonicalSourceOriginV1,
     expression_origin: CanonicalSourceOriginV1,
 }
 
@@ -438,6 +438,10 @@ pub(super) fn read(
 }
 
 impl CallableCst {
+    pub(super) fn import_visible(&self) -> bool {
+        self.exported || matches!(self.body, CallableBodyCst::Foreign { .. })
+    }
+
     fn requires_specialization(&self) -> bool {
         !self.type_parameters.is_empty() || self.arguments.iter().any(|a| a.value_kind().is_none())
     }
@@ -573,12 +577,23 @@ const MAX_CALL_DEPTH: usize = 64;
 pub(super) fn check_definitions(
     definitions: &[CallableCst],
     declarations: &[std::sync::Arc<CstItem>],
+    artifact: CanonicalSourceArtifactIdV1,
 ) -> Result<Vec<CanonicalCallableV1>, CanonicalSourceErrorV1> {
-    let mut indices = BTreeMap::new();
+    let mut indices = BTreeMap::<CanonicalSourceArtifactIdV1, BTreeMap<Vec<u8>, usize>>::new();
     for (index, definition) in definitions.iter().enumerate() {
-        if indices
+        if indices.entry(definition.origin.artifact).or_default()
             .insert(definition.designation.clone(), index)
             .is_some()
+        {
+            return Err(CanonicalSourceErrorV1::DuplicateDesignation {
+                designation: definition.designation.clone(),
+            });
+        }
+    }
+    let visible = indices.entry(artifact).or_default();
+    for (index, definition) in definitions.iter().enumerate() {
+        if definition.origin.artifact != artifact && definition.import_visible()
+            && visible.insert(definition.designation.clone(), index).is_some()
         {
             return Err(CanonicalSourceErrorV1::DuplicateDesignation {
                 designation: definition.designation.clone(),
@@ -600,7 +615,8 @@ pub(super) fn check_definitions(
         }
     }
     Ok((0..definitions.len())
-        .filter(|index| !definitions[*index].requires_specialization())
+        .filter(|index| !definitions[*index].requires_specialization()
+            && (definitions[*index].origin.artifact == artifact || definitions[*index].import_visible()))
         .map(|index| {
             expansion
                 .checked
@@ -613,7 +629,7 @@ pub(super) fn check_definitions(
 struct Expansion<'a> {
     definitions: &'a [CallableCst],
     declarations: &'a [std::sync::Arc<CstItem>],
-    indices: BTreeMap<Vec<u8>, usize>,
+    indices: BTreeMap<CanonicalSourceArtifactIdV1, BTreeMap<Vec<u8>, usize>>,
     checked: BTreeMap<usize, CanonicalCallableV1>,
     active: BTreeSet<usize>,
     remaining: usize,
@@ -1091,7 +1107,7 @@ fn lower(
             designation,
             arguments: actual,
         } => {
-            let index = *expansion.indices.get(designation).ok_or(
+            let index = *expansion.indices.get(&origin.artifact).and_then(|scope| scope.get(designation)).ok_or(
                 CanonicalSourceErrorV1::InvalidCallable {
                     origin,
                     reason: "unresolved pure callable",

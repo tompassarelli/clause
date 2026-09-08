@@ -63,22 +63,19 @@ pub(super) fn read(
         for pair in starts.windows(2) {
             let block = &lines[pair[0]..pair[1]];
             let origin = block_origin(cst.artifact, block);
-            if block[0].text.starts_with("foreign ") {
-                let (callable, _) = callable::read(block, origin, &cst.parsed.scalar_laws.declarations)?
-                    .ok_or(CanonicalSourceErrorV1::InvalidImport { origin, reason: "expected a foreign declaration" })?;
-                result.callables.push(callable);
-            } else if block[0].text.starts_with("export ") {
-                let (callable, _) = callable::read(block, origin, &cst.parsed.scalar_laws.declarations)?
-                    .ok_or(CanonicalSourceErrorV1::InvalidImport { origin, reason: "expected an exported callable declaration" })?;
-                result.callables.push(callable);
-            } else if !cst.items.iter().any(|item| item.origin == origin && matches!(item.kind, CstKind::ForeignType { .. } | CstKind::Shape { .. })) {
+            if !cst.parsed.callables.iter().any(|callable| callable.origin == origin)
+                && !cst.items.iter().any(|item| item.origin == origin && matches!(item.kind, CstKind::ForeignType { .. } | CstKind::Shape { .. }))
+            {
                 return Err(CanonicalSourceErrorV1::InvalidImport {
-                    origin, reason: "declaration sources contain exported definitions, value contracts and foreign declarations only",
+                    origin, reason: "declaration sources contain callable definitions, value contracts and foreign declarations only",
                 });
             }
         }
+        let private = cst.parsed.callables.iter().filter(|callable| !callable.import_visible())
+            .map(|callable| callable.origin).collect::<BTreeSet<_>>();
+        result.callables.extend(cst.parsed.callables.iter().cloned());
         result.sources.insert(cst.artifact, cst.exact_source);
-        result.items.extend(cst.items);
+        result.items.extend(cst.items.into_iter().filter(|item| !private.contains(&item.origin)));
     }
     validate_unique_designations(&result.items)?;
     Ok(result)
