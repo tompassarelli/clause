@@ -68,7 +68,7 @@ fn emit_scalar_branch(index: usize, when: bool, nodes: &[(Node, bool, bool)],
         return;
     }
     match nodes[index].0 {
-        Node::Conditional(condition, yes, no) => {
+        Node::Conditional(condition, yes, no) if !nodes[index].1 => {
             let mut otherwise = Vec::new();
             emit_scalar_branch(condition, false, nodes, code, &mut otherwise);
             emit_scalar_branch(yes, when, nodes, code, exits);
@@ -77,12 +77,12 @@ fn emit_scalar_branch(index: usize, when: bool, nodes: &[(Node, bool, bool)],
             emit_scalar_branch(no, when, nodes, code, exits);
             code[end] = Instruction::Jump(code.len());
         },
-        Node::Not(value) => emit_scalar_branch(value, !when, nodes, code, exits),
-        Node::Equal(a, b) if matches!(nodes[b].0, Node::Boolean(_)) && boolean_node(a, nodes) => {
+        Node::Not(value) if !nodes[index].1 => emit_scalar_branch(value, !when, nodes, code, exits),
+        Node::Equal(a, b) if !nodes[index].1 && matches!(nodes[b].0, Node::Boolean(_)) && boolean_node(a, nodes) => {
             let Node::Boolean(value) = nodes[b].0 else { unreachable!() };
             emit_scalar_branch(a, when == value, nodes, code, exits);
         },
-        Node::Equal(a, b) if matches!(nodes[a].0, Node::Boolean(_)) && boolean_node(b, nodes) => {
+        Node::Equal(a, b) if !nodes[index].1 && matches!(nodes[a].0, Node::Boolean(_)) && boolean_node(b, nodes) => {
             let Node::Boolean(value) = nodes[a].0 else { unreachable!() };
             emit_scalar_branch(b, when == value, nodes, code, exits);
         },
