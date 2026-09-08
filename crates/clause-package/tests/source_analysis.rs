@@ -50,6 +50,9 @@ fn incremental_scalar_analysis_matches_full_check_and_rejects_stale_or_invalid_e
             assert_eq!(next.source().applications(), full_source.applications());
             let full = elaborate_canonical_source_package_v1(&full_source, context, &full_plan).unwrap();
             let incremental = next.package();
+            let wire_checked = check_process_package(decode_process_package(incremental.checked_package.exact_bytes()).unwrap()).unwrap();
+            assert_eq!(wire_checked.id(), incremental.checked_package.id());
+            assert_eq!(wire_checked.constitution(), incremental.checked_package.constitution());
             assert_eq!(next.source().imports(), &imports);
             assert_eq!(incremental.callables, full.callables);
             assert_eq!(incremental.checked_package.exact_bytes(), full.checked_package.exact_bytes());

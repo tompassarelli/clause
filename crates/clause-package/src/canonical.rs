@@ -3043,6 +3043,24 @@ pub fn check_process_package(
         exact_bytes,
         candidate,
     } = decoded;
+    check_canonical_process_package(exact_bytes, candidate)
+}
+
+/// Check an owned compiler candidate using its canonical encoding. Byte ingress
+/// still decodes independently; neither path can supply prechecked meaning.
+pub(crate) fn check_owned_process_package(
+    candidate: ProcessPackageV2,
+) -> Result<CheckedProcessPackage, ProcessPackageCheckError> {
+    let exact_bytes = encode_process_package(&candidate)
+        .map_err(ProcessPackageCheckError::Canonical)?
+        .into_boxed_slice();
+    check_canonical_process_package(exact_bytes, candidate)
+}
+
+fn check_canonical_process_package(
+    exact_bytes: Box<[u8]>,
+    candidate: ProcessPackageV2,
+) -> Result<CheckedProcessPackage, ProcessPackageCheckError> {
     let ProcessPackageV2 {
         claimed_snapshot,
         snapshot,

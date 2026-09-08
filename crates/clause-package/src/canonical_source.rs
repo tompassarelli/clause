@@ -10,8 +10,7 @@ use std::fmt;
 
 use crate::canonical::{
     CanonicalDecodeError, CanonicalEncodeError, ProcessPackageCheckError,
-    ProgramSnapshotPreimageV2, check_process_package, decode_process_package,
-    derive_program_snapshot_id, encode_process_package,
+    ProgramSnapshotPreimageV2, derive_program_snapshot_id,
 };
 use crate::formation::*;
 use crate::hash::domain_hash;
@@ -6225,8 +6224,8 @@ fn checked_canonical_source_execution_v1(
     })
 }
 
-/// Lower the supported declaration slice, then pass it through the existing
-/// canonical encoder, decoder, and package checker.
+/// Lower the supported declaration slice, then canonical-encode and check the
+/// owned candidate through the same semantic checker as decoded byte ingress.
 pub fn elaborate_canonical_source_package_v1(
     cst: &CanonicalSourceCstV1,
     context: CanonicalSourceContextV1,
@@ -7014,9 +7013,8 @@ fn elaborate_canonical_source_package_inner(
                 initial_state_views: vec![],
                 records: vec![],
             };
-            let bytes = encode_process_package(&package).map_err(CanonicalSourceErrorV1::Encode)?;
-            let decoded = decode_process_package(&bytes).map_err(CanonicalSourceErrorV1::Decode)?;
-            let checked = check_process_package(decoded).map_err(CanonicalSourceErrorV1::Check)?;
+            let checked = crate::canonical::check_owned_process_package(package)
+                .map_err(CanonicalSourceErrorV1::Check)?;
             Ok(checked)
         })();
         checked_package
