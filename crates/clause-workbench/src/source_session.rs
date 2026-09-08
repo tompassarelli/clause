@@ -302,8 +302,14 @@ impl ResidentSourceWorkbenchV1 {
             return Ok(self.generation.clone());
         }
         self.install_source(exact_source)?;
-        while self.boundary.reclaim_retired() {}
         Ok(self.generation.clone())
+    }
+
+    /// Release one bounded batch of an already-revoked generation. Hosts may
+    /// call this after delivering the checked replacement. Another replacement
+    /// drains any remaining retirement before installing its new generation.
+    pub fn reclaim_retired(&mut self) -> bool {
+        self.boundary.reclaim_retired()
     }
 
     /// Exact source bytes checked and installed in the current generation.
@@ -352,7 +358,6 @@ impl ResidentSourceWorkbenchV1 {
         let analysis = std::sync::Arc::clone(prepared.analysis());
         let source = analysis.source().exact_source().to_vec();
         self.install_source_inner(&source, None, None, Some(analysis), Some(prepared))?;
-        while self.boundary.reclaim_retired() {}
         Ok(self.generation.clone())
     }
 
@@ -425,7 +430,6 @@ impl ResidentSourceWorkbenchV1 {
         };
         let next_analysis = analysis.advance(&edit).map_err(|error| debug_error("incremental source elaboration", error))?;
         self.install_source_inner(edit.source().exact_source(), Some(witness), None, Some(std::sync::Arc::new(next_analysis)), None)?;
-        while self.boundary.reclaim_retired() {}
         Ok(self.generation.clone())
     }
 
@@ -717,6 +721,7 @@ impl ResidentSourceWorkbenchV1 {
         analysis: Option<std::sync::Arc<clause_package::CheckedCanonicalSourceAnalysisV1>>,
         prepared: Option<clause_runtime::PreparedWasmScalarEditV1>,
     ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
+        while self.reclaim_retired() {}
         let next_change = self.next_change.checked_add(1).ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("source change sequence exhausted".into())
         })?;
