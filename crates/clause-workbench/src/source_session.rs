@@ -1008,7 +1008,7 @@ impl ResidentSourceWorkbenchV1 {
         } else {
             physical_plan.project_referent_input_domains(scope)
                 .map_err(|error| boxed_error("referent input domain projection", error))?;
-            physical_plan.bind_source_snapshot(scope, &compiled, cst.artifact(), allocation_plan.root())
+            physical_plan.bind_source_snapshot(scope, &compiled, cst.artifact(), allocation_plan.root(), &lowered.states)
                 .map_err(|error| boxed_error("checked source snapshot", error))?;
             encode_executable_physical_plan_v1(&physical_plan).map_err(|error| boxed_error("CPP1 encode", error))?
         };

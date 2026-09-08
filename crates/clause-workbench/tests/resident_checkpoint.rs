@@ -8,6 +8,28 @@ use clause_workbench::ResidentSourceWorkbenchV1;
 const SOURCE: &[u8] = include_bytes!("../../../test-vectors/authoring/dynamic-text-goals.clause");
 const CHILD_PATH: &str = "CLAUSE_CHECKPOINT_CHILD_PATH";
 
+#[test]
+fn scalar_edit_checkpoint_retains_state_layout() {
+    let source = include_bytes!("../../../test-vectors/authoring/coherent-declarations.clause");
+    let mut w = ResidentSourceWorkbenchV1::open_continuous(source).unwrap();
+    for replacement in [b"?limited * 2.0".as_slice(), b"?limited", b"?limited * 2.0"] {
+        let effect = w.scalar_effects().unwrap().into_iter()
+            .find(|effect| effect.expression.starts_with(b"?limited")).unwrap();
+        w.edit_scalar_effect(w.generation().handle, &effect, replacement).unwrap();
+        let occurrence = w.handler_occurrence(b"settle", &[]).unwrap();
+        w.run_occurrences_to_candidate(&[occurrence]).unwrap();
+        w.admit().unwrap();
+    }
+    let world = w.project_current_world().unwrap();
+    let checkpoint = w.checkpoint_admitted().unwrap();
+    let mut reopened = ResidentSourceWorkbenchV1::reopen(w.exact_source(), &checkpoint).unwrap();
+    assert_eq!(reopened.project_current_world().unwrap(), world);
+    assert_eq!(reopened.checkpoint_admitted().unwrap(), checkpoint);
+    let occurrence = reopened.handler_occurrence(b"settle", &[]).unwrap();
+    reopened.run_occurrences_to_candidate(&[occurrence]).unwrap();
+    reopened.admit().unwrap();
+}
+
 fn field<'a>(term: &'a Term, key: &[u8]) -> &'a Term {
     let mut current = term;
     loop {

@@ -75,23 +75,9 @@ impl CheckedExecutableSourceEditV1 {
 }
 
 impl ExecutablePhysicalPlanV1 {
+    /// Bind source metadata using the state layout that produced this program,
+    /// including retained slots when reopening or editing an admitted world.
     pub fn bind_source_snapshot(
-        &mut self,
-        scope: TermScope,
-        package: &clause_package::CanonicalSourcePackageSliceV1,
-        artifact: clause_package::CanonicalSourceArtifactIdV1,
-        root: ProgramChangeOccurrenceId,
-    ) -> Result<(), ExecutableErrorV1> {
-        let roles = self.program.projection.as_ref()
-            .ok_or(ExecutableErrorV1::MalformedProgram)?.bindings.iter()
-            .map(|binding| binding.role).collect::<Vec<_>>();
-        let lowered = lower_canonical_executable_program_v1(
-            scope, &package.state_cells, &package.executable_handlers, &roles,
-        )?;
-        self.bind_source_snapshot_with_states(scope, package, artifact, root, &lowered.states)
-    }
-
-    fn bind_source_snapshot_with_states(
         &mut self,
         scope: TermScope,
         package: &clause_package::CanonicalSourcePackageSliceV1,
@@ -736,7 +722,7 @@ pub fn check_executable_source_preparation_v1(
         expected.program.rules.push(checkpoint.clone());
     }
     expected.project_referent_input_domains(scope)?;
-    expected.bind_source_snapshot_with_states(scope, package, analysis.source().artifact(), root, &lowered.states)?;
+    expected.bind_source_snapshot(scope, package, analysis.source().artifact(), root, &lowered.states)?;
     if expected != plan { return Err(ExecutableErrorV1::SourceContinuityRejected("prepared source does not realize exact bound CPP1")); }
     Ok(CheckedExecutableSourcePreparationV1 { analysis: Arc::new(analysis), declared_frontend: declared_frontend.to_vec(), scope, exact_cpp1: exact_cpp1.to_vec(), identity: physical_plan_identity(exact_cpp1), plan, lowered })
 }
@@ -953,7 +939,7 @@ fn derive_prepared_source_edit(
         input.tick.entries.dedup();
     }
     expected_new.add_referent_input_projection(scope)?;
-    expected_new.bind_source_snapshot_with_states(scope, &new, edit.source().artifact(), new_root, &new_lowered.states)?;
+    expected_new.bind_source_snapshot(scope, &new, edit.source().artifact(), new_root, &new_lowered.states)?;
     let _compare = source_profile_scope_v1(SourceProfilePhaseV1::CompareAndMap);
     let exact_cpp1 = encode_executable_physical_plan_v1(&expected_new)?;
     let mut slots = Vec::new();
