@@ -1476,9 +1476,7 @@ impl Wire for CanonicalValueTypeV1 {
                         if types.last().is_some_and(|previous| previous >= &kind) { return Err(CanonicalDecodeError::NonCanonical(CanonicalEncodeError::NonCanonicalOrder("alternative contracts"))); }
                         types.insert(kind);
                     }
-                    let kind=T::Alternatives(types);
-                    kind.check().map_err(|reason| CanonicalDecodeError::InvalidForeignContract { offset,reason })?;
-                    kind
+                    T::Alternatives(types)
                 }
                 7 => {
                     let count=cursor.u32()?;
@@ -1496,7 +1494,10 @@ impl Wire for CanonicalValueTypeV1 {
             };
             Ok(value)
         }
-        decode(cursor,0)
+        let offset = cursor.offset();
+        let kind = decode(cursor,0)?;
+        kind.check().map_err(|reason| CanonicalDecodeError::InvalidForeignContract { offset, reason })?;
+        Ok(kind)
     }
 }
 
@@ -1604,6 +1605,17 @@ mod foreign_mode_contract_tests {
         assert_ne!(construction, record);
         assert_eq!(ModeContractV2::decode(&mut Cursor::new(&construction)).unwrap(), value);
         assert!(value.is_pure());
+        value.foreign_accesses[0].result = CanonicalValueTypeV1::Delayed {
+            target: "nix".into(), value: Box::new(CanonicalValueTypeV1::Alternatives(std::collections::BTreeSet::from([
+                CanonicalValueTypeV1::OpaqueForeign { module: "nix".into(), name: "Null".into() },
+                CanonicalValueTypeV1::OpaqueForeign { module: "nixpkgs".into(), name: "Package".into() },
+            ]))),
+        };
+        let alternatives = bytes(&value);
+        assert_eq!(ModeContractV2::decode(&mut Cursor::new(&alternatives)).unwrap(), value);
+        let mut invalid = Encoder::new();
+        invalid.u8(10); invalid.u32(2); invalid.u8(0); invalid.u8(0);
+        assert!(CanonicalValueTypeV1::decode(&mut Cursor::new(&invalid.finish().unwrap())).is_err());
         let mut empty_tag=vec![2,0,0,0,0]; empty_tag.extend(empty);
         assert!(ModeContractV2::decode(&mut Cursor::new(&empty_tag)).is_err());
         assert!(ModeContractV2::decode(&mut Cursor::new(&[3])).is_err());

@@ -387,11 +387,13 @@ value type. The alternatives are unordered and must be distinct and disjoint:
 a value cannot satisfy two cases. Records with different field sets are disjoint;
 records with the same fields can differ through disjoint field contracts.
 Sequence alternatives overlap at the empty sequence and therefore reject.
-Delayed and opaque foreign contracts are not alternatives in this slice.
+Immediate alternatives cannot contain delayed values. Within a delayed target
+contract, alternatives may retain exact opaque foreign identities, such as
+`Delayed<nix,Null | Package>`.
 
 When a result or argument requires an alternative contract, the checker includes
 a value of one declared alternative, or a smaller alternative contract whose
-members all belong to the declared contract. A conditional checks both
+members all belong to the declared contract. An immediate conditional checks both
 branches against the same contract; it does not infer a union from conflicting
 branches. The runtime value retains its ordinary representation.
 
@@ -525,9 +527,12 @@ value. The `throw` contract now describes failure at target evaluation.
 Equality with a delayed operand constructs a delayed Boolean when both operands
 have the same eventual type and target; an ordinary value of that type may be
 the other operand. `if` with a delayed Boolean constructs a target conditional.
-Both branches must have one exact eventual type in that target; only the selected
-branch is evaluated at target execution. Immediate equality and conditionals
-retain their existing meaning. See
+Both branches must belong to that target. Distinct, disjoint eventual contracts
+join into one delayed alternative contract; nested alternatives flatten and
+identical branches retain their exact contract. Only the selected branch is
+evaluated at target execution. An ordinary Boolean can also choose between two
+delayed values in the same target without forcing either value. Immediate
+equality and conditionals over immediate values retain their existing meaning. See
 `clause:test-vectors/authoring/delayed-predicates/gtk.clause` for a complete module
 whose outer theme polarity selects settings using inner Home Manager fonts.
 
@@ -547,6 +552,15 @@ foreign location(): Text
 export settings-path()
   "{location()}/settings.ini"
 ```
+
+For Nix construction, `get: root` also accepts a checked relative file path in
+`from`, such as `"./firn-mic"` with an exact foreign Path result. The generated
+path stays relative to the generated Nix module, including when that module
+lives elsewhere than its Clause source. Paths begin with `./` or `../` and
+contain nonempty slash-separated segments of ASCII letters, digits, `.`, `_`,
+`-`, or `+`; expression text and member/call operations on path roots reject.
+The whole Ghostty and Framework microphone examples in
+`clause:test-vectors/authoring/target-values/` exercise both capabilities.
 
 Foreign opaque values identify the external type, rather than pretending it is
 a Clause scalar or structural record:

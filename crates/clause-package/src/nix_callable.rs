@@ -16,6 +16,7 @@ enum NixExpr {
     Record(BTreeMap<Vec<u8>, Self>),
     Dictionary(Box<Self>, Box<Self>),
     Reference { root: String, path: Vec<String> },
+    RelativePath(String),
     Apply(Box<Self>, Vec<Self>),
     Lambda(u16, Box<Self>),
     Bound(u16),
@@ -87,7 +88,12 @@ fn construct(e: &E, bindings: &BTreeMap<u16, NixExpr>, roots: &mut BTreeSet<Stri
             if target != "nix" || !matches!(&binding.result, T::Delayed { target, .. } if target == "nix") {
                 return Err("foreign construction target mismatch".into());
             }
-            if !identifier(&binding.module) { return Err("Nix foreign root must be an identifier".into()); }
+            if !identifier(&binding.module) {
+                if binding.operation != CanonicalForeignOperationV1::Root || !relative_path(&binding.module) {
+                    return Err("Nix foreign root must be an identifier or a relative file path selected with get: root".into());
+                }
+                return Ok(NixExpr::RelativePath(binding.module.clone()));
+            }
             let path = if binding.operation == CanonicalForeignOperationV1::Root { Vec::new() }
                 else { binding.member.split('.').map(str::to_owned).collect::<Vec<_>>() };
             if path.iter().any(String::is_empty) { return Err("Nix foreign member path is empty".into()); }
@@ -144,6 +150,11 @@ fn identifier(value: &str) -> bool {
     bytes.next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
         && bytes.all(|b| b.is_ascii_alphanumeric() || b"_-'".contains(&b))
 }
+fn relative_path(value: &str) -> bool {
+    (value.starts_with("./") || value.starts_with("../"))
+        && value.split('/').all(|part| !part.is_empty()
+            && part.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-+".contains(&b)))
+}
 fn quote(value: &str) -> String {
     let mut out = String::from("\"");
     let mut chars = value.chars().peekable();
@@ -171,6 +182,7 @@ fn render(e: &NixExpr, roots: &BTreeSet<String>) -> Result<String, String> {
     Ok(match e {
         NixExpr::Lambda(binding, body) => format!("({}: {})", bound(binding), render(body)?),
         NixExpr::Bound(binding) => bound(binding),
+        NixExpr::RelativePath(path) => path.clone(),
         NixExpr::Field(value, field) => format!("({}).{}", render(value)?, quote(field)),
         NixExpr::Concatenate(a, b) => format!("({} + {})", render(a)?, render(b)?),
         NixExpr::Equal(a, b) => format!("({} == {})", render(a)?, render(b)?),

@@ -1544,19 +1544,36 @@ fn expression_kind(
             }
         }
         E::Conditional(a, b, c) => {
+            let join = |target: String, b: T, c: T| -> Result<T, &'static str> {
+                if !b.in_target(&target) || !c.in_target(&target) { return Err("conditional construction target mismatch"); }
+                let b = b.constructed_value(&target)?;
+                let c = c.constructed_value(&target)?;
+                let value = if b == c { b } else {
+                    let mut types = BTreeSet::new();
+                    for kind in [b, c] {
+                        match kind {
+                            T::Alternatives(alternatives) => types.extend(alternatives),
+                            kind => { types.insert(kind); }
+                        }
+                    }
+                    T::Alternatives(types)
+                };
+                let kind = T::Delayed { target, value: Box::new(value) };
+                kind.check()?;
+                Ok(kind)
+            };
             match recur(a)? {
                 T::Delayed { target, value } if *value == T::Scalar(K::Boolean) => {
-                    let b = recur(b)?;
-                    let c = recur(c)?;
-                    if !b.in_target(&target) || !c.in_target(&target) { return Err("conditional construction target mismatch"); }
-                    let value = b.constructed_value(&target)?;
-                    if c.constructed_value(&target)? != value { return Err("conditional branch type mismatch"); }
-                    T::Delayed { target, value: Box::new(value) }
+                    join(target, recur(b)?, recur(c)?)?
                 }
                 T::Scalar(K::Boolean) => {
                     let kind = recur(b)?;
-                    require(c, &kind)?;
-                    kind
+                    let other = recur(c)?;
+                    match (&kind, &other) {
+                        (T::Delayed { target, .. }, T::Delayed { .. }) => join(target.clone(), kind, other)?,
+                        _ if kind == other => kind,
+                        _ => return Err("callable expression type mismatch"),
+                    }
                 }
                 _ => return Err("conditional requires Bool"),
             }

@@ -56,7 +56,7 @@ impl CanonicalValueTypeV1 {
                 if types.len() < 2 { return Err("alternatives require at least two distinct contracts"); }
                 for (index, kind) in types.iter().enumerate() {
                     kind.check_at(depth + 1, delayed)?;
-                    if matches!(kind, Self::Alternatives(_)) || kind.contains_delayed() {
+                    if matches!(kind, Self::Alternatives(_)) || (!delayed && kind.contains_delayed()) {
                         return Err("alternatives require concrete immediate contracts");
                     }
                     if types.iter().skip(index + 1).any(|other| kind.overlaps(other)) {
@@ -86,6 +86,7 @@ impl CanonicalValueTypeV1 {
     fn overlaps(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Scalar(a), Self::Scalar(b)) => a == b,
+            (Self::OpaqueForeign { module: a, name: an }, Self::OpaqueForeign { module: b, name: bn }) => a == b && an == bn,
             (Self::Sequence(_), Self::Sequence(_)) | (Self::Dictionary(_), Self::Dictionary(_)) => true,
             (Self::Dictionary(element), Self::Record(fields)) | (Self::Record(fields), Self::Dictionary(element)) => fields.values().all(|value| element.overlaps(value)),
             (Self::Record(a), Self::Record(b)) => a.keys().eq(b.keys()) && a.iter().all(|(key, value)| value.overlaps(&b[key])),
@@ -290,9 +291,7 @@ pub(super) fn resolve<Item: std::borrow::Borrow<CstItem>>(
             let kind = resolve(part.trim().as_bytes(), items, active)?;
             if !types.insert(kind) { return Err("duplicate alternative contract"); }
         }
-        let kind = CanonicalValueTypeV1::Alternatives(types);
-        kind.check()?;
-        return Ok(kind);
+        return Ok(CanonicalValueTypeV1::Alternatives(types));
     }
     let name = source.as_bytes();
     let scalar = match name {
