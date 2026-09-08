@@ -253,7 +253,10 @@ fn scalar_program(
         CanonicalScalarValueV1::Boolean(_) => ExecutableValueKindV1::Boolean,
         CanonicalScalarValueV1::Symbol(_) => ExecutableValueKindV1::Symbol,
         CanonicalScalarValueV1::Text(_) => ExecutableValueKindV1::Text,
-        CanonicalScalarValueV1::Referent(_) | CanonicalScalarValueV1::RelationTable(_) => {
+        CanonicalScalarValueV1::Referent(_)
+        | CanonicalScalarValueV1::RelationTable(_)
+        | CanonicalScalarValueV1::Sequence(_)
+        | CanonicalScalarValueV1::Record(_) => {
             panic!("the bounded scalar fixture requires a scalar value cell")
         }
     };
