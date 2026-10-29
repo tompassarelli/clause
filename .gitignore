@@ -1,2 +1,7 @@
 /target/
 /lean/.lake/
+/build/
+/target-*/
+/.target-*/
+/.cargo-*/
+/.rustup-*/
