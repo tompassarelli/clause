@@ -433,10 +433,9 @@ fn validate_shape(request: &WasmProcessRequestV1) -> Result<(), WasmProcessStatu
     if request.package_bytes.len() > WASM_PROCESS_REQUEST_LIMIT_V1
         || request.physical_plan_bytes.len() > WASM_PROCESS_REQUEST_LIMIT_V1
         || (request.occurrences.is_empty()
-            && !decode_executable_physical_plan_v1(&request.physical_plan_bytes)
+            && decode_executable_physical_plan_v1(&request.physical_plan_bytes)
                 .ok()
-                .and_then(|plan| plan.input)
-                .is_some_and(|input| !input.events.is_empty()))
+                .and_then(|plan| plan.input).is_none_or(|input| input.events.is_empty()))
         || request.occurrences.len() > MAX_OCCURRENCES
         || request.render_slots.len() > MAX_RENDER_SLOTS
         || [

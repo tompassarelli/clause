@@ -2,6 +2,8 @@ use super::*;
 mod declarations;
 pub(super) use declarations::rebind_declarations;
 
+type RetainedRules = (ProgramChangeOccurrenceId, BTreeMap<(FormationLocalId, usize), (FormationLocalId, usize)>);
+
 /// A retained analysis belongs to one exact parsed source, allocation root and
 /// semantic context. Its checked executable results cannot be replaced by callers.
 #[derive(Debug)]
@@ -11,7 +13,7 @@ pub struct CheckedCanonicalSourceAnalysisV1 {
     context: CanonicalSourceContextV1,
     package: CanonicalSourcePackageSliceV1,
     scalar_effects: std::sync::OnceLock<Vec<CanonicalScalarEffectV1>>,
-    retained_rules: Option<(ProgramChangeOccurrenceId, BTreeMap<(FormationLocalId, usize), (FormationLocalId, usize)>)>,
+    retained_rules: Option<RetainedRules>,
 }
 
 pub(super) struct RetainedSourceDerivations<'a> {

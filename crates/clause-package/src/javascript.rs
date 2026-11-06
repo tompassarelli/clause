@@ -508,12 +508,11 @@ impl Lowerer<'_> {
         kind: ValueType,
     ) -> Result<String> {
         use CanonicalExecutableExpressionV1 as E;
-        if let E::Binding(index) = pattern {
-            if !self.bindings.contains_key(index) {
+        if let E::Binding(index) = pattern
+            && !self.bindings.contains_key(index) {
                 self.bindings.insert(*index, kind.clone());
                 return Ok(format!("const b{index}={candidate};\n"));
             }
-        }
         if let E::ReferentFacet {
             value,
             domain,
@@ -521,12 +520,11 @@ impl Lowerer<'_> {
         } = pattern
         {
             let mut output = String::new();
-            if let E::Binding(index) = value.as_ref() {
-                if !self.bindings.contains_key(index) {
+            if let E::Binding(index) = value.as_ref()
+                && !self.bindings.contains_key(index) {
                     self.bindings.insert(*index, kind);
                     output.push_str(&format!("const b{index}={candidate};\n"));
                 }
-            }
             let input_type = match value.as_ref() {
                 E::Binding(index) => self.bindings.get(index).cloned(),
                 E::Argument(index) => self.arguments.get(usize::from(*index)).cloned().flatten(),

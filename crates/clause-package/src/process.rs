@@ -489,10 +489,6 @@ pub enum TruthVerdict {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "an Observation proposal owns its exact typed formation target without hidden allocation"
-)]
 pub enum ObservationProposalV2 {
     Value {
         id: ObservationId,
@@ -561,10 +557,6 @@ pub struct Observation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "an Observation owns its exact typed formation target without hidden allocation"
-)]
 pub enum ObservationContentV2 {
     Value {
         value: Term,
@@ -1082,7 +1074,7 @@ impl ProcessCarrier {
             return Err(ProcessError::RejectedDecisionIsNotAdmission(admission));
         };
         if successor.id != state
-            || self.states.get(&state).is_none()
+            || !self.states.contains_key(&state)
             || !matches!(
                 successor.cause,
                 StateRevisionCause::Admission { occurrence, .. } if occurrence == admission
@@ -4870,9 +4862,7 @@ fn account_ingress_bytes(
     accepted_ingress_bytes: usize,
     ingress_batch_bytes: usize,
 ) -> Result<usize, ProcessError> {
-    let live_footprint = package_bytes
-        .checked_add(ingress_batch_bytes)
-        .unwrap_or(usize::MAX);
+    let live_footprint = package_bytes.saturating_add(ingress_batch_bytes);
     if live_footprint > MAX_INGRESS_BATCH_FOOTPRINT_BYTES {
         return Err(ProcessError::IngressByteLimitExceeded {
             count: live_footprint,

@@ -3380,13 +3380,11 @@ impl ExecutableProcessRuntimeV1 {
             if !record.contract.foreign_accesses.is_empty() {
                 return Err(ExecutableCarrierErrorV1::UnsupportedSurface);
             }
-            if record.contract.state_delta_domain.is_some()
-                || !record.contract.effect_intents.is_empty()
-            {
-                if selected.replace(mode).is_some() {
+            if (record.contract.state_delta_domain.is_some()
+                || !record.contract.effect_intents.is_empty())
+                && selected.replace(mode).is_some() {
                     return Err(ExecutableCarrierErrorV1::AmbiguousStatefulMode);
                 }
-            }
         }
         let mode = selected.ok_or(ExecutableCarrierErrorV1::MissingStatefulMode)?;
         if mode != self.physical_mode {
@@ -3428,11 +3426,9 @@ impl ExecutableProcessRuntimeV1 {
                         .formation_checks
                         .binary_search(target)
                         .is_ok()
-                {
-                    if checker_mode.replace(candidate).is_some() {
+                    && checker_mode.replace(candidate).is_some() {
                         return Err(ExecutableCarrierErrorV1::AmbiguousCheckerMode);
                     }
-                }
             }
             if checker_mode.is_none() {
                 return Err(ExecutableCarrierErrorV1::MissingCheckerMode);

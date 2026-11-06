@@ -111,11 +111,11 @@ pub enum WasmBranchEventKindV1 {
         judgment: JudgmentOccurrenceId,
         admission: AdmissionOccurrenceId,
         projection: Option<WasmBranchProjectionV1>,
-        explanation: ProcessBranchExplanationV1,
+        explanation: Box<ProcessBranchExplanationV1>,
         exact_explanation: Vec<u8>,
     },
     Explanation {
-        explanation: ProcessBranchExplanationV1,
+        explanation: Box<ProcessBranchExplanationV1>,
         exact_explanation: Vec<u8>,
     },
     Disposed,
@@ -379,7 +379,7 @@ fn execute_operation(
         WasmBranchOperationV1::Explain => match live.branch.explanation().cloned() {
             Some(explanation) => match encode_process_branch_explanation_v1(&explanation) {
                 Ok(exact_explanation) => WasmBranchEventKindV1::Explanation {
-                    explanation,
+                    explanation: Box::new(explanation),
                     exact_explanation,
                 },
                 Err(_) => {
@@ -476,7 +476,7 @@ fn reconnect_admitted_event(admitted: ProcessReconnectAdmissionV1) -> WasmBranch
         judgment: admitted.explanation.judgment,
         admission: admitted.explanation.admission,
         projection: admitted.projection.map(project_projection),
-        explanation: admitted.explanation,
+        explanation: Box::new(admitted.explanation),
         exact_explanation,
     }
 }
@@ -761,14 +761,14 @@ pub fn decode_wasm_branch_event_v1(bytes: &[u8]) -> Result<WasmBranchEventV1, Wa
                 judgment,
                 admission,
                 projection,
-                explanation,
+                explanation: Box::new(explanation),
                 exact_explanation,
             }
         }
         5 => {
             let exact_explanation = decoder.blob(WASM_BRANCH_EVENT_LIMIT_V1)?.to_vec();
             WasmBranchEventKindV1::Explanation {
-                explanation: decode_process_branch_explanation_v1(&exact_explanation)?,
+                explanation: Box::new(decode_process_branch_explanation_v1(&exact_explanation)?),
                 exact_explanation,
             }
         }

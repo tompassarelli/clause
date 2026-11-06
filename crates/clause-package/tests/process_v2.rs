@@ -1148,7 +1148,7 @@ fn entered_through_with_permission(
 
 fn boundary_permission_for_evidence(tag: u8) -> BoundaryPermissionLocalId {
     BoundaryPermissionLocalId::new(match tag {
-        181 | 182 | 183 => 0,
+        181..=183 => 0,
         184 | 196 | 197 => 1,
         185 => 2,
         186..=189 => 5,

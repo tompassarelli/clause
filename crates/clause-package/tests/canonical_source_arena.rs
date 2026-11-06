@@ -124,8 +124,7 @@ fn grouped_scalar_initials_share_flat_state_lowering() {
         let application = grouped.applications.iter()
             .find(|application| application.role == b"order report")
             .expect("focused source application remains inspectable");
-        assert!(std::str::from_utf8(&source.as_bytes()[application.origin.start as usize..application.origin.end as usize])
-            .unwrap().contains("order report:"));
+        assert!(source[application.origin.start as usize..application.origin.end as usize].contains("order report:"));
     }
 }
 

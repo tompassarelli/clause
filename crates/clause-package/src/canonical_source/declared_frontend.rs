@@ -565,11 +565,10 @@ fn balanced_binding(source: &str, tokens: &[InputToken]) -> bool {
             b"(" => closing.push(b')'),
             b"[" => closing.push(b']'),
             b"{" => closing.push(b'}'),
-            b")" | b"]" | b"}" => {
-                if closing.pop() != Some(source.as_bytes()[token.start]) {
+            b")" | b"]" | b"}"
+                if closing.pop() != Some(source.as_bytes()[token.start]) => {
                     return false;
                 }
-            }
             _ => {}
         }
     }

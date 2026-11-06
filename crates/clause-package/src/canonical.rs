@@ -235,6 +235,8 @@ impl std::error::Error for CanonicalDecodeError {
     }
 }
 
+type FramedDigest = (Vec<u8>, Vec<u8>, [u8; 32]);
+
 /// Immutable exact canonical octets. Segment boundaries do not change equality,
 /// wire spelling or derived identities. Import retains all canonical and
 /// payload-binding checks required for contiguous snapshot bytes.
@@ -242,7 +244,7 @@ impl std::error::Error for CanonicalDecodeError {
 pub struct CanonicalBytes {
     segments: std::sync::Arc<[crate::AtomPayloadSegment]>,
     length: usize,
-    framed_digest: std::sync::Arc<std::sync::OnceLock<(Vec<u8>, Vec<u8>, [u8; 32])>>,
+    framed_digest: std::sync::Arc<std::sync::OnceLock<FramedDigest>>,
 }
 
 impl CanonicalBytes {
@@ -1014,12 +1016,11 @@ fn encode_term_value(
             maximum: MAX_TERM_DEPTH,
         });
     }
-    if encoder.count_only {
-        if let Some(length) = term.canonical_value_length() {
+    if encoder.count_only
+        && let Some(length) = term.canonical_value_length() {
             encoder.count_bytes(length);
             return Ok(());
         }
-    }
     let start = encoder.length;
     match term.value() {
         TermValueRef::Atom(atom) => {

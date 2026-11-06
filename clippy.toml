@@ -1,0 +1,5 @@
+ignore-interior-mutability = [
+    "clause_package::term::TermNode",
+    "clause_package::term::AtomPayload",
+    "clause_runtime::process::executable::ExecutableRowsV1",
+]

@@ -414,7 +414,7 @@ impl ResidentSourceWorkbenchV1 {
     {
         let analysis = self.source_snapshot.as_ref().expect("an installed workbench retains its source snapshot");
         let (cst, plan) = (analysis.source(), analysis.plan());
-        clause_package::canonical_editable_source_items_v1(&cst, &plan)
+        clause_package::canonical_editable_source_items_v1(cst, plan)
             .map_err(|error| debug_error("editable source items", error))
     }
 
@@ -456,7 +456,7 @@ impl ResidentSourceWorkbenchV1 {
         let analysis = self.source_snapshot.as_ref().expect("an installed workbench retains its source snapshot");
         let (cst, plan) = (analysis.source(), analysis.plan());
         let edit =
-            clause_package::replace_canonical_source_items_v1(&cst, &plan, replacements, new_root)
+            clause_package::replace_canonical_source_items_v1(cst, plan, replacements, new_root)
                 .map_err(|error| debug_error("structured edit", error))?;
         let witness = clause_runtime::ExecutableSourceEditV1 {
             old_source: self.exact_source.clone(),
@@ -867,7 +867,7 @@ impl ResidentSourceWorkbenchV1 {
             let recorded_plan = decode_executable_physical_plan_v1(&recorded.physical_plan_bytes)
                 .map_err(|error| boxed_error("recorded CPP1", error))?;
             clause_runtime::replay_canonical_executable_entry_layout_v1(
-                scope, &compiled, cst.artifact(), lowered.to_mut(), &recorded_plan,
+                scope, compiled, cst.artifact(), lowered.to_mut(), &recorded_plan,
             ).map_err(|error| boxed_error("recorded source dispatch layout", error))?;
         }
         let semantic_handlers = compiled
@@ -974,9 +974,7 @@ impl ResidentSourceWorkbenchV1 {
                 default_occurrences.push(
                     encode_executable_occurrence_v1(&ExecutableOccurrenceV1 {
                         entry: binding.entry,
-                        arguments: (binding.argument_count == 1)
-                            .then(|| template_tick.arguments.clone())
-                            .unwrap_or_default(),
+                        arguments: if binding.argument_count == 1 { template_tick.arguments.clone() } else { Default::default() },
                     })
                     .map_err(|error| boxed_error("resident tick occurrence encode", error))?,
                 );
@@ -1040,7 +1038,7 @@ impl ResidentSourceWorkbenchV1 {
         } else {
             physical_plan.project_referent_input_domains(scope)
                 .map_err(|error| boxed_error("referent input domain projection", error))?;
-            physical_plan.bind_source_snapshot(scope, &compiled, cst.artifact(), allocation_plan.root(), &lowered.states)
+            physical_plan.bind_source_snapshot(scope, compiled, cst.artifact(), allocation_plan.root(), &lowered.states)
                 .map_err(|error| boxed_error("checked source snapshot", error))?;
             encode_executable_physical_plan_v1(&physical_plan).map_err(|error| boxed_error("CPP1 encode", error))?
         };
@@ -1619,7 +1617,7 @@ mod command_window_tests {
                 else { ResidentSourceWorkbenchV1::open(SOURCE) }.unwrap();
             assert!(w.command(WasmSessionOperationV1::RenewCommandWindow).is_err());
             let input = w.handler_occurrence(b"measure", &[]).unwrap();
-            w.run_occurrences_to_candidate(&[input.clone()]).unwrap();
+            w.run_occurrences_to_candidate(std::slice::from_ref(&input)).unwrap();
             assert!(w.command(WasmSessionOperationV1::RenewCommandWindow).is_err());
             w.admit().unwrap();
             assert!(w.command(WasmSessionOperationV1::RenewCommandWindow).is_err());

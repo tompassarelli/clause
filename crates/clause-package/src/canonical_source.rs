@@ -869,6 +869,15 @@ pub struct CanonicalSourceContextV1 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalAllocationCollisionV1 {
+    pub identity: CanonicalAllocatedIdentityV1,
+    pub first_producer: CanonicalSemanticProducerV1,
+    pub first_slot: CanonicalAllocationSlotV1,
+    pub second_producer: CanonicalSemanticProducerV1,
+    pub second_slot: CanonicalAllocationSlotV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalSourceErrorV1 {
     InvalidImport { origin: CanonicalSourceOriginV1, reason: &'static str },
     ScalarLawExpansionLimit {
@@ -1004,20 +1013,14 @@ pub enum CanonicalSourceErrorV1 {
         slot: CanonicalEmissionSlotV1,
         domain: &'static str,
     },
-    AllocationCollision {
-        identity: CanonicalAllocatedIdentityV1,
-        first_producer: CanonicalSemanticProducerV1,
-        first_slot: CanonicalAllocationSlotV1,
-        second_producer: CanonicalSemanticProducerV1,
-        second_slot: CanonicalAllocationSlotV1,
-    },
+    AllocationCollision(Box<CanonicalAllocationCollisionV1>),
     AllocationDerivationExhausted {
         domain: &'static str,
     },
     Term(TermError),
     Encode(CanonicalEncodeError),
     Decode(CanonicalDecodeError),
-    Check(ProcessPackageCheckError),
+    Check(Box<ProcessPackageCheckError>),
 }
 
 impl fmt::Display for CanonicalSourceErrorV1 {
@@ -1700,7 +1703,7 @@ fn finish_canonical_source(
         for (index, item) in items.iter().enumerate() {
             if !matches!(item.kind, CstKind::ScalarHandler(_)) { continue; }
             let block = lines.iter().filter(|line| line.start >= item.origin.start as usize && line.start < item.origin.end as usize).copied().collect::<Vec<_>>();
-            if let Some(handler) = parse_general_handler(artifact, &block, item.origin, &scalar_laws, frontend)? { alternatives.insert(index, handler); }
+            if let Some(handler) = parse_general_handler(artifact, &block, item.origin, scalar_laws, frontend)? { alternatives.insert(index, handler); }
         }
         let mut connected = items.iter().filter_map(|item| match &item.kind {
             CstKind::GeneralHandler(handler) if handler.derivation || !handler.creations.is_empty() => Some(general_handler_relation_designations(handler, &items)), _ => None,
@@ -1847,7 +1850,7 @@ pub fn rematerialize_canonical_source_allocation_plan_v1(
         return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
     }
     let (schema_for_producer, operator_for_producer) =
-        derived_container_coordinates(recorded.root, &requests)?;
+        derived_container_coordinates(recorded.root, requests)?;
     for (request, allocation) in requests.iter().zip(&recorded.allocations) {
         let CanonicalAllocationJudgmentV1::Fresh {
             basis,
@@ -1893,13 +1896,13 @@ fn build_independent_plan(
 ) -> Result<CanonicalSourceAllocationPlanV1, CanonicalSourceErrorV1> {
     let requested = allocation_requests(cst)?;
     let (schema_for_producer, operator_for_producer) =
-        derived_container_coordinates(root, &requested)?;
+        derived_container_coordinates(root, requested)?;
     let basis = CanonicalFreshBasisV1::ConstitutedProgramChange(root);
     let mut allocations = Vec::with_capacity(requested.len());
     for request in requested {
-        let (coordinate, derivation_attempt) = derive_local_coordinate(root, &request)?;
+        let (coordinate, derivation_attempt) = derive_local_coordinate(root, request)?;
         let identity = allocated_identity(
-            &request,
+            request,
             coordinate,
             &schema_for_producer,
             &operator_for_producer,
@@ -1924,16 +1927,15 @@ fn build_independent_plan(
     })
 }
 
+type ContainerCoordinates = (
+    BTreeMap<CanonicalSemanticProducerV1, RelationSchemaLocalId>,
+    BTreeMap<CanonicalSemanticProducerV1, OperatorLocalId>,
+);
+
 fn derived_container_coordinates(
     root: ProgramChangeOccurrenceId,
     requests: &[AllocationRequest],
-) -> Result<
-    (
-        BTreeMap<CanonicalSemanticProducerV1, RelationSchemaLocalId>,
-        BTreeMap<CanonicalSemanticProducerV1, OperatorLocalId>,
-    ),
-    CanonicalSourceErrorV1,
-> {
+) -> Result<ContainerCoordinates, CanonicalSourceErrorV1> {
     let mut schemas = BTreeMap::new();
     let mut operators = BTreeMap::new();
     for request in requests {
@@ -3650,19 +3652,18 @@ fn resolve_boolean_relation_use<'a>(
     })
 }
 
+type ParameterStates = (
+    BTreeMap<Vec<u8>, CanonicalStateRefV1>,
+    BTreeMap<Vec<u8>, Vec<u8>>,
+);
+
 fn resolve_parameter_states(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
     sources: &[ScalarParameterSourceCst],
     mut entities: BTreeMap<Vec<u8>, Vec<u8>>,
     origin: CanonicalSourceOriginV1,
-) -> Result<
-    (
-        BTreeMap<Vec<u8>, CanonicalStateRefV1>,
-        BTreeMap<Vec<u8>, Vec<u8>>,
-    ),
-    CanonicalSourceErrorV1,
-> {
+) -> Result<ParameterStates, CanonicalSourceErrorV1> {
     let mut parameters = BTreeMap::new();
     let mut pending = Vec::new();
     for source in sources {
@@ -3679,13 +3680,12 @@ fn resolve_parameter_states(
                 }
                 Err(error) => return Err(error),
             };
-        if source.subject.starts_with(b"?") {
-            if let Some(previous) = entities.insert(source.subject.clone(), state.subject.clone())
+        if source.subject.starts_with(b"?")
+            && let Some(previous) = entities.insert(source.subject.clone(), state.subject.clone())
                 && previous != state.subject
             {
                 return Err(CanonicalSourceErrorV1::AmbiguousExecutableBinding { origin });
             }
-        }
         parameters.insert(source.parameter.clone(), state);
     }
     for source in pending {
@@ -3933,6 +3933,7 @@ fn search_general_binding_solutions(
     }
 }
 
+#[expect(clippy::too_many_arguments, reason = "the solver threads the checked source, allocation plan and entity state it searches over")]
 fn resolve_general_parameter_states(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
@@ -4594,7 +4595,7 @@ fn checked_source_state_cells(
                     end: 0,
                 },
             })?;
-        let declared = resolved_state_relation(cst, plan, &relation, origin)?;
+        let declared = resolved_state_relation(cst, plan, relation, origin)?;
         let fields = cst
             .items
             .iter()
@@ -4612,13 +4613,13 @@ fn checked_source_state_cells(
             })
             .unwrap_or_else(|| vec![None]);
         for field in fields {
-            let state = relation_table_field_state_ref(cst, plan, &relation, field, origin)?;
+            let state = relation_table_field_state_ref(cst, plan, relation, field, origin)?;
             cells.insert(
                 state.clone(),
                 CanonicalStateCellV1 {
                     state,
                     initial_value: Some(CanonicalScalarValueV1::RelationTable(
-                        canonical_relation_table(cst, plan, &relation, field, origin)?,
+                        canonical_relation_table(cst, plan, relation, field, origin)?,
                     )),
                     value_kind: CanonicalScalarValueKindV1::RelationTable,
                 },
@@ -4857,6 +4858,7 @@ fn expand_scalar_law_bindings(
     })
 }
 
+#[expect(clippy::too_many_arguments, reason = "lowering reads the checked source, plan and each binding table the expression resolves against")]
 fn canonical_general_executable_expression(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
@@ -4880,7 +4882,7 @@ fn canonical_general_executable_expression(
         && let Some(value) = referents.get(parameter)
     {
         return Ok(constant_expression(CanonicalScalarValueV1::Referent(
-            value.clone(),
+            *value,
         )));
     }
     let lower_expression = |expression: &CanonicalScalarExpressionV1| {
@@ -4954,6 +4956,7 @@ fn canonical_general_executable_expression(
     }
 }
 
+#[expect(clippy::too_many_arguments, reason = "lowering reads the checked source, plan and each binding table the predicates resolve against")]
 fn canonical_general_executable_predicates(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
@@ -5341,7 +5344,7 @@ fn checked_executable_handlers(
         }
     }
     for parts in scalar {
-        if let Some(ids) = selected { if !ids.contains(&handler_id(&parts.handler.producer)?) { continue; } }
+        if let Some(ids) = selected && !ids.contains(&handler_id(&parts.handler.producer)?) { continue; }
         let mut rules = Vec::with_capacity(parts.cases.len());
         for case in &parts.cases {
             let mut assignments = Vec::with_capacity(case.components.len());
@@ -5444,7 +5447,7 @@ fn checked_executable_handlers(
         CstKind::GeneralHandler(handler) => Some(handler),
         _ => None,
     }) {
-        if let Some(ids) = selected { if !ids.contains(&handler_id(&source.producer)?) { continue; } }
+        if let Some(ids) = selected && !ids.contains(&handler_id(&source.producer)?) { continue; }
         if relational_handler_origins(cst).contains(&source.origin) {
             continue;
         }
@@ -5544,7 +5547,7 @@ fn checked_executable_handlers(
                                 .flatten()
                         })
                     {
-                        referents.insert(variable.clone(), identity.clone());
+                        referents.insert(variable.clone(), *identity);
                     }
                 }
                 let current = parameters.get(&current_parameter).cloned().ok_or(
@@ -5621,7 +5624,7 @@ fn checked_executable_handlers(
                         &parameters,
                         &arguments,
                         &referents,
-                        &scalar_bindings,
+                        scalar_bindings,
                         binding.origin,
                     )?;
                 }
@@ -5633,7 +5636,7 @@ fn checked_executable_handlers(
                     &parameters,
                     &arguments,
                     &referents,
-                    &scalar_bindings,
+                    scalar_bindings,
                     source.origin,
                 )?;
                 for (argument, domain) in &independent_arguments {
@@ -5722,7 +5725,7 @@ fn checked_executable_handlers(
                                 &parameters,
                                 &arguments,
                                 &referents,
-                                &scalar_bindings,
+                                scalar_bindings,
                                 source.origin,
                             )?,
                         })
@@ -5748,7 +5751,7 @@ fn checked_executable_handlers(
                                     &parameters,
                                     &arguments,
                                     &referents,
-                                    &scalar_bindings,
+                                    scalar_bindings,
                                     source.origin,
                                 )?,
                             })
@@ -5764,7 +5767,7 @@ fn checked_executable_handlers(
                         &parameters,
                         &arguments,
                         &referents,
-                        &scalar_bindings,
+                        scalar_bindings,
                         source.origin,
                     )?;
                     let state =
@@ -5837,7 +5840,7 @@ fn checked_executable_handlers(
                         &parameters,
                         &arguments,
                         &referents,
-                        &scalar_bindings,
+                        scalar_bindings,
                         source.origin,
                     )?;
                     let referent_arguments = independent_arguments
@@ -6333,6 +6336,14 @@ fn elaborate_canonical_source_package_inner(
     })
 }
 
+type CheckedDeclarations = (
+    CheckedProcessPackage,
+    Vec<CanonicalSourceEmissionV1>,
+    Vec<CanonicalSourceDenotationV1>,
+    Vec<CanonicalSourceApplicationV1>,
+    Vec<CanonicalUnsupportedProductionV1>,
+);
+
 fn check_canonical_source_declarations(
     cst: &CanonicalSourceCstV1,
     context: CanonicalSourceContextV1,
@@ -6340,7 +6351,7 @@ fn check_canonical_source_declarations(
     input_parts: Option<(&InputHandlerCst, &VectorAssertionCst)>,
     scalar_parts: &[ScalarHandlerParts<'_>],
     declarations: Option<(&CanonicalSourcePackageSliceV1, &CanonicalSourceEditV1)>,
-) -> Result<(CheckedProcessPackage, Vec<CanonicalSourceEmissionV1>, Vec<CanonicalSourceDenotationV1>, Vec<CanonicalSourceApplicationV1>, Vec<CanonicalUnsupportedProductionV1>), CanonicalSourceErrorV1> {
+) -> Result<CheckedDeclarations, CanonicalSourceErrorV1> {
     let scope = TermScope { universe: context.universe, semantics: context.semantics };
     let mut formations = Vec::new();
     let mut schemas = Vec::new();
@@ -7102,7 +7113,7 @@ fn check_canonical_source_declarations(
             records: vec![],
         };
         let checked = crate::canonical::check_owned_process_package(package)
-            .map_err(CanonicalSourceErrorV1::Check)?;
+            .map_err(|error| CanonicalSourceErrorV1::Check(Box::new(error)))?;
         Ok(checked)
     })();
     Ok::<_, CanonicalSourceErrorV1>((checked_package?, emissions, denotations, applications, unsupported))
@@ -7415,13 +7426,13 @@ fn parse_expanded_item(
         if let Some(law) = parse_general_handler(artifact, block, origin, scalar_laws, frontend)? {
             return Ok(CstItem { origin, kind: CstKind::GeneralHandler(law) });
         }
-        return Ok(unsupported_item(
+        return unsupported_item(
             artifact,
             block,
             origin,
             CanonicalSourceProductionV1::Law,
             vec![],
-        )?);
+        );
     }
     if head.starts_with("derive ") {
         require_leaf(block, artifact)?;
@@ -7445,13 +7456,13 @@ fn parse_expanded_item(
                 }),
             });
         }
-        return Ok(unsupported_item(
+        return unsupported_item(
             artifact,
             block,
             origin,
             CanonicalSourceProductionV1::Derive,
             vec![],
-        )?);
+        );
     }
     if head.starts_with("on ") {
         if let Some(handler) = parse_input_handler(artifact, block, origin)? {
@@ -7473,13 +7484,13 @@ fn parse_expanded_item(
             });
         }
         let emissions = handler_include_emissions(artifact, block)?;
-        return Ok(unsupported_item(
+        return unsupported_item(
             artifact,
             block,
             origin,
             CanonicalSourceProductionV1::Handler,
             emissions,
-        )?);
+        );
     }
     if head.trim().ends_with("\"\"\"") {
         let logical = logical_source_lines(artifact, block)?;
@@ -7555,13 +7566,13 @@ fn parse_expanded_item(
             kind: CstKind::SymbolAssertion(assertion),
         });
     }
-    Ok(unsupported_item(
+    unsupported_item(
         artifact,
         block,
         origin,
         CanonicalSourceProductionV1::Assertion,
         vec![],
-    )?)
+    )
 }
 
 fn parse_items(
@@ -9213,7 +9224,7 @@ impl ScalarExpressionParser<'_> {
             let operation = if self.take_exact(b"++") {
                 Some(2)
             } else {
-                self.take_one(&[b'+', b'-'])
+                self.take_one(b"+-")
                     .map(|operation| usize::from(operation == b'-'))
             };
             let Some(operation) = operation else { break };
@@ -9232,7 +9243,7 @@ impl ScalarExpressionParser<'_> {
         let mut value = self.primary()?;
         loop {
             self.skip_spaces();
-            let operation = self.take_one(&[b'*', b'/']);
+            let operation = self.take_one(b"*/");
             let Some(operation) = operation else { break };
             let right = self.primary()?;
             value = match operation {
@@ -10505,7 +10516,7 @@ fn validate_relation(relation: &RelationCst) -> Result<(), CanonicalSourceErrorV
     let roles = &relation.roles;
     let subject = &relation.subject;
     let modes = &relation.modes;
-    ensure_unique_children(&designation, roles.iter().map(|role| role.name.as_slice()))?;
+    ensure_unique_children(designation, roles.iter().map(|role| role.name.as_slice()))?;
     let declared = roles
         .iter()
         .map(|role| role.name.as_slice())
@@ -11504,13 +11515,15 @@ fn validate_unique_allocations(
         if let Some((first_producer, first_slot)) =
             seen.insert(allocation.identity, (producer.clone(), slot.clone()))
         {
-            return Err(CanonicalSourceErrorV1::AllocationCollision {
-                identity: allocation.identity,
-                first_producer,
-                first_slot,
-                second_producer: producer.clone(),
-                second_slot: slot.clone(),
-            });
+            return Err(CanonicalSourceErrorV1::AllocationCollision(Box::new(
+                CanonicalAllocationCollisionV1 {
+                    identity: allocation.identity,
+                    first_producer,
+                    first_slot,
+                    second_producer: producer.clone(),
+                    second_slot: slot.clone(),
+                },
+)));
         }
     }
     Ok(())

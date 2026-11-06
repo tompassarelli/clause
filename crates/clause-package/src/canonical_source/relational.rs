@@ -229,7 +229,6 @@ fn checked_conditions_with_inputs(
             constant_expression(CanonicalScalarValueV1::Boolean(resolved.value)),
         ));
     }
-    drop(operand);
     let mut pending_sums = source.sums.iter().collect::<Vec<_>>();
     while !pending_sums.is_empty() {
         let index = pending_sums.iter().position(|sum| sum.inputs.iter().all(|input| {

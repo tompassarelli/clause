@@ -185,7 +185,7 @@ pub fn begin_executable_source_profile_v1() -> bool {
 }
 pub fn finish_executable_source_profile_v1() -> Option<ExecutableSourceProfileV1> {
     ACTIVE.with_borrow_mut(|active| {
-        if active.as_ref()?.frames.len() != 0 {
+        if !active.as_ref()?.frames.is_empty() {
             return None;
         }
         let mut result = active.take()?;

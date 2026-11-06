@@ -73,11 +73,10 @@ fn field<'a>(object: &'a Term, label: &[u8]) -> Result<&'a Term, String> {
             .as_atom()
             .filter(|atom| atom.kind() == b"clause/js-field-v1")
             .ok_or_else(|| "malformed projected object field".to_string())?;
-        if key.canonical_payload() == label {
-            if selected.replace(value).is_some() {
+        if key.canonical_payload() == label
+            && selected.replace(value).is_some() {
                 return Err("ambiguous projected field".into());
             }
-        }
         node = rest;
     }
     if node.as_atom().is_none_or(|atom| {

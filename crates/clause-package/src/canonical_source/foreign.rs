@@ -43,11 +43,10 @@ impl CanonicalForeignBindingV1 {
         {
             return Err("foreign module and member must be nonempty identifiers");
         }
-        if self.operation == CanonicalForeignOperationV1::Root {
-            if !self.member.is_empty() || !matches!(self.evaluation, CanonicalForeignEvaluationV1::Construct { .. }) {
+        if self.operation == CanonicalForeignOperationV1::Root
+            && (!self.member.is_empty() || !matches!(self.evaluation, CanonicalForeignEvaluationV1::Construct { .. })) {
                 return Err("foreign root access requires delayed construction and no member");
             }
-        }
         if self.operation != CanonicalForeignOperationV1::Call && !self.arguments.is_empty() {
             return Err("foreign property access takes no arguments");
         }

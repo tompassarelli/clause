@@ -61,11 +61,10 @@ impl ExecutablePhysicalPlanV1 {
                 .transpose()?
                 .unwrap_or_default();
             let mut facets = BTreeSet::new();
-            if let Some(reference) = properties.remove(b"$referent".as_slice()) {
-                if let Some(reference) = projected_referent_value_v1(&reference)? {
+            if let Some(reference) = properties.remove(b"$referent".as_slice())
+                && let Some(reference) = projected_referent_value_v1(&reference)? {
                     facets.insert(reference);
                 }
-            }
             if let Some(references) = properties.remove(b"$referents".as_slice()) {
                 for reference in fields(&references)?.into_values() {
                     if let Some(reference) = projected_referent_value_v1(&reference)? {
@@ -142,7 +141,7 @@ impl ExecutablePhysicalPlanV1 {
     }
 }
 
-pub(super) fn row_selection<'a>(term: &'a Term) -> Option<(&'a Term, &'a Term)> {
+pub(super) fn row_selection(term: &Term) -> Option<(&Term, &Term)> {
     let [header, table, subject] = term.as_triple()?.slots();
     (header.as_atom()?.kind() == ROW_SELECTOR).then_some((table, subject))
 }

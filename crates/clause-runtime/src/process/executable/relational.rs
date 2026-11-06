@@ -341,8 +341,8 @@ pub(super) fn sum_with_values(
                 _ => previous.contribution == *value && previous.predicates == predicates,
             }
     };
-    if let Some(queries) = context.sum_queries {
-        if let Some(previous) = queries.borrow().entries.iter().find(|previous|
+    if let Some(queries) = context.sum_queries
+        && let Some(previous) = queries.borrow().entries.iter().find(|previous|
             same_query(previous))
             .and_then(|query| query.results.iter().find(|previous| previous.inputs == inputs)) {
             if let Some(reads) = context.reads {
@@ -350,7 +350,6 @@ pub(super) fn sum_with_values(
             }
             return Ok(previous.result.clone());
         }
-    }
     let _profile = source_profile_scope_v1(SourceProfilePhaseV1::SumQuery);
     let query_reads = std::cell::RefCell::new(Vec::new());
     let query_context = EvaluationContextV1 { reads: context.reads.map(|_| &query_reads), ..context };

@@ -96,7 +96,7 @@ impl ProjectionNode {
         Ok(Self { node: if has_roles { Node::Triple(Box::new(children), field) } else { Node::Static(template.clone()) }, has_roles, dependencies, cached_versions: vec![], cache: None })
     }
 
-    fn row<'a>(slot: u16, configuration: &'a [ExecutableSlotV1]) -> Result<&'a ExecutableRelationTableV1, ExecutableErrorV1> {
+    fn row(slot: u16, configuration: &[ExecutableSlotV1]) -> Result<&ExecutableRelationTableV1, ExecutableErrorV1> {
         match configuration.get(usize::from(slot)).and_then(ExecutableSlotV1::value) {
             Some(ExecutableValueV1::RelationTable(table)) => Ok(table),
             _ => Err(ExecutableErrorV1::TypeMismatch),
@@ -113,9 +113,8 @@ impl ProjectionNode {
     }
 
     fn cached_value(cache: &mut Option<Cached>, scope: TermScope, value: ExecutableValueV1) -> Result<Term, ExecutableErrorV1> {
-        if let Some(Cached::Value(previous, term)) = cache.as_ref() {
-            if previous == &value { return Ok(term.clone()); }
-        }
+        if let Some(Cached::Value(previous, term)) = cache.as_ref()
+            && previous == &value { return Ok(term.clone()); }
         let term = projected_value_term(scope, value.clone())?;
         *cache = Some(Cached::Value(value, term.clone()));
         Ok(term)
@@ -124,9 +123,8 @@ impl ProjectionNode {
     fn realize(&mut self, configuration: &[ExecutableSlotV1], versions: &[u64]) -> Result<Term, ExecutableErrorV1> {
         if self.cached_versions.len() == self.dependencies.len() && self.dependencies.iter().zip(&self.cached_versions).all(|(slot, cached)| {
             *cached != u64::MAX && configuration.get(usize::from(*slot)).is_some() && versions.get(usize::from(*slot)) == Some(cached)
-        }) {
-            if let Some(cache) = &self.cache { return Ok(cache.term().clone()); }
-        }
+        })
+            && let Some(cache) = &self.cache { return Ok(cache.term().clone()); }
         let result = self.realize_changed(configuration, versions)?;
         self.cached_versions = self.dependencies.iter().map(|slot| versions.get(usize::from(*slot)).copied().unwrap_or(0)).collect();
         Ok(result)
@@ -152,9 +150,8 @@ impl ProjectionNode {
                     return Ok(term);
                 }
                 let values = [children[0].realize(configuration, versions)?, children[1].realize(configuration, versions)?, children[2].realize(configuration, versions)?];
-                if let Some(Cached::Triple(term)) = self.cache.as_ref() {
-                    if term.as_triple().is_some_and(|triple| triple.slots() == values.each_ref()) { return Ok(term.clone()); }
-                }
+                if let Some(Cached::Triple(term)) = self.cache.as_ref()
+                    && term.as_triple().is_some_and(|triple| triple.slots() == values.each_ref()) { return Ok(term.clone()); }
                 let term = Term::triple(values).map_err(|_| ExecutableErrorV1::MalformedProgram)?;
                 self.cache = Some(Cached::Triple(term.clone()));
                 Ok(term)

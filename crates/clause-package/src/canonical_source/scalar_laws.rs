@@ -1,5 +1,7 @@
 use super::*;
 
+type AppliedRelation<'a> = (&'a RelationCst, BTreeMap<Vec<u8>, CanonicalScalarExpressionV1>);
+
 #[derive(Clone, Debug)]
 pub(super) struct ScalarLawCst {
     pub origin: CanonicalSourceOriginV1,
@@ -65,8 +67,7 @@ impl ScalarLawEnvironment {
             .windows(2)
             .map(|pair| &lines[pair[0]..pair[1]])
             .collect::<Vec<_>>();
-        let mut environment = Self::default();
-        environment.declarations = parse_declarations(artifact, &blocks, frontend)?;
+        let mut environment = Self { declarations: parse_declarations(artifact, &blocks, frontend)?, ..Self::default() };
         environment.relations.extend(contracts::read(artifact, &blocks, frontend)?);
         environment.relations.extend(environment.declarations.iter().filter_map(|item| {
             let CstKind::Relation(relation) = &item.kind else { return None };
@@ -208,10 +209,7 @@ impl ScalarLawEnvironment {
         &self,
         source: &str,
         origin: CanonicalSourceOriginV1,
-    ) -> Result<
-        Option<(&RelationCst, BTreeMap<Vec<u8>, CanonicalScalarExpressionV1>)>,
-        CanonicalSourceErrorV1,
-    > {
+    ) -> Result<Option<AppliedRelation<'_>>, CanonicalSourceErrorV1> {
         let mut matches = Vec::new();
         for relation in &self.relations {
             if relation.roles.iter().any(|role| !matches!(role.domain.as_slice(), b"F64" | b"Bool" | b"Text"))

@@ -58,7 +58,7 @@ fn focused_patterns_keep_correlated_bindings_and_withdrawal() {
         .collect::<Vec<_>>();
     for (index, root) in roots.iter().enumerate() {
         let resolve = workbench
-            .handler_occurrence(b"resolve", &[root.clone()])
+            .handler_occurrence(b"resolve", std::slice::from_ref(root))
             .unwrap();
         workbench.run_occurrences_to_candidate(&[resolve]).unwrap();
         let frame =

@@ -236,7 +236,7 @@ mod retained_event_tests {
     fn deferred_evidence_reproduces_the_exact_original_evaluation() {
         use ExecutableExpressionV1 as E;
         let mut program = Arc::new(ExecutableProgramV1 {
-            initial_configuration: vec![ExecutableValueV1::Boolean(false).into()],
+            initial_configuration: vec![ExecutableValueV1::Boolean(false)],
             projection: None,
             rules: vec![ExecutableRuleV1 {
                 entry: 0,
@@ -344,11 +344,9 @@ impl ExecutableInterventionChangeV1 {
         }
         if let (Some(ExecutableValueV1::Referent(old)), ExecutableValueV1::Referent(new)) =
             (state.value(), &self.value)
-        {
-            if old.domain != new.domain {
+            && old.domain != new.domain {
                 return Err(ExecutableErrorV1::TypeMismatch);
             }
-        }
         Ok(state.value().cloned())
     }
 
@@ -854,14 +852,12 @@ impl ExecutableProcessRuntimeV1 {
                             ] {
                                 if let Some(ExecutableValueV1::RelationTable(table)) =
                                     config[usize::from(slot)].value()
-                                {
-                                    if table.present(&reference)? {
+                                    && table.present(&reference)? {
                                         row.push((
                                             name.to_vec(),
                                             projected_value_term(scope, table.read(&reference)?)?,
                                         ));
                                     }
-                                }
                             }
                             Ok((
                                 index.to_string().into_bytes(),
@@ -892,8 +888,7 @@ impl ExecutableProcessRuntimeV1 {
         // an actual input attack/heal. Total retained entries are bounded.
         if self.recorded_events.len() == MAX_RECORDED_ENTRIES
             && !self.recorded_events.contains_key(&step.occurrence.entry)
-        {
-            if let Some(entry) = self
+            && let Some(entry) = self
                 .recorded_events
                 .iter()
                 .min_by_key(|(_, event)| event.step_ordinal)
@@ -901,7 +896,6 @@ impl ExecutableProcessRuntimeV1 {
             {
                 self.recorded_events.remove(&entry);
             }
-        }
         self.recorded_events.insert(
             step.occurrence.entry,
             RetainedEventV1 {

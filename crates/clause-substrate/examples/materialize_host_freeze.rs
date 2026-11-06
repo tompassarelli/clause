@@ -891,8 +891,7 @@ fn textual(term: &Term, out: &mut Vec<u8>) {
                 canonical_payload,
                 equality_contract,
             } = &**a
-            {
-                if kind == TAG && equality_contract == EQ {
+                && kind == TAG && equality_contract == EQ {
                     if canonical_payload == &[1] {
                         out.push(b'l');
                         textual(b, out);
@@ -906,7 +905,6 @@ fn textual(term: &Term, out: &mut Vec<u8>) {
                         return;
                     }
                 }
-            }
         }
         _ => {}
     }

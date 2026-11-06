@@ -65,6 +65,10 @@ pub struct WasmSessionOpenV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the allocation request stays Copy so a host passes it by value without allocating"
+)]
 pub enum WasmSessionAllocationV1 {
     New,
     Rematerialize(RuntimeAllocationEpochV1),

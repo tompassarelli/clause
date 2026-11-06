@@ -395,7 +395,7 @@ impl World {
                 activation: producer.activation,
                 step: producer.step,
             },
-            canonical_state_snapshot: canonical_term_bytes(&payload).unwrap().into_boxed_slice(),
+            canonical_state_snapshot: canonical_term_bytes(&payload).unwrap().into(),
             payload,
             policy: self.runtime_policy,
             semantics: self.scope.semantics,

@@ -337,7 +337,7 @@ fn physical_collection_program_rejects_unbound_bindings_and_unordered_facets() {
         },
     ] {
         let mut plan = original.clone();
-        plan.program.rules[0].predicates.insert(0, bad);
+        std::sync::Arc::make_mut(&mut plan.program.rules)[0].predicates.insert(0, bad);
         assert_eq!(
             encode_executable_physical_plan_v1(&plan).unwrap_err(),
             ExecutableErrorV1::MalformedProgram

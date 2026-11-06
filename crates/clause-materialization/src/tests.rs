@@ -2023,7 +2023,10 @@ fn validate_source_context(source: &str, context: &str, graph: &str) -> Result<(
     {
         return Err("derive target is not a declared law".to_owned());
     }
+    validate_context(context, graph)
+}
 
+fn validate_context(context: &str, graph: &str) -> Result<(), String> {
     let context: serde_json::Value =
         serde_json::from_str(context).map_err(|error| error.to_string())?;
     let context = context

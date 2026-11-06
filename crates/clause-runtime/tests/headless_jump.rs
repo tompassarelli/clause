@@ -664,7 +664,7 @@ fn browser_gameplay_state_admission_scopes_with_continuation(
     .expect("gameplay scope derivation opens one exact session");
 
     session
-        .apply_opaque_input(&encode_executable_occurrence_v1(&arena_occurrence(&source, b"input", &[1.0, 0.0])).unwrap())
+        .apply_opaque_input(&encode_executable_occurrence_v1(&arena_occurrence(source, b"input", &[1.0, 0.0])).unwrap())
         .expect("gameplay horizontal input advances");
     session
         .apply_fixed_tick_and_emit_candidate(16)
@@ -738,11 +738,11 @@ fn browser_dash_gameplay_state_admission_scope(source: &[u8]) -> StateAdmissionS
     .expect("dash-jump scope derivation opens one exact session");
 
     session
-        .apply_opaque_input(&encode_executable_occurrence_v1(&arena_occurrence(&source, b"jump", &[])).unwrap())
+        .apply_opaque_input(&encode_executable_occurrence_v1(&arena_occurrence(source, b"jump", &[])).unwrap())
         .expect("dash-jump input advances locally");
     session
         .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"tick", &[0.016])).unwrap(),
+            &encode_executable_occurrence_v1(&arena_occurrence(source, b"tick", &[0.016])).unwrap(),
         )
         .expect("dash-jump tick emits one candidate");
     let candidate = session
@@ -1291,7 +1291,7 @@ fn admit_source_jump(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<
     .expect("source jump session starts through the persistent runtime");
     session
         .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"jump", &[]))
+            &encode_executable_occurrence_v1(&arena_occurrence(source, b"jump", &[]))
                 .expect("source jump occurrence encodes"),
         )
         .expect("source-owned jump meaning produces one hidden candidate");
@@ -1421,13 +1421,13 @@ fn admit_source_tick(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<
     .expect("source tick session starts through the persistent runtime");
     session
         .apply_opaque_input(
-            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"input", &[1.0, 0.0]))
+            &encode_executable_occurrence_v1(&arena_occurrence(source, b"input", &[1.0, 0.0]))
                 .expect("source input occurrence encodes"),
         )
         .expect("source-owned horizontal intent enters before tick");
     session
         .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"tick", &[3.0]))
+            &encode_executable_occurrence_v1(&arena_occurrence(source, b"tick", &[3.0]))
                 .expect("source tick occurrence encodes"),
         )
         .expect("source-owned tick meaning produces one hidden candidate");
@@ -1490,14 +1490,14 @@ fn admit_source_jump_then_tick(
     .expect("air-momentum session starts through the persistent runtime");
     session
         .apply_opaque_input(
-            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"input", &[1.0, 0.0]))
+            &encode_executable_occurrence_v1(&arena_occurrence(source, b"input", &[1.0, 0.0]))
                 .expect("horizontal intent occurrence encodes"),
         )
         .expect("horizontal intent enters before jumping");
 
     session
         .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"jump", &[])).expect("jump occurrence encodes"),
+            &encode_executable_occurrence_v1(&arena_occurrence(source, b"jump", &[])).expect("jump occurrence encodes"),
         )
         .expect("jump emits one hidden candidate");
     let jump_candidate = session
@@ -1521,14 +1521,14 @@ fn admit_source_jump_then_tick(
     let airborne = session
         .configuration()
         .expect("jump successor installs one live configuration");
-    assert_eq!(value(airborne, arena_slot(&source, b"player-1", b"velocity", Some(b"x"))), 0.0);
-    assert_eq!(value(airborne, arena_slot(&source, b"player-1", b"velocity", Some(b"y"))), 8.0);
-    assert_eq!(value(airborne, arena_slot(&source, b"player-1", b"horizontal-intent", Some(b"x"))), 1.0);
+    assert_eq!(value(airborne, arena_slot(source, b"player-1", b"velocity", Some(b"x"))), 0.0);
+    assert_eq!(value(airborne, arena_slot(source, b"player-1", b"velocity", Some(b"y"))), 8.0);
+    assert_eq!(value(airborne, arena_slot(source, b"player-1", b"horizontal-intent", Some(b"x"))), 1.0);
     assert_eq!(airborne[arena_slot(source, b"player-1", b"grounded", None)], ExecutableValueV1::Boolean(false));
 
     session
         .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&arena_occurrence(&source, b"tick", &[0.25]))
+            &encode_executable_occurrence_v1(&arena_occurrence(source, b"tick", &[0.25]))
                 .expect("airborne tick occurrence encodes"),
         )
         .expect("airborne tick emits one hidden candidate");
@@ -1698,16 +1698,16 @@ fn browser_gameplay_fixture_request_for_package(
         },
         occurrences: if dash_jump {
             vec![
-                encode_executable_occurrence_v1(&arena_occurrence(&source, b"jump", &[]))
+                encode_executable_occurrence_v1(&arena_occurrence(source, b"jump", &[]))
                     .expect("dash-jump occurrence encodes"),
-                encode_executable_occurrence_v1(&arena_occurrence(&source, b"tick", &[0.016]))
+                encode_executable_occurrence_v1(&arena_occurrence(source, b"tick", &[0.016]))
                     .expect("dash-jump tick occurrence encodes"),
             ]
         } else {
             vec![
-                encode_executable_occurrence_v1(&arena_occurrence(&source, b"input", &[1.0, 0.0]))
+                encode_executable_occurrence_v1(&arena_occurrence(source, b"input", &[1.0, 0.0]))
                     .expect("gameplay input occurrence encodes"),
-                encode_executable_occurrence_v1(&arena_occurrence(&source, b"tick", &[0.016]))
+                encode_executable_occurrence_v1(&arena_occurrence(source, b"tick", &[0.016]))
                     .expect("gameplay tick occurrence encodes"),
             ]
         },
@@ -1854,8 +1854,8 @@ fn admit_spring_journey(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (V
         .expect("spring contact retains one hidden candidate")
         .clone();
     assert_eq!(launch.produced_by, launch_step.id);
-    assert!(launch.configuration[arena_slot(&source, b"player-1", b"velocity", Some(b"y"))].as_number().unwrap() > 0.0);
-    assert_eq!(launch.configuration[arena_slot(&source, b"player-1", b"grounded", None)].as_boolean(), Some(false));
+    assert!(launch.configuration[arena_slot(source, b"player-1", b"velocity", Some(b"y"))].as_number().unwrap() > 0.0);
+    assert_eq!(launch.configuration[arena_slot(source, b"player-1", b"grounded", None)].as_boolean(), Some(false));
     assert_eq!(
         session
             .configuration()

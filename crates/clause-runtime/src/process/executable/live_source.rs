@@ -816,7 +816,7 @@ fn derive_prepared_source_edit(
         }
         ExecutableSourceOperationV1::ReplaceItems(items) => {
             let offered =
-                clause_package::canonical_editable_source_items_v1(&old_cst, &old_allocations)
+                clause_package::canonical_editable_source_items_v1(old_cst, old_allocations)
                     .map_err(rejected)?;
             let replacements = items
                 .iter()
@@ -832,8 +832,8 @@ fn derive_prepared_source_edit(
                 })
                 .collect::<Result<Vec<_>, ExecutableErrorV1>>()?;
             clause_package::replace_canonical_source_items_v1(
-                &old_cst,
-                &old_allocations,
+                old_cst,
+                old_allocations,
                 &replacements,
                 new_root,
             )
@@ -875,7 +875,7 @@ fn derive_prepared_source_edit(
     let mut expected_new = ExecutablePhysicalPlanV1 {
         application_shape: old_plan.application_shape,
         mode: old_plan.mode,
-        refinement: old_plan.refinement.clone(),
+        refinement: old_plan.refinement,
         target: old_plan.target,
         input: old_plan.input.clone(),
         program: new_lowered.program.clone(),
@@ -967,7 +967,7 @@ fn derive_prepared_source_edit(
         input.tick.entries.dedup();
     }
     expected_new.add_referent_input_projection(scope)?;
-    let metadata = expected_new.bind_source_snapshot_retaining(scope, &new, edit.source().artifact(), new_root, &new_lowered.states, Some(&preparation.metadata))?;
+    let metadata = expected_new.bind_source_snapshot_retaining(scope, new, edit.source().artifact(), new_root, &new_lowered.states, Some(&preparation.metadata))?;
     let _compare = source_profile_scope_v1(SourceProfilePhaseV1::CompareAndMap);
     let exact_cpp1 = encode_executable_physical_plan_v1(&expected_new)?;
     let mut slots = Vec::new();

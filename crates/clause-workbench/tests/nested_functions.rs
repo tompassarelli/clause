@@ -34,10 +34,10 @@ fn nested_home_functions_preserve_actual_inner_scope() {
     let callable = checked.callables.iter().find(|c| c.designation == b"interpolate").unwrap();
     fs::write(output.join("interpolation.nix"), render_nix_callable_v1(callable).unwrap()).unwrap();
     let expression = format!(
-        "import {} {{ generated = {}; nixpkgs = (builtins.getFlake {}).inputs.nixpkgs; }}",
+        "import {} {{ generated = {}; nixpkgs = (builtins.getFlake \"git+file://{}\").inputs.nixpkgs; }}",
         root.join("test-vectors/authoring/nested-functions/parity.nix").display(),
         output.display(),
-        format!("\"git+file://{}\"", root.canonicalize().unwrap().display()),
+        root.canonicalize().unwrap().display(),
     );
     let result = Command::new("nix").args(["eval", "--impure", "--json", "--expr", &expression]).output().unwrap();
     fs::write(output.join("parity.json"), &result.stdout).unwrap();

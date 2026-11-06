@@ -64,7 +64,7 @@ pub enum WorkbenchError {
     Static(StaticError),
     Evaluate(EvalError),
     Authorization(AuthorizationCheckError),
-    Carrier(WorkbenchCarrierError),
+    Carrier(Box<WorkbenchCarrierError>),
     Unauthorized,
     MalformedPackageResult,
     FrameTooLarge(usize),
@@ -103,7 +103,7 @@ impl Error for WorkbenchError {
             Self::Static(error) => Some(error),
             Self::Evaluate(error) => Some(error),
             Self::Authorization(error) => Some(error),
-            Self::Carrier(error) => Some(error),
+            Self::Carrier(error) => Some(error.as_ref()),
             Self::Io(error) => Some(error),
             _ => None,
         }
@@ -142,7 +142,7 @@ impl From<AuthorizationCheckError> for WorkbenchError {
 
 impl From<WorkbenchCarrierError> for WorkbenchError {
     fn from(value: WorkbenchCarrierError) -> Self {
-        Self::Carrier(value)
+        Self::Carrier(Box::new(value))
     }
 }
 

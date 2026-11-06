@@ -19,8 +19,8 @@ fn unicode_scalar_checks() {
     let mut plan = decode_executable_physical_plan_v1(&scalars.generation().cpp1).unwrap();
     plan.input=None; plan.source_metadata=None;
     plan.program=ExecutableProgramV1 {initial_configuration:vec![number(0.0)], projection:None,
-      rules:vec![ExecutableRuleV1 {entry:0,predicates:vec![],required_present:vec![],required_absent:vec![],removals:vec![],
-        assignments:vec![(0,E::TextCodepoint(Box::new(E::TextFromCodepoint(Box::new(E::Constant(number(128512.0)))))))],}]};
+      rules:std::sync::Arc::new(vec![ExecutableRuleV1 {entry:0,predicates:vec![],required_present:vec![],required_absent:vec![],removals:vec![],
+        assignments:vec![(0,E::TextCodepoint(Box::new(E::TextFromCodepoint(Box::new(E::Constant(number(128512.0)))))))],}])};
     assert_eq!(decode_executable_physical_plan_v1(&encode_executable_physical_plan_v1(&plan).unwrap()).unwrap(),plan);
     let mut js=String::from("import assert from 'node:assert/strict';import * as s from './scalars.mjs';import * as j from './json.mjs';\n");
     for point in [0,0x41,0xe9,0x7ff,0x800,0xd7ff,0xe000,0xffff,0x10000,0x1f600,0x10ffff] {

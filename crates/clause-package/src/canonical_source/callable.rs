@@ -341,13 +341,12 @@ pub(super) fn read(
             parser.skip_spaces();
             let mut binding = None;
             let line = source[parser.cursor..].split('\n').next().unwrap_or("");
-            if let Some((name, _)) = line.strip_prefix('?').and_then(|line| line.split_once(':')) {
-                if !name.contains(|ch: char| ch.is_whitespace() || matches!(ch, '(' | ')' | '{' | '}')) {
+            if let Some((name, _)) = line.strip_prefix('?').and_then(|line| line.split_once(':'))
+                && !name.contains(|ch: char| ch.is_whitespace() || matches!(ch, '(' | ')' | '{' | '}')) {
                     application_designation_bytes(name, expression_origin)?;
                     binding = Some(format!("?{name}").into_bytes());
                     parser.cursor += name.len() + 2;
                 }
-            }
             let expression = parser.disjunction().ok_or_else(|| error("unsupported callable expression"))?;
             let denotation = binding.is_some();
             expressions.push((binding, expression));
@@ -932,6 +931,7 @@ fn static_field_path(
         })
 }
 
+#[expect(clippy::too_many_arguments, reason = "the recursive lowering carries each scope the expression resolves against so no frame allocates")]
 fn lower(
     expression: &CanonicalScalarExpressionV1,
     arguments: &[CanonicalCallableArgumentV1],

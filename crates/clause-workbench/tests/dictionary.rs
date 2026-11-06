@@ -22,7 +22,7 @@ fn dictionary_preserves_exact_values_in_native_and_javascript() {
             (b"labels".to_vec(), V::Sequence(vec![text("kept")])),
         ])))]));
         assert_eq!(session.invoke_callable(b"settings", &[text(name)]).unwrap(), expected);
-        assert_eq!(session.invoke_callable(b"preserve", &[expected.clone()]).unwrap(), expected);
+        assert_eq!(session.invoke_callable(b"preserve", std::slice::from_ref(&expected)).unwrap(), expected);
     }
     let wrong = V::Record(BTreeMap::from([(b"tom".to_vec(), V::Record(BTreeMap::from([(b"enabled".to_vec(), text("wrong"))])))]));
     assert!(session.invoke_callable(b"preserve", &[wrong]).is_err());
